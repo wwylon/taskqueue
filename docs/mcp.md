@@ -451,14 +451,12 @@ Events exist for every terminal task unless `notify_default=0`; in that case fal
 
 ## Not implemented (yet)
 
-An earlier planning doc (`plan/archive/roadmap_reliability_publish.md`) mentioned
-`attention_for_operator` and `watch_attention` tools; those aliases are still
-absent. Use `attention_list` with an `operator` filter, and
-`drain_notifications` (with `wait_sec`) for terminal events.
+There are no `attention_for_operator` / `watch_attention` aliases. Use
+`attention_list` with an `operator` filter, and `drain_notifications` (with
+`wait_sec`) for terminal events.
 
 ## See also
 
 - [`docs/task_standards.md`](task_standards.md) — YAML fields (incl. `notify_url`), error codes, suspend contract.
 - [`docs/errors.md`](errors.md) — full `tq.*` error code catalog referenced by `attention_list`/`diagnose`.
-- `devkit/rules/queue.md` — agent queue discipline (authoring).
-- `devkit/rules/queue-reference.md` — triage, CLI/MCP cheat sheet, hygiene / cleanup.
+- [`docs/agents/recipes.md`](agents/recipes.md) — agent queue recipes.

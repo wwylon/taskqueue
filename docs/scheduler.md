@@ -3,8 +3,6 @@
 Reference for the local admission-control path: how the daemon decides what to
 start, what to stop, and how it estimates what a task will cost.
 
-Design rationale and the incident that motivated the current shape:
-[`plan/archive/scheduler_resources.md`](../plan/archive/scheduler_resources.md).
 Field reference for what a YAML may declare: [`task_standards.md`](task_standards.md).
 
 **Master–worker:** local admission (this doc) and remote worker claims share `filter_task()` in `taskqueue/scheduler.py`. Remote workers pull via `GET /api/worker/next-task`. With `placement_mode=binpack` (default), claim is gated by best-fit among online peers (see §3 Remote scoring). Full reference: [master_worker.md](master_worker.md).

@@ -2,7 +2,7 @@
 
 This document defines the requirements, standards, and best practices that tasks running in the `taskqueue` system must follow. Designing tasks to adhere to these rules ensures they can be scheduled fairly, monitored accurately, and restarted cleanly in our multi-project research environment.
 
-Agent discipline for when to enqueue (vs run in-session) and how to close out `plan/NOW.md` lives in sibling `devkit/rules/queue.md` and `devkit/rules/plan-structure.md`.
+Prefer YAML + `tq sync` for long jobs; keep short interactive work in-session. See [README](../README.md) (session work vs the queue) and [agents/recipes.md](agents/recipes.md).
 
 ### Referring to runs by `#`
 

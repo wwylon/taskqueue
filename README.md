@@ -20,8 +20,7 @@ Web UI: `http://127.0.0.1:8765` (live SSE via `/api/events`). Terminal: `tq watc
 * [Master–worker configuration](docs/WORKER_SETUP.md) — step-by-step setup + full bind/auth/`worker.yaml` reference
 * [Master–worker architecture](docs/master_worker.md) — dispatch, sync, logs, disconnect, multi-worker
 * [Fixtures `tqdemo`](fixtures/tqdemo/README.md) — cheap dummy tasks for dogfood/CI; stress and test tasks
-* [Roadmap history](plan/archive/roadmap_reliability_publish.md) — wave 1 (done). Live priority: [plan/NOW.md](plan/NOW.md)
-* [Extraction plan (historical)](PLAN.md) — original extraction design; **implemented** (see status there)
+* [Changelog](CHANGELOG.md) — released versions
 * License: MIT
 
 ## Installation
@@ -288,8 +287,6 @@ Exit codes: `0` ok, `1` error, `2` usage (unknown flags or extra args are reject
 | `tq worker setup --master <url>` | Clone projects / init venvs on worker |
 | `tq worker --master <url> --worker-id <id>` | Start worker client |
 
-## Session planning vs the queue
+## Session work vs the queue
 
-Research projects own session priority in **`plan/NOW.md`** (devkit plan-structure). Taskqueue does **not** parse plan markdown — it only schedules YAML under `experiments/operator_queue/`.
-
-When a queue job finishes, close the task out and update **`NOW.md`** (Waiting / Next / Doing) in the same session.
+Taskqueue only schedules YAML under a project's `experiments/operator_queue/`. It does **not** parse planning docs. Keep interactive/session work out of the queue; put long jobs (>~2 min) in YAML and `tq sync`.

@@ -143,7 +143,7 @@ flowchart LR
 Multi-slot: one worker may hold multiple tasks until declared RAM/CPU/VRAM is exhausted
 (heartbeat live load reduces leftover capacity).
 
-See [`placement_capacity.md`](../plan/archive/placement_capacity.md) and [scheduler.md](scheduler.md).
+See [scheduler.md](scheduler.md) for admission and remote scoring.
 
 ---
 
