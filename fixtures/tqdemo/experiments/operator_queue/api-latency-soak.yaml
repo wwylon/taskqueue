@@ -1,0 +1,23 @@
+task_id: api-latency-soak
+description: "Multi-hour HTTP soak of UI background endpoints; JSONL p50/p95 under {home}/latency_soak"
+command: python
+args:
+  - scripts/run_api_latency_soak.py
+  - --hours
+  - "6"
+  - --project
+  - omnicard3
+  - --concurrency
+  - "2"
+  - --interval-ms
+  - "500"
+  - --budget-ms
+  - "2000"
+wall_clock_cap_sec: 25200
+priority: 40
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.5
+dispatch: local
+tags: ["soak", "perf"]

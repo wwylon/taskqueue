@@ -1,0 +1,11 @@
+task_id: hello-progress
+description: Minimal sample — prints (N%) then exits
+command: python
+args: ["scripts/hello_progress.py", "--steps", "5", "--sleep", "0.2"]
+wall_clock_cap_sec: 120
+priority: 50
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

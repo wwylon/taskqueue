@@ -1,0 +1,11 @@
+task_id: test-scale
+description: "scale + performance tests: index usage, DB size budget, API pagination, queue/status p95 latency"
+command: python
+args: ["scripts/run_pytest.py", "tests/test_scale.py"]
+wall_clock_cap_sec: 300
+priority: 50
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.5
+dispatch: local

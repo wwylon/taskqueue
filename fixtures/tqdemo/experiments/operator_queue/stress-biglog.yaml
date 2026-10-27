@@ -1,0 +1,11 @@
+task_id: stress-biglog
+description: "stream ~120 MB of log output (500k short lines + 200×256KB lines + 10k JSON blobs) — test log viewer"
+command: python
+args: ["scripts/stress_biglog.py"]
+wall_clock_cap_sec: 600
+priority: 50
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

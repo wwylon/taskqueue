@@ -1,0 +1,11 @@
+task_id: dummy-exclusive
+description: Exclusive gating — short hold alone
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "2", "--label", "exclusive"]
+exclusive: true
+wall_clock_cap_sec: 60
+priority: 50
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

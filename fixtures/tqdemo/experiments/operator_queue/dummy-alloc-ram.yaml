@@ -1,0 +1,11 @@
+task_id: dummy-alloc-ram
+description: Optional capped RAM alloc — NOT for default CI
+command: python
+args: ["scripts/dummy_alloc_ram.py", "--mib", "64", "--hold-sec", "1"]
+wall_clock_cap_sec: 60
+priority: 95
+enabled: true
+resources:
+  cpu_cores: 1
+  ram_gib: 0.5
+dispatch: local

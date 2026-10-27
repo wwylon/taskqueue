@@ -1,0 +1,10 @@
+task_id: dummy-fail
+description: Nonzero exit after short progress
+command: python
+args: ["scripts/dummy_fail.py"]
+wall_clock_cap_sec: 60
+priority: 60
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

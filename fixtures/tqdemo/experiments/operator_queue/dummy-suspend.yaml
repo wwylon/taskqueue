@@ -1,0 +1,12 @@
+task_id: dummy-suspend
+description: Cooperative suspend via control file (exit 75)
+command: python
+args: ["scripts/dummy_suspend.py"]
+resume_args: ["scripts/dummy_suspend.py"]
+wall_clock_cap_sec: 300
+priority: 55
+enabled: true
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

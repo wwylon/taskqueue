@@ -1,0 +1,10 @@
+{
+  "description": "Golden stdout lines the runner / clients must emit or parse",
+  "exit_suspended": 75,
+  "lines": [
+    {"kind": "progress", "raw": "(50.0%)", "pct": 50.0, "msg": ""},
+    {"kind": "progress", "raw": "epoch (12.5%)", "pct": 12.5, "msg": "epoch"},
+    {"kind": "metric", "raw": "TQ_METRIC {\"epoch\": 3, \"loss\": 0.124}", "fields": {"epoch": 3, "loss": 0.124}},
+    {"kind": "control", "file": {"action": "suspend"}, "exit": 75}
+  ]
+}

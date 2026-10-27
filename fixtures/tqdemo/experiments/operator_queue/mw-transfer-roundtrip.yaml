@@ -1,0 +1,15 @@
+task_id: mw-transfer-roundtrip
+command: python
+args:
+  - -c
+  - |
+    from pathlib import Path
+    p = Path("output/result.txt")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("worker-output", encoding="utf-8")
+    print("(100.0%) done")
+dispatch: remote
+priority: 10
+transfer:
+  - {src: input/seed.txt, dst: input/seed.txt, direction: push}
+  - {src: output/result.txt, dst: output/result.txt, direction: pull}

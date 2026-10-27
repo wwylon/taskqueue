@@ -1,0 +1,5 @@
+task_id: mw-dispatch-any
+command: python
+args: ["-c", "print('any-machine')"]
+dispatch: any
+priority: 10

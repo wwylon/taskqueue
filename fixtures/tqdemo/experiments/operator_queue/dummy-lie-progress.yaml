@@ -1,0 +1,10 @@
+task_id: dummy-lie-progress
+description: Lies about (N%) without real work — progress sanity
+command: python
+args: ["scripts/dummy_lie_progress.py"]
+wall_clock_cap_sec: 60
+priority: 70
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

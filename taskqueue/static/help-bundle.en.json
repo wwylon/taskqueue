@@ -1,0 +1,1610 @@
+{
+  "lang": "en",
+  "tabs": {
+    "queue": {
+      "tab": "queue",
+      "lang": "en",
+      "page": {
+        "id": "page-queue",
+        "title": "Queue",
+        "html": "<p>The <strong>Queue</strong> page lists tasks with status chips, search, tags, and group chips. The header project filter limits the list and the four status counts. Those counts are totals for the project, not just the rows on screen. The <strong>active</strong> project chip shows every project except frozen or paused ones; queued tasks waiting on deps/resources (<code>tq.block.*</code>) stay visible.</p>\n<ul>\n<li>Changing the header project clears the selected <strong>group</strong> filter (groups belong to a project&#x27;s task set). The Groups page <strong>View in queue</strong> link selects the group&#x27;s project as well.</li>\n<li>Wait reasons under Status use color: muted for normal waits (resources, exclusive, healthy deps), warn for frozen/paused/service blocks, red when waiting on a dead dependency (<code>failed</code> / <code>interrupted</code> / <code>stopped</code> / missing).</li>\n<li><strong>Columns</strong> hides optional table columns (priority, status, started, finished, resources, description); the choice is kept in this browser.</li>\n<li><strong>Saved filters</strong> remember status, search, and project. <strong>Failed today</strong> only hides rows on the loaded page whose finish time is today.</li>\n<li>Selecting rows shows the bulk bar; <strong>Select all N matching</strong> extends the selection to every task matching the current filters (all pages, up to 5000). Bulk stop and retry send one request (<code>/api/tasks/bulk</code>, <code>/api/tasks/retry-batch</code>).</li>\n<li><strong>Retry all failed</strong> retries the failed query and asks before more than 500. CSV and JSON export download the rows on screen.</li>\n<li>Running rows show <strong>last progress N ago</strong> once the % has not moved for a minute, and <strong>⚠ possibly stalled</strong> when it has not moved for over 3x the run&#x27;s usual interval (at least 2 min) — a slow run stays below that (same rule as <code>tq status</code>). A task that exited with one of its <code>negative_exit_codes</code> shows a dashed <strong>completed · no</strong> badge: a negative result, not a failure.</li>\n<li>Cap hits show as <strong><code>interrupted</code></strong> with code <strong><code>tq.run.cap</code></strong> (often safe to retry or auto-retried via YAML <code>auto_retry_on_cap</code>). Real crashes show <strong><code>failed</code></strong> / <strong><code>tq.run.nonzero</code></strong>. CLI equivalent: <code>tq retry --project P --status failed,interrupted</code>.</li>\n<li>Select rows for bulk Retry, Stop, and Re-queue. <strong>Force</strong> is only offered on <code>queued</code> tasks.</li>\n<li>With a project selected, <strong>Pause project</strong>, <strong>Block project</strong> and <strong>Stop All</strong> sit in the filter bar. Pause keeps queued tasks waiting while running ones continue (<code>tq pause</code>); Block (freeze) makes the scheduler skip the project entirely.</li>\n<li>Click a task cell to open the drawer (info, YAML, last five runs). <strong>Log</strong> opens the bottom panel; its toolbar filters lines by regex (an invalid pattern matches literally), shows only warnings/errors or errors, toggles line wrap, and downloads the log (last 8 MiB). The drawer shows <strong>Metrics (TQ_METRIC)</strong> sparklines when the task&#x27;s latest run printed numeric <code>TQ_METRIC</code> values (task-chosen keys — see <a href=\"/docs/tq-metric\">Metrics (TQ_METRIC)</a>; not the same as the <strong>📊 metrics</strong> resource-usage modal). <strong>Why not running?</strong> lists what holds the task back: the scheduler&#x27;s last block reason, an unmet dependency, a paused project, <code>max_attempts</code>, and for queued tasks a dry-run verdict (same as <code>tq why</code>).</li>\n<li><strong>Stop</strong> waits 5 seconds and shows a toast with <strong>Undo</strong> before it is sent (a stopped run cannot continue mid-step).</li>\n<li><strong>Ctrl+K</strong> (Cmd+K on macOS) opens the command palette on any page: type to jump to a page, open a task on the loaded queue page in the drawer, or refresh / show shortcuts.</li>\n<li>Shortcuts while this page is active and focus is not in a field: <code>j</code> / <code>k</code> move the row, <code>/</code> focuses search, <code>r</code> retries and <code>s</code> stops (both ask to confirm), <code>a</code> selects visible rows, Enter opens the drawer, <code>?</code> toggles the shortcut list, Esc closes the top layer (an open dialog first). Shortcuts are ignored with Ctrl/Alt/Cmd held, and Enter on a focused button activates the button instead of opening the drawer.</li>\n<li><strong>Shareable URLs</strong> keep the section and filters: <code>page</code> (or legacy <code>tab</code>), <code>project</code>, <code>status</code>, <code>q</code>, <code>group</code>, <code>tag</code>, <code>doc</code>. A <code>tq_token</code> in an opened link is saved in the browser and then removed from the address bar, so shared URLs never carry it. Example: <code>/?page=queue&amp;project=omnicard3&amp;status=failed</code>. Browser Back and Forward restore them.</li>\n<li>A <strong>lock contention</strong> banner appears when queued tasks wait on a shared <code>resources.locks</code> mutex and the holder&#x27;s project still has headroom under <code>max_tasks</code>.</li>\n<li>Queued tasks can also wait on <strong><code>exclusive</code></strong> (blocks all other tasks while it runs) or <strong><code>exclusive_project</code></strong> (blocks only same-project peers). Those show as <code>tq.block.exclusive</code> / <code>tq.block.exclusive_project</code> — Force does not bypass them.</li>\n<li>Live updates use <strong>SSE</strong> (<code>/api/events</code>) when the browser supports EventSource; the list refreshes within about a second of status changes. If SSE drops, the page falls back to a slower poll.</li>\n</ul>",
+        "read_more": "/docs/web-ui#page-queue"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "dashboard": {
+      "tab": "dashboard",
+      "lang": "en",
+      "page": {
+        "id": "page-dashboard",
+        "title": "Dashboard",
+        "html": "<p>The <strong>Dashboard</strong> shows CPU, GPU, RAM, queued, and daemon gauges. Each card has a time-series of recent samples (about the last 30 minutes in this browser tab). The line is scaled to that recent range, not to the machine total, so a small move in RAM or VRAM is visible. The caption under the line is the first value, the latest value, and how many minutes the line covers. Queued and running share one chart.</p>\n<p>Running cards show <strong><code>#run_id</code></strong>. <strong>Log</strong> opens the bottom log panel rather than an inline tail. Status and metrics refresh via the shared SSE snapshot (same <code>/api/events</code> feed as Queue); polling is only a fallback when the stream is down.</p>\n<ul>\n<li><strong>FROZEN</strong> badge: no recent stdout on a still-running process. That is not the same as blocking a project.</li>\n<li><strong>GPU badge</strong>: the task requested VRAM (<code>resources.gpu_vram_gib</code> &gt; 0).</li>\n</ul>",
+        "read_more": "/docs/web-ui#page-dashboard"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "history": {
+      "tab": "history",
+      "lang": "en",
+      "page": {
+        "id": "page-history",
+        "title": "History",
+        "html": "<p><strong>History</strong> lists recent execution attempts. Each row is <strong><code>#run_id</code></strong> for a project/task — use this id when discussing logs, metrics, or a specific failure.</p>\n<p>The list loads <strong>20</strong> runs at a time (Load more fetches the next 20). Click <strong>History</strong> on a row for that task’s prior runs plus duration stats (average / P50 / P95 from completed runs). <strong>Metrics</strong> opens the resource chart for that run. <strong>Re-run</strong> (after a confirm) queues the task again with the arguments that run used (subject to the task&#x27;s <code>overridable_args</code>); <code>tq clone</code> makes a new task from one instead. Click a row to inspect duration, exit status, and link to log search. Filter by project from the header selector. Use the search box to match <strong>task id</strong>, <strong>project</strong>, <strong><code>#run_id</code></strong>, error category, or worker id (server-side; works with Load more). <code>/</code> focuses search while this page is active.</p>\n<h2>Comparing two runs</h2>\n<p>Click <strong>⇄ Compare</strong> on one run row (or the <strong>⇄</strong> button on a dashboard history card), then on a second run. A dialog lists only the fields</p>\n<p>that differ: status, exit code, wall time, peak CPU/RAM/VRAM, worker, package hash, command,</p>\n<p>effective arguments, environment variable <strong>names</strong> (values are never stored) and the numeric</p>\n<p>metrics. The same data is available from <code>GET /api/runs/&lt;id&gt;</code> and <code>GET /api/runs/diff?a=&amp;b=</code>.</p>\n<p>Runs started before the upgrade have no argument/environment snapshot.</p>\n<p><code>GET /api/runs/&lt;id&gt;</code> also returns an <code>anomaly</code> block: peak RAM, peak VRAM or wall time more than 1.5x the p95 of the last 20 completed runs of the same task is listed in <code>anomaly.flags</code>. With fewer than 5 completed earlier runs nothing is flagged.</p>\n<p><strong>Re-run with a past run&#x27;s args.</strong> <code>POST /api/runs/&lt;run_id&gt;/rerun</code> re-queues the run&#x27;s task using the args recorded for that run. The recorded args replace the task&#x27;s argv tail for one run, so they must stay within the task&#x27;s <code>overridable_args</code>; otherwise the request is refused with 409 and nothing changes. The task must be in a retryable state. Requires admin scope.</p>\n<p>Completed runs that exceeded the anomaly threshold (see <code>GET /api/runs/&lt;id&gt;</code>) show a ⚠ <strong>Unusual</strong> badge next to their status; hover it for the metric, value and the p95 baseline. <code>GET /api/history</code> returns the same flags as <code>anomalies</code> on each affected run, and the <strong>Unusual run</strong> alert (Alerts page) fires when such a run finishes.</p>",
+        "read_more": "/docs/web-ui#page-history"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "workers": {
+      "tab": "workers",
+      "lang": "en",
+      "page": {
+        "id": "page-workers",
+        "title": "Workers",
+        "html": "<p><strong>Workers</strong> lists registered remote machines. Status reflects heartbeat freshness and lease health. Tasks with <code>dispatch: remote</code> prefer online workers; local fallback applies when none match.</p>\n<p>Use this tab to confirm a worker is online before debugging remote-only tasks. See <a href=\"/docs/task-standards\">WORKER_SETUP.md</a> in the repo for configuration.</p>",
+        "read_more": "/docs/web-ui#page-workers"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "groups": {
+      "tab": "groups",
+      "lang": "en",
+      "page": {
+        "id": "page-groups",
+        "title": "Groups",
+        "html": "<p>The <strong>Groups</strong> tab aggregates tasks by YAML <code>group</code> field. Stop or retry all members of a group from here, or jump to the queue with a group filter applied (<strong>View in queue</strong> also selects the group&#x27;s project).</p>\n<p>Groups are labels for operations — they do not change scheduler priority. Compare with <strong>suite</strong> for enable/disable of related tasks.</p>",
+        "read_more": "/docs/web-ui#page-groups"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "deps": {
+      "tab": "deps",
+      "lang": "en",
+      "page": {
+        "id": "page-deps",
+        "title": "Deps tab",
+        "html": "<p>See the <strong>Dependencies</strong> topic below for graph modes and pipeline workflow. This tab is the primary place to unblock <code>depends_on</code> chains and retry downstream after fixing an upstream failure.</p>\n<p>Pick which task statuses appear with the <strong>status checkboxes</strong>. Completed, disabled and cancelled start unchecked; unchecking a status removes those tasks (and their edges) from the graph even when something still depends on them. Each node shows its task name, status and project.</p>\n<p>Export the graph with <code>GET /api/deps?format=dot</code> (Graphviz DOT; dead edges red, waiting edges dashed) or the default JSON; <code>project</code> and <code>focus</code> apply to both.</p>\n<p>The graph is scaled to fill the pane <strong>width</strong> and scrolls vertically, with scrollbars when it is larger than the pane. The mouse wheel scrolls; <strong>Ctrl+wheel</strong> or pinch zooms (up to 20×). Drag pans, and <strong>Reset view</strong> fits the width again.</p>",
+        "read_more": "/docs/web-ui#page-deps"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "resources": {
+      "tab": "resources",
+      "lang": "en",
+      "page": {
+        "id": "page-resources",
+        "title": "Resources",
+        "html": "<p><strong>Resources</strong> shows current cluster CPU/RAM/GPU usage and per-running-task sparklines. Ollama sidecar VRAM may appear when tasks hold the <code>ollama</code> lock.</p>\n<p>Use this tab when diagnosing <code>tq.block.resources</code> or planning whether to force-run under pressure.</p>",
+        "read_more": "/docs/web-ui#page-resources"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "usage": {
+      "tab": "usage",
+      "lang": "en",
+      "page": {
+        "id": "page-usage",
+        "title": "Usage",
+        "html": "<p><strong>Usage</strong> charts resource history over 1d / 7d / 30d with line, area, or bar views. Filter by project to see overnight patterns.</p>\n<p>Correlate with <code>tq report</code> and MCP <code>report</code> for aggregate error codes and run counts over the same window.</p>\n<p>The summary table&#x27;s <strong>GPU h today (UTC)</strong> column shows wall hours used since UTC midnight by tasks that declare <code>gpu_vram_gib</code>. When the project has a <code>max_gpu_hours_day</code> budget it reads <code>used / limit</code> and turns red once the budget is exhausted (the scheduler then holds back further GPU tasks; see <code>tq plan</code>).</p>",
+        "read_more": "/docs/web-ui#page-usage"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "tasks": {
+      "tab": "tasks",
+      "lang": "en",
+      "page": {
+        "id": "page-tasks",
+        "title": "Tasks",
+        "html": "<p><strong>Tasks</strong> is one row per project and task from finished runs (<code>completed</code>, <code>failed</code>, <code>interrupted</code>, <code>suspended</code>, <code>stopped</code>). Duration is finish time minus start time.</p>\n<p><strong>Average</strong>, nearest-rank <strong>P50</strong>, and <strong>P95</strong> use <strong>completed</strong> runs only. Run count and success rate still cover all terminal statuses (success = share that completed). If a task has no completed samples, duration columns show <code>—</code>.</p>\n<p>Columns are last finish, average, P50, P95, run count, and success rate. Search filters by project or task id. The header project filter applies. These are task rows, not a separate type catalog.</p>",
+        "read_more": "/docs/web-ui#page-tasks"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "timeline": {
+      "tab": "timeline",
+      "lang": "en",
+      "page": {
+        "id": "page-timeline",
+        "title": "Timeline",
+        "html": "<p><strong>Timeline</strong> projects what is likely to run next. It is a <strong>forecast</strong>, not a replay of past runs.</p>\n<p>Each bar is one queued, running, or soon-to-fire cron task. Bars share a forward time axis (<code>now</code> → the selected window: 6h, 24h, 72h, or 7 days). Overlapping bars mean the forecast expects parallel work under global and per-project concurrency limits (<code>max_running_tasks</code> / <code>max_concurrent_tasks</code>, project <code>max_tasks</code>, CPU/RAM/VRAM caps), plus <code>depends_on</code> / <code>exclusive</code> gates.</p>\n<p><strong>Duration</strong> comes from history when available (task p50), else similar task names in the same project, else the average of known task durations, else a fixed placeholder. Hover a bar for estimate source, lane, and kind. The header shows predicted <strong>bunch end</strong> (when the last projected bar finishes).</p>\n<p>This is advisory: it does not model live host RAM pressure, remote worker binpack, or service probes. The header project filter applies. Scroll horizontally when the chart is wider than the page.</p>\n<p>Bars are ordered by projected start. Changing the header project reloads the forecast immediately.</p>\n<p><strong>Times</strong> are in your local clock: the axis shows <code>HH:MM</code>, each row shows <code>start–end</code>, and the header shows when the queue is expected to drain (<code>~</code> marks an estimate that is not from the task&#x27;s own history). The forecast is cached for about 20 s on the server and refreshed from the page at most once every 15 s after the previous request finished (slower after errors; a &quot;stale&quot; note appears if the last refresh failed). Very large queues show the first 300 bars. Prefer the header <strong>project</strong> filter when possible — scoped forecasts skip other projects&#x27; open runs and history. <strong>Right-click</strong> a bar for Details, Set priority, ±10, Stop, Retry, Force run, Disable and more; click a bar for the details drawer, which also has priority and enable/disable controls.</p>",
+        "read_more": "/docs/web-ui#page-timeline"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "schedule": {
+      "tab": "schedule",
+      "lang": "en",
+      "page": {
+        "id": "page-schedule",
+        "title": "Schedule",
+        "html": "<p><strong>Schedule</strong> lists tasks whose YAML contains <code>schedule.cron</code> (five fields: minute, hour, day of month, month, day of week, evaluated in UTC). <strong>Next fire</strong> is the next matching minute within 48 hours.</p>\n<ul>\n<li><strong>Run now</strong> re-queues the task.</li>\n<li><strong>Edit</strong> opens that task&#x27;s YAML.</li>\n<li><strong>Pause</strong> sets <code>enabled: false</code>; a paused row shows <strong>Resume</strong> instead, which sets it back to <code>enabled: true</code>.</li>\n<li><strong>New schedule</strong> does not insert a task. Put <code>schedule.cron</code> in the project queue YAML and run <code>tq sync</code>. If a row is selected, the button opens that YAML. See the <code>schedule</code> field in <a href=\"/docs/task-standards\">task standards</a>.</li>\n</ul>",
+        "read_more": "/docs/web-ui#page-schedule"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "alerts": {
+      "tab": "alerts",
+      "lang": "en",
+      "page": {
+        "id": "page-alerts",
+        "title": "Alerts",
+        "html": "<p><strong>Alerts</strong> lists five built-in system events. You cannot create or delete them. Each row has:</p>\n<ul>\n<li><strong>Active</strong> — when on, TaskQueue evaluates / emits the event.</li>\n<li><strong>Windows popup</strong> — when on, a Windows Action Center toast appears. Requires the optional <a href=\"https://pypi.org/project/winotify/\"><code>winotify</code></a> package on the <strong>same Python</strong> that runs the daemon:</li>\n</ul>\n<pre><code class=\"language-text\">  pip install winotify\n  # or: pip install &#x27;taskqueue[toast]&#x27;\n  # or (project venv): uv sync --extra toast\n  tq restart</code></pre>\n<p>Toasts are colour-coded like the health light: a 🔴 title prefix and red icon for <strong>Any failure</strong> (and failed / unknown task-end toasts), 🟠 for <strong>Task frozen</strong>, <strong>Stopped by TaskQueue</strong> and <strong>Unusual run</strong>, 🟢 for <strong>No more tasks to run</strong>. Toast <strong>title</strong> names the event and task (for example <code>Task failed: proj/task</code>). The body gives the reason (error label, exit code, last output line) and ends with the <code>running · failed · queued</code> counts. <code>tq doctor</code> and daemon startup warn if Windows popup is on but <code>winotify</code> is missing.</p>\n<ul>\n<li>Without <code>winotify</code>, alerts still fire: <strong>notification bell</strong>, in-page toasts when the web UI is open, and <strong>Fire count</strong> / <strong>Last fired</strong> on this page. Events are also appended to <code>{TASKQUEUE_HOME}/notify.jsonl</code> with <code>status</code> like <code>alert:any_failure</code>.</li>\n</ul>\n<p><strong>Alert history</strong> (below the rules) lists every alert that fired, newest first. Click a row for the full detail: error label and code, exit code, attempt, elapsed time, worker, block reason and the last lines of the task log. The notification bell and in-page toasts show the same text (click a toast to open this page). Each alert toasts (and raises a browser notification, if allowed) once per browser: reloading does not repeat it, and alerts that arrived while the page was closed show on the next load. Every alert is also written to the daemon log as a line starting <code>[alert]</code>; suppressed alerts (rule off, cooldown) are logged at debug level under <code>taskqueue.alerts</code>. The structured detail is stored in the <code>detail</code> field of the <code>alert:*</code> event in <code>notify.jsonl</code>; <code>GET /api/notifications?kind=alert</code> returns only alerts.</p>\n<table><thead><tr>\n<th>Alert</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><strong>Any failure</strong></td><td>A run finishes with status <code>failed</code> (any project).</td></tr>\n<tr><td><strong>No more tasks to run</strong></td><td>Nothing is <code>queued</code> or <code>running</code>, and at least one run finished recently. Quiet for one hour after it fires.</td></tr>\n<tr><td><strong>Task frozen</strong></td><td>A running task has no stdout and no process CPU for ≥2× <code>frozen_threshold_sec</code> (same condition as the FROZEN badge).</td></tr>\n<tr><td><strong>Stopped by TaskQueue</strong></td><td>An automated stop (<code>stopped_by=tq</code>), not a human/<code>tq stop</code>. The popup includes <strong>why</strong> (for example RAM hard limit, wall-clock cap, frozen, dependency invalidated).</td></tr>\n<tr><td><strong>Unusual run</strong></td><td>A run finishes <code>completed</code> but its wall time, peak RAM or peak VRAM is above 1.5x the p95 of the last 20 completed runs of the same task (needs at least 5 earlier runs). The same runs get a ⚠ <strong>Unusual</strong> badge in History (hover for values). Toast colour: amber.</td></tr>\n</tbody></table>\n<p>The sidebar badge counts enabled alerts that are <strong>hot now</strong> (queue idle, or a currently frozen run). One-shot events (failure, TQ stop) do not keep the badge lit after the toast.</p>\n<p>Related: task-end Windows toasts are controlled by config <code>toast_notifications</code> (see <a href=\"/docs/WORKER-SETUP\">WORKER_SETUP</a>); that knob does <strong>not</strong> gate these system-alert popups.</p>",
+        "read_more": "/docs/web-ui#page-alerts"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "audit": {
+      "tab": "audit",
+      "lang": "en",
+      "page": {
+        "id": "page-audit",
+        "title": "Audit",
+        "html": "<p><strong>Audit</strong> lists operator actions: stop, retry, force, enable, priority, freeze, config, project limits, and alert or token changes. The actor is the <code>X-TQ-Operator</code> header when it is set, otherwise <code>web</code>. Heartbeats are not recorded.</p>\n<p><strong>Export CSV</strong> downloads the rows loaded on the page. This is not the daemon event log. A token secret is never stored in the detail.</p>\n<p><strong>API:</strong> <code>GET /api/audit</code> accepts <code>actor</code>, <code>action</code>, <code>project</code> (exact match), <code>since</code> / <code>until</code> (ISO timestamps, inclusive), <code>limit</code> (1–2000) and <code>before_id</code> (return events older than that id, for paging). <code>format=csv</code> or <code>format=jsonl</code> returns a server-side export of the filtered events instead of JSON.</p>\n<p><strong>Config diff and rollback.</strong> A <code>config</code> event records each changed key with its previous and new value (the <code>auth_token</code> is redacted). The Detail column shows the diff and a <strong>Roll back</strong> button, which restores the previous values and logs a <code>config_rollback</code> event. Keys that were unset before, no longer valid, or secret are skipped. Events recorded before this feature have no stored values and cannot be rolled back. <strong>API:</strong> <code>POST /api/audit/&lt;id&gt;/rollback</code> (admin scope).</p>",
+        "read_more": "/docs/web-ui#page-audit"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "api": {
+      "tab": "api",
+      "lang": "en",
+      "page": {
+        "id": "page-api",
+        "title": "API tokens",
+        "html": "<p><strong>API</strong> creates a scoped token. The secret (<code>tq_live_…</code>) is shown once. The database stores a SHA-256 hash and a prefix.</p>\n<ul>\n<li><strong>read</strong> — GET</li>\n<li><strong>write</strong> — GET plus task changes (stop, retry, force, enable, priority, freeze, YAML; many tasks at once via <code>POST /api/tasks/bulk</code>)</li>\n<li><strong>admin</strong> — config, project limits, alerts, and token create or revoke, plus write</li>\n</ul>\n<p>The optional <strong>Projects</strong> field (comma separated) limits a read or write token to those projects. Such a token may only read the queue, history and audit lists with a <code>project</code> filter naming an allowed project; every other route returns 403. It cannot be combined with admin. See <a href=\"/docs/security\">security</a>.</p>\n<p>The daemon <code>auth_token</code> remains an admin credential. Workers and the master lease keep using that token, not a scoped one. <strong>Revoke</strong> marks the token revoked. Loopback browsers skip the token check.</p>\n<pre><code class=\"language-bash\">curl -H &quot;Authorization: Bearer tq_live_…&quot; http://127.0.0.1:8765/api/status</code></pre>\n<p>Route list: <a href=\"/api/docs\">/api/docs</a>.</p>",
+        "read_more": "/docs/web-ui#page-api"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    },
+    "config": {
+      "tab": "config",
+      "lang": "en",
+      "page": {
+        "id": "page-config",
+        "title": "Config",
+        "html": "<p><strong>Config</strong> edits live daemon settings: CPU/GPU/RAM soft limits, <code>max_running_tasks</code>, graceful stop seconds, and <strong>frozen threshold</strong> (idle detection).</p>\n<p>Per-project rows set max concurrent tasks, <strong>min tasks</strong> (slots held back from other projects while this project has queued work and fewer running; only meaningful with a global <code>max_running_tasks</code>; <code>force</code> bypasses), and RAM/VRAM caps. Changes apply on save; running tasks are not restarted automatically.</p>\n<p>See <a href=\"/docs/scheduler\">scheduler.md</a> for how admission uses these limits.</p>",
+        "read_more": "/docs/web-ui#page-config"
+      },
+      "general": [
+        {
+          "id": "block-project",
+          "title": "Block project",
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+        },
+        {
+          "id": "force-run",
+          "title": "Force",
+          "html": "<p>Marks the task <code>force_run</code> and re-queues it so soft resource / anti-flap gates are bypassed once. You should see a toast immediately; the task still waits on unmet <code>depends_on</code>, named <code>resources.locks</code>, global <code>exclusive</code>, or per-project <code>exclusive_project</code>. On the Queue page, Force is only offered for <code>queued</code> tasks.</p>"
+        },
+        {
+          "id": "groups",
+          "title": "Groups",
+          "html": "<p>YAML <code>group</code>: labels tasks for bulk stop/retry and for the group filter chips under status/project on the Queue page. Groups do not change admission priority.</p>\n<p>Different from <code>suite</code> (enable/disable all members) — <code>group</code> is for operational batch actions in the UI and CLI.</p>"
+        },
+        {
+          "id": "dependencies",
+          "title": "Dependencies",
+          "html": "<p>Deps shows incomplete tasks and their dependency chains (<strong>Mode: Active</strong>). <strong>Attention</strong> = blocked/failed/stopped only. <strong>All</strong> = full graph. Dashed nodes are finished upstream kept for context.</p>\n<p>Click a chain chip to isolate a component; focus selection + click drills into a neighborhood; <strong>Retry downstream</strong> resets a pipe. Pipelines: produce → optional check → consume via <code>depends_on</code> (AND). Fan-in with <code>depends_on_any</code> (OR) appears as edges with <code>kind: any</code>. Nodes may show <code>spawned_by</code> when a parent woke them via <code>on_complete</code> / <code>on_fail</code>.</p>"
+        },
+        {
+          "id": "tq-metric",
+          "title": "Metrics (TQ_METRIC)",
+          "html": "<p>The <strong>Metrics (TQ_METRIC)</strong> block in the task drawer (Details → Info) is <strong>not</strong> a fixed list of daemon fields. It shows numeric keys your <strong>task script</strong> printed on stdout.</p>\n<h2>How it works</h2>\n<p>Any stdout line of the form:</p>\n<pre><code class=\"language-text\">TQ_METRIC {&quot;epoch&quot;: 3, &quot;loss&quot;: 0.124}</code></pre>\n<p>is parsed by the runner (and by the master for remote log chunks). Keys are <strong>merged</strong> into that run’s metric store — last value per key wins. Helpers:</p>\n<ul>\n<li>Python: <code>tq.metric(epoch=3, loss=0.124)</code> in <code>clients/python/tq_client.py</code></li>\n<li>C++: <code>tq::metric({{&quot;epoch&quot;, 3.0}, {&quot;loss&quot;, 0.124}})</code> in <code>clients/cpp/tq_client.hpp</code></li>\n</ul>\n<h2>What you see in Details</h2>\n<ul>\n<li>Only <strong>numeric</strong> keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).</li>\n<li>The number next to each sparkline is the <strong>latest</strong> value for that key.</li>\n<li>Key <strong>names are chosen by the task</strong> (<code>loss</code>, <code>val_acc</code>, <code>etl_at_3</code>, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.</li>\n</ul>\n<h2>Reserved keys (not task-settable)</h2>\n<table><thead><tr>\n<th>Key</th><th>Meaning</th>\n</tr></thead><tbody>\n<tr><td><code>_series</code></td><td>Internal time series for sparklines (<code>[timestamp, value]</code> points). Tasks cannot set this via <code>TQ_METRIC</code>.</td></tr>\n<tr><td><code>log</code></td><td>Auto-counted log issue chips: errors / warnings / other from stdout classification. Tasks cannot overwrite it.</td></tr>\n<tr><td><code>_progress</code></td><td>Internal progress bookkeeping used by the runner.</td></tr>\n</tbody></table>\n<h2>Not the same as “📊 metrics”</h2>\n<p>The queue/dashboard <strong>📊 metrics</strong> button opens <strong>resource usage</strong> (CPU %, RAM GiB, VRAM GiB samples from the daemon). That is host sampling, not <code>TQ_METRIC</code> lines.</p>\n<h2>Tips</h2>\n<ul>\n<li>Prefer small, slowly changing numbers (loss, accuracy, ETA hours). Dumping huge tables into <code>TQ_METRIC</code> wastes disk in the run log and adds little to the sparkline.</li>\n<li>Progress percent still uses <code>(N%)</code> / <code>tq.progress</code> — that is separate from <code>TQ_METRIC</code>.</li>\n<li>Full reference: <a href=\"/docs/task-standards\">task standards — Structured Metrics</a>.</li>\n</ul>"
+        },
+        {
+          "id": "prod-vs-dev",
+          "title": "Daemon home and port",
+          "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        }
+      ],
+      "references": [
+        {
+          "id": "errors",
+          "title": "Errors",
+          "url": "/docs/errors"
+        },
+        {
+          "id": "task-standards",
+          "title": "Task Standards",
+          "url": "/docs/task-standards"
+        },
+        {
+          "id": "scheduler",
+          "title": "Scheduler",
+          "url": "/docs/scheduler"
+        },
+        {
+          "id": "mcp",
+          "title": "MCP",
+          "url": "/docs/mcp"
+        },
+        {
+          "id": "security",
+          "title": "Security",
+          "url": "/docs/security"
+        }
+      ],
+      "guides": [
+        {
+          "id": "web-ui",
+          "title": "Web UI",
+          "audience": "human",
+          "url": "/docs/web-ui",
+          "ui_pages": [
+            "queue",
+            "dashboard",
+            "history",
+            "workers",
+            "groups",
+            "deps",
+            "resources",
+            "usage",
+            "tasks",
+            "timeline",
+            "schedule",
+            "alerts",
+            "audit",
+            "api"
+          ]
+        },
+        {
+          "id": "quickstart",
+          "title": "Quickstart",
+          "audience": "human",
+          "url": "/docs/quickstart",
+          "ui_pages": []
+        },
+        {
+          "id": "agent-recipes",
+          "title": "Agent Recipes",
+          "audience": "agent",
+          "url": "/docs/agent-recipes",
+          "ui_pages": []
+        }
+      ]
+    }
+  }
+}

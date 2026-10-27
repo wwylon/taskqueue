@@ -1,0 +1,13 @@
+task_id: dummy-pipe-check
+description: Pipeline check — fails unless produce wrote expected value
+command: python
+args: ["scripts/dummy_pipe_check.py", "--path", "artifacts/dummy-pipe-a.txt", "--expect", "ok"]
+depends_on: [dummy-pipe-a]
+wall_clock_cap_sec: 60
+priority: 46
+enabled: false
+group: tqdemo/pipe
+tags: [pipe, check]
+resources:
+  cpu_cores: 1
+dispatch: local

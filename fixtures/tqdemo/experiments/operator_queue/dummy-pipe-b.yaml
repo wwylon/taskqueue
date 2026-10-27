@@ -1,0 +1,13 @@
+task_id: dummy-pipe-b
+description: Pipeline consume — runs only after check succeeds
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "0.5", "--label", "pipe-b"]
+depends_on: [dummy-pipe-check]
+wall_clock_cap_sec: 60
+priority: 47
+enabled: false
+group: tqdemo/pipe
+tags: [pipe]
+resources:
+  cpu_cores: 1
+dispatch: local

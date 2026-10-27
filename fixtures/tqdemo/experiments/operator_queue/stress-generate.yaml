@@ -1,0 +1,11 @@
+task_id: stress-generate
+description: "insert 1 000 tasks across 40 fake projects into the live DB — then browse the web UI"
+command: python
+args: ["scripts/stress_generate.py"]
+wall_clock_cap_sec: 60
+priority: 50
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

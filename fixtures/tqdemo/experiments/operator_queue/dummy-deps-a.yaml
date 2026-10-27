@@ -1,0 +1,10 @@
+task_id: dummy-deps-a
+description: Dependency chain A (completes quickly)
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "0.5", "--label", "deps-a"]
+wall_clock_cap_sec: 60
+priority: 40
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

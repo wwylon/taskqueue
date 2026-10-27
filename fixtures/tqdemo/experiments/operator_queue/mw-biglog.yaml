@@ -1,0 +1,15 @@
+task_id: mw-biglog
+command: python
+args:
+  - -c
+  - |
+    import time
+    for i in range(200):
+        print(f"line {i}")
+        if i % 20 == 0:
+            print(f"({i/2:.1f}%)")
+        time.sleep(0.05)
+    print("(100.0%)")
+dispatch: remote
+priority: 10
+wall_clock_cap_sec: 600

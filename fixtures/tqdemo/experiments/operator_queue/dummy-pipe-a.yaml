@@ -1,0 +1,12 @@
+task_id: dummy-pipe-a
+description: Pipeline produce — writes artifacts/dummy-pipe-a.txt
+command: python
+args: ["scripts/dummy_pipe_produce.py", "--out", "artifacts/dummy-pipe-a.txt", "--value", "ok"]
+wall_clock_cap_sec: 60
+priority: 45
+enabled: false
+group: tqdemo/pipe
+tags: [pipe]
+resources:
+  cpu_cores: 1
+dispatch: local

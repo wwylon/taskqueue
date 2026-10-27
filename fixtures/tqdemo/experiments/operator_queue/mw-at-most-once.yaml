@@ -1,0 +1,7 @@
+task_id: mw-at-most-once
+command: python
+args: ["-c", "import time; print('slow'); time.sleep(120); print('(100.0%)')"]
+dispatch: remote
+execution_semantics: at_most_once
+priority: 10
+wall_clock_cap_sec: 300

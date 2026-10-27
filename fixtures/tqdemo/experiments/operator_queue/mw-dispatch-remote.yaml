@@ -1,0 +1,5 @@
+task_id: mw-dispatch-remote
+command: python
+args: ["-c", "print('remote-preferred')"]
+dispatch: remote
+priority: 10

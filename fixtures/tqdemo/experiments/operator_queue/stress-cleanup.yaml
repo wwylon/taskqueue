@@ -1,0 +1,11 @@
+task_id: stress-cleanup
+description: "remove all stress-* tasks and run history from the live DB"
+command: python
+args: ["scripts/stress_cleanup.py"]
+wall_clock_cap_sec: 30
+priority: 99
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.1
+dispatch: local

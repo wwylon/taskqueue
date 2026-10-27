@@ -1,0 +1,11 @@
+task_id: test-stress
+description: "stress + edge-case tests: 1500 tasks, 50 projects, 100 MB log, rapid retry, worker disconnect, migrations"
+command: python
+args: ["scripts/run_pytest.py", "tests/test_stress.py"]
+wall_clock_cap_sec: 300
+priority: 50
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.5
+dispatch: local

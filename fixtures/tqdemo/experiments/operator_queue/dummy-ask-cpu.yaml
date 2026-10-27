@@ -1,0 +1,11 @@
+task_id: dummy-ask-cpu
+description: Over-ask CPU so scheduler rejects without machine stress
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "0.5", "--label", "ask-cpu"]
+wall_clock_cap_sec: 60
+priority: 90
+enabled: true
+resources:
+  cpu_cores: 9999
+  ram_gib: 0.1
+dispatch: local

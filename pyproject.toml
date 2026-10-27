@@ -1,0 +1,72 @@
+[project]
+name = "taskqueue"
+version = "0.7.4"
+description = "Local resource-aware task queue daemon (CLI, web UI, MCP, remote workers)"
+license = "MIT"
+readme = "README.md"
+authors = [{ name = "taskqueue contributors" }]
+keywords = ["task-queue", "scheduler", "mcp", "daemon"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "psutil>=5.9",
+    "pyyaml>=6.0",
+    "pynvml>=11.0",
+]
+
+[project.optional-dependencies]
+toast = ["winotify>=1.1.0"]
+
+[project.urls]
+Homepage = "https://github.com/wwylon/taskqueue"
+Repository = "https://github.com/wwylon/taskqueue"
+Issues = "https://github.com/wwylon/taskqueue/issues"
+Documentation = "https://github.com/wwylon/taskqueue/tree/main/docs"
+
+[project.scripts]
+tq = "taskqueue.cli:main"
+taskqueue = "taskqueue.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["taskqueue"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs" = "taskqueue/_docs"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line too long (handled by formatter separately)
+    "F401",   # imported but unused (star imports in cli.py are intentional)
+    "F403",   # star import
+    "F811",   # redefinition from star import
+    "E402",   # module import not at top (deferred imports throughout)
+    "F405",   # names from the intentional star imports in cli.py
+    "I001",   # import order: not enforced yet (one mechanical reformat pending)
+    "E702",   # compact `x = a; i += 2` argument-loop style
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "stress: optional slow/heavy fixtures (not run in default CI)",
+    "slow: >5 s each (process-table scans, compilers, large fixtures); skip with -m 'not slow' for a quick run",
+]

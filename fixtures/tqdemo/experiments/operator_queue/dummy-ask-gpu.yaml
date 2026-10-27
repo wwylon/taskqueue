@@ -1,0 +1,11 @@
+task_id: dummy-ask-gpu
+description: Over-ask GPU VRAM so scheduler rejects without machine stress
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "0.5", "--label", "ask-gpu"]
+wall_clock_cap_sec: 60
+priority: 90
+enabled: true
+resources:
+  cpu_cores: 1
+  gpu_vram_gib: 9999.0
+dispatch: local

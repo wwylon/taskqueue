@@ -1,0 +1,5 @@
+task_id: mw-dispatch-local
+command: python
+args: ["-c", "print('local-only')"]
+dispatch: local
+priority: 10

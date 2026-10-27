@@ -1,0 +1,10 @@
+task_id: dummy-frozen
+description: Progress once then hang — freeze detection fixture
+command: python
+args: ["scripts/dummy_hang.py", "--hang-sec", "3600"]
+wall_clock_cap_sec: 7200
+priority: 80
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

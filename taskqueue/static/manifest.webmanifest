@@ -1,0 +1,10 @@
+{
+  "name": "tq — task queue",
+  "short_name": "tq",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f2937",
+  "icons": [{ "src": "/favicon.ico", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

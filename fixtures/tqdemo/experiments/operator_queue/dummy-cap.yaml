@@ -1,0 +1,10 @@
+task_id: dummy-cap
+description: Hits wall_clock_cap_sec (short cap, long hold)
+command: python
+args: ["scripts/dummy_hang.py", "--hang-sec", "120"]
+wall_clock_cap_sec: 2
+priority: 60
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

@@ -1,0 +1,40 @@
+# CI POSTPONED 2026-08-28 — GitHub Actions billing / spending limit exhausted.
+# Auto triggers (push/pull_request/schedule/etc.) removed so this does not burn Actions minutes.
+# Manual `workflow_dispatch` kept for optional resume after billing is restored.
+# See plan note: CI_POSTPONED.md under plan/ or plan/ops/.
+#
+
+name: ci
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"   # Node behaviour tests for the web UI modules
+      - name: Lint
+        run: |
+          uv sync --group dev
+          uv run ruff check taskqueue/ tests/
+      - name: Generated docs and help are current
+        run: |
+          uv run python scripts/build_docs.py --check
+          uv run python scripts/check_docs.py
+      - name: Test
+        run: uv run pytest -q -m "not stress"
+      - name: Example YAML lint smoke
+        run: |
+          uv run python -c "from pathlib import Path; import yaml; p=Path('examples/minimal/experiments/operator_queue'); assert any(p.glob('*.yaml'))"

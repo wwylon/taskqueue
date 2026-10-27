@@ -1,0 +1,12 @@
+task_id: dummy-resume
+description: Checkpoint + resume_args fixture
+command: python
+args: ["scripts/dummy_resume.py", "--out-dir", "checkpoints/dummy-resume", "--steps", "10", "--sleep", "0.15"]
+resume_args: ["scripts/dummy_resume.py", "--out-dir", "checkpoints/dummy-resume", "--steps", "10", "--sleep", "0.15", "--resume"]
+wall_clock_cap_sec: 120
+priority: 50
+enabled: true
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

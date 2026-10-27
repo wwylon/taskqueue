@@ -1,0 +1,11 @@
+task_id: dummy-deps-b
+description: Dependency chain B — waits for dummy-deps-a
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "0.5", "--label", "deps-b"]
+depends_on: [dummy-deps-a]
+wall_clock_cap_sec: 60
+priority: 41
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local

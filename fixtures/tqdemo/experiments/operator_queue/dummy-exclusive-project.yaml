@@ -1,0 +1,11 @@
+task_id: dummy-exclusive-project
+description: Per-project exclusive gating — solo within tqdemo only
+command: python
+args: ["scripts/dummy_hold.py", "--seconds", "2", "--label", "exclusive_project"]
+exclusive_project: true
+wall_clock_cap_sec: 60
+priority: 50
+enabled: true
+resources:
+  cpu_cores: 1
+dispatch: local
