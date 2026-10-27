@@ -32,7 +32,16 @@ tq sync
 tq status
 ```
 
-The example task has `enabled: true` already set, so it will queue immediately after sync.
+The sample YAML ships with `enabled: false`. Enable it, then sync:
+
+```powershell
+tq patch myapp/hello-progress enabled=true
+tq sync
+```
+
+(Or set `enabled: true` in the YAML before the first sync.)
+
+If the task stays `waiting` with `tq.block.resources`, the host is over the soft RAM gate — check `tq why <project>/<task>` / `tq doctor`. On a busy machine you can temporarily raise the soft limit (`tq config set ram_limit_pct=95`) or free RAM.
 
 > **Note:** `enabled: true` in a YAML **does not re-queue a task that has already finished** (`completed`, `failed`, `interrupted`, …). To re-run a terminal task, use `tq retry project/task_id`. Toggling `enabled` only affects non-terminal tasks (e.g. `disabled` → `queued`).
 

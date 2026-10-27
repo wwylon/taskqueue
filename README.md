@@ -124,6 +124,16 @@ uv run tq list
 
 Drop an enabled YAML under `<project>/experiments/operator_queue/`; the daemon syncs every ~60s (or run `tq sync`).
 
+**Try the bundled sample:** register `examples/minimal` as a project (see [`examples/minimal/README.md`](examples/minimal/README.md)), then:
+
+```powershell
+uv run tq sync
+uv run tq patch minimal/hello-progress enabled=true
+uv run tq wait minimal/hello-progress --timeout 60
+```
+
+(The sample YAML ships `enabled: false` so it does not run until you patch or edit it.)
+
 ## Publish / security (Slice H)
 
 * Default bind is **`127.0.0.1`** (`tq config set bind_host=0.0.0.0` only when intentional).

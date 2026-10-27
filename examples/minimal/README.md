@@ -14,6 +14,8 @@ Then:
 ```powershell
 tq sync
 tq patch minimal/hello-progress enabled=true
-tq status
-tq diagnose minimal/hello-progress
+tq wait minimal/hello-progress --timeout 60
+tq result minimal/hello-progress
 ```
+
+If it stays `waiting` / `tq.block.resources`, run `tq why minimal/hello-progress` (busy hosts often need `tq config set ram_limit_pct=95` or free RAM).
