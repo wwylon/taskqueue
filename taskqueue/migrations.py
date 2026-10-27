@@ -322,7 +322,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     # F-034: keys in VALID_CONFIG_KEYS that need defaults to survive restart
     "notify_on_attention": 0,
     "toast_notifications": 0,
-    # --- admission control (plan/archive/scheduler_resources.md) ---
+    # --- admission control ---
     # Floor estimate for tasks that declare no ram_gib and have no run history,
     # so an undeclared task is never accounted as free.
     "default_task_ram_gib": 1.0,
