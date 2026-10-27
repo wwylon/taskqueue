@@ -14,7 +14,7 @@ with the ``TASKQUEUE_HOME`` environment variable):
 
     projects:
       pokerbot:
-        root: D:\\antigravity\\pokerbot
+        root: /path/to/pokerbot
         queue_dir: experiments/operator_queue     # optional, this is the default
 """
 
