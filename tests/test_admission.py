@@ -1,6 +1,6 @@
 """Admission control: estimation, additive gates, staggering, victim choice.
 
-Covers plan/archive/scheduler_resources.md. The incident these guard against: three
+Admission-control regression tests. The incident these guard against: three
 tasks declaring no resources were admitted in one scheduler tick, each then
 used ~5 GiB plus GPU, and the host thrashed.
 """

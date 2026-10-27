@@ -371,7 +371,7 @@ MCP does not expose suite/group retry or `--downstream` yet — use CLI for thos
 2. **Choose B or C:** pre-author both with `enabled: false`; after `drain_notifications`, `patch_task` with `{"enabled": true}` on **one** winner (or `enqueue_task` / `retry_task` if already terminal).
 3. **Re-run a bunch:** CLI `tq suite retry <suite>` / `tq group retry <project> <group>` (includes completed) or `tq retry project/root --downstream`.
 
-See [`task_standards.md`](task_standards.md) § Dependency Management and `devkit/rules/queue.md` § Pipelines.
+See [`task_standards.md`](task_standards.md) § Dependency Management and [devkit queue rules](https://github.com/wwylon/devkit/blob/main/rules/queue.md) § Pipelines.
 
 ### `patch_task`
 

@@ -9,4 +9,4 @@ Bootstrap constraints: [AGENTS.md](../../AGENTS.md)
 
 Shared references: [task standards](../task_standards.md) · [errors](../errors.md)
 
-Behavior rules (when to enqueue): sibling `devkit/rules/queue.md`
+Behavior rules (when to enqueue): [devkit `rules/queue.md`](https://github.com/wwylon/devkit/blob/main/rules/queue.md) (optional companion repo)

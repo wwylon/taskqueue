@@ -25,7 +25,7 @@ projects:
 
 ## First task
 
-Copy [`examples/minimal/experiments/operator_queue/`](../examples/minimal/) into your project, then:
+Copy [`examples/minimal/experiments/operator_queue/`](../../examples/minimal/) into your project, then:
 
 ```powershell
 tq sync
@@ -76,4 +76,4 @@ See [task_standards.md](/docs/task-standards) §4 for `requires` constraints and
 - [Task standards](/docs/task-standards) — YAML field reference
 - [Agent recipes](/docs/agents) — MCP workflows
 - [Error codes](/docs/errors) — what `block_reason` and `last_error_code` mean
-- [Examples](../examples/README.md) — minimal and pipeline samples
+- [Examples](../../examples/README.md) — minimal and pipeline samples

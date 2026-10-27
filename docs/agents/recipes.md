@@ -103,4 +103,4 @@ To block until a task finishes, use MCP `wait_for_task` (short `timeout_sec`, re
 
 When YAML sets `notify_url` (external webhook), `drain_notifications` also returns the end-of-run event.
 
-See sibling [devkit/rules/queue.md](../../devkit/rules/queue.md) for when to enqueue vs run in-session.
+Long jobs belong in YAML + `tq sync`; keep short interactive work in-session. See also [taskqueue companion rules](https://github.com/wwylon/devkit/blob/main/rules/queue.md) in the publicdevkit repo.

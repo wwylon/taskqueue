@@ -1,4 +1,4 @@
-"""Stress and edge-case tests (plan/archive/problems2.md scenarios 1–6).
+"""Stress and edge-case tests (historical scenarios 1–6).
 
 Scenarios covered:
   1. High task count (1000+ queued) — fair-share stability, no DB lock errors

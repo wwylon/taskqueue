@@ -37,7 +37,7 @@ _CORE_CONFIG_KEYS = (
     # Also in VALID_CONFIG_KEYS (string / enum). Listed here so _seed_config
     # does not prune them on restart (F-034).
     "notify_url", "frozen_action", "limit_decrease_policy",
-    # Admission control (plan/archive/scheduler_resources.md) — must be listed here or
+    # Admission-control columns — must be listed here or
     # _seed_config prunes them on every restart (F-034).
     "default_task_ram_gib", "resource_predict_runs",
     "admit_max_per_tick", "admit_settle_sec", "max_concurrent_unknown",

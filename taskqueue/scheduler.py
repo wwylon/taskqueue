@@ -1935,7 +1935,7 @@ def _local_admit_queued_body(
         )
     _contended_by: list[str] = []
     budget = ResourceBudget(system_info, cfg)
-    # Admission-control knobs (plan/archive/scheduler_resources.md).
+    # Admission-control knobs.
     _default_ram = float(cfg.get("default_task_ram_gib", 1.0))
     _predict_runs = int(cfg.get("resource_predict_runs", 5))
     _max_unknown = int(cfg.get("max_concurrent_unknown", 1))
