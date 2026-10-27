@@ -2,13 +2,16 @@
 
 MCP-first workflows. Tool schemas: call `tools/list` on `tq mcp` or see [mcp.md](/docs/mcp).
 
-**Hard constraints:** do not invent YAML keys; MCP cannot create new tasks (write YAML + `tq sync`); long jobs belong in operator queue YAMLs, not in-session shells.
+**Hard constraints:** do not invent YAML keys; long jobs belong in the operator
+queue (not in-session shells). Prefer MCP `submit_task` to create; use
+`enqueue_task` / `retry_task` only to **re-queue** an existing terminal task.
 
 ## Session start
 
 ```json
 {"name": "queue_status", "arguments": {}}
 {"name": "capacity", "arguments": {}}
+{"name": "list_projects", "arguments": {}}
 {"name": "attention_list", "arguments": {"project": "YOUR_PROJECT"}}
 ```
 
@@ -16,15 +19,19 @@ Set `TQ_OPERATOR` in MCP env so `my_tasks` attribution works.
 
 ## Create a new task
 
-MCP **cannot** create tasks. Write a YAML to the project's queue directory and sync:
+**Preferred (MCP):** `list_projects` → `submit_task` → follow `next` / `wait_for_task`.
 
-```powershell
-# 1. Write YAML to <project_root>/experiments/operator_queue/<task_id>.yaml
-# 2. Sync so the daemon picks it up
-tq sync
-# 3. Confirm it appeared
-tq list --project myproject
+```json
+{
+  "name": "submit_task",
+  "arguments": {
+    "project": "myproject",
+    "yaml_text": "task_id: my-task\ncommand: python\nargs: [scripts/train.py]\nwall_clock_cap_sec: 3600\nenabled: true\n"
+  }
+}
 ```
+
+**CLI / file path:** write YAML under `<project_root>/experiments/operator_queue/`, then `tq sync` / `tq list`.
 
 Minimal YAML:
 ```yaml
@@ -32,10 +39,11 @@ task_id: my-task
 command: python
 args: [scripts/train.py]
 wall_clock_cap_sec: 3600
+enabled: true
 ```
 
-Full field reference: [task_standards.md](/docs/task-standards).
-
+Full field reference: [task_standards.md](/docs/task-standards). Detail:
+[Creating a new task](../mcp.md#creating-a-new-task-agent-workflow) in `mcp.md`.
 ## Monitor my work
 
 ```json

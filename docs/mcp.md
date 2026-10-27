@@ -95,9 +95,10 @@ so attribution filters work.
 
 ## Tools
 
-Most tools are read-only; the write tools (`enqueue_task`, `patch_task`,
-`retry_task`, `stop_task`) perform the same operations as the CLI equivalents.
-Call `tools/list` to get the live schema; the table below is a quick reference.
+Most tools are read-only; the write tools (`submit_task`, `submit_matrix`,
+`enqueue_task` / `retry_task`, `patch_task`, `stop_task`) perform the same
+operations as the CLI equivalents. Call `tools/list` to get the live schema;
+the table below is a quick reference.
 
 ### `my_tasks`
 
@@ -346,6 +347,29 @@ overlay was applied.
 
 These tools mutate queue state. Use with the same care as the CLI equivalents.
 
+### `submit_task` — create a new task (preferred MCP path)
+
+Post full task YAML to the master (`/api/cli/add`) **without** writing a file first.
+Equivalent to `tq submit` / `tq add` with inline YAML. Use this when the agent is
+MCP-first and should not depend on shell/`tq sync`.
+
+| Arg | Required | Notes |
+|-----|----------|-------|
+| `project` | **yes** | Registered project name (`list_projects`) |
+| `yaml_text` | **yes** | Full YAML body (`task_id`, `command`, …) — see `docs/task_standards.md` |
+| `filename` | no | Hint; default `submitted_*.yaml` under the project's queue dir |
+| `wait` | no | If true, also run `wait_for_task` logic; result gains a `wait` object |
+| `timeout_sec` | no | With `wait`: max seconds (default 60, cap ~100) |
+
+→ `{"ok", "task_ids", "errors": [{"field","message"}], "next"?}`. On success,
+`next` is a ready-made `wait_for_task` call (unless you already passed `wait`).
+
+### `submit_matrix` — create many variants
+
+Same as `submit_task`, but builds a matrix from `base_yaml` + `params` list
+(injected as `matrix: [...]`). Returns `{ok, task_ids, errors}`. Also accepts
+`wait` / `timeout_sec`.
+
 ### `enqueue_task` / `retry_task` — re-queue an existing terminal task
 
 Re-queue a task that **already exists** and has reached a terminal state (`failed` / `interrupted` / `stopped` / `completed`). Equivalent to `tq retry project/task_id`. `retry_task` is an alias.
@@ -354,7 +378,10 @@ Re-queue a task that **already exists** and has reached a terminal state (`faile
 
 Wall-clock cap hits land as `interrupted` + `tq.run.cap`. Checkpointable tasks may set YAML `auto_retry_on_cap: true` so the daemon re-queues without an MCP/CLI call; otherwise call `retry_task` after a cap.
 
-> **This tool cannot create a new task.** To create a new task, write a YAML file to `<project_root>/experiments/operator_queue/` and call `tq sync` (or wait up to 60 s for auto-sync). See the [Creating a new task](#creating-a-new-task-agent-workflow) section below.
+> **`enqueue_task` / `retry_task` cannot create a new task.** To create one, use
+> [`submit_task`](#submit_task--create-a-new-task-preferred-mcp-path) or write a
+> YAML under the project's queue dir and `tq sync` — see
+> [Creating a new task](#creating-a-new-task-agent-workflow).
 
 | Arg | Required |
 |-----|----------|
@@ -390,8 +417,6 @@ Use `max_attempts: 0` (or a higher budget) when a task is stuck after
 `max_attempts=N reached` (status `failed`), then `retry_task` / `tq retry`.
 Setting `enabled: true` on a **terminal** task (`completed` / `failed` / …) does **not** re-queue it — call `retry_task` / `tq retry`. Prefer CLI `tq result project/task` for the final log line (no MCP equivalent yet); `tq list --json` exposes `enabled` and `progress_pct`.
 
-Setting `enabled: true` on a **terminal** task (`completed` / `failed` / …) does **not** re-queue it — call `retry_task` / `tq retry`. Prefer CLI `tq result project/task` for the final log line (no MCP equivalent yet); `tq list --json` exposes `enabled` and `progress_pct`.
-
 ### `stop_task`
 
 Request cooperative stop of a running task (writes `tq.stop` control file). The task must honour SIGTERM / the control file — it is not force-killed. Equivalent to `tq stop project/task_id`. A **queued** task is cancelled instead (status `interrupted`), like the web UI Stop; that needs the daemon to be reachable.
@@ -412,16 +437,43 @@ Request cooperative stop of a running task (writes `tq.stop` control file). The 
 
 ## Creating a new task (agent workflow)
 
-MCP has no "create task" tool — new tasks are always YAML files on disk.
+Two supported paths (same YAML contract — `docs/task_standards.md`):
 
-1. **Find the project root.** Run `tq projects` (CLI) or read `~/.taskqueue/projects.yaml`. There is no MCP equivalent.
-2. **Write a YAML file** conforming to `docs/task_standards.md` into `<project_root>/experiments/operator_queue/<task_id>.yaml`. Set `enabled: true`.
-3. **Trigger sync:** run `tq sync` or wait up to 60 s for auto-sync.
-4. **Confirm:** use MCP `queue_status` (check task counts) or `my_tasks` (requires `TQ_OPERATOR` — see below).
+### A. MCP `submit_task` (preferred when MCP is configured)
 
-**Attribution (`started_by`):** set `TQ_OPERATOR` in the environment before syncing. If it is unset at sync time, `started_by` is recorded as an empty string and `my_tasks` will not find your tasks — use `attention_list` with a `project` filter as fallback.
+1. **`list_projects`** — pick `project` (and note `root` / `queue_dir`).
+2. **`submit_task`** with `project` + `yaml_text` (include `task_id`, `command`,
+   `args`, `wall_clock_cap_sec`; set `enabled: true` unless you mean to park it).
+3. Follow the returned `next` → **`wait_for_task`** (short `timeout_sec`, repeat
+   on `timed_out`), then **`task_result`**.
 
-**Waiting for completion (preferred):** after `tq sync`, call
+```json
+{
+  "name": "submit_task",
+  "arguments": {
+    "project": "myproject",
+    "yaml_text": "task_id: my-task\ncommand: python\nargs: [scripts/train.py]\nwall_clock_cap_sec: 3600\nenabled: true\n"
+  }
+}
+```
+
+### B. File on disk + `tq sync` (CLI / editors)
+
+1. **Find the project root.** MCP `list_projects`, or CLI `tq projects`, or
+   `~/.taskqueue/projects.yaml`.
+2. **Write** `<project_root>/<queue_dir>/<task_id>.yaml` (default queue dir
+   `experiments/operator_queue/`). Set `enabled: true`.
+3. **`tq sync`** (or wait up to ~60 s for auto-sync).
+4. **Confirm** with `queue_status` / `my_tasks` / `tq list`.
+
+**Do not confuse with `enqueue_task`:** that tool only re-queues an *existing*
+terminal task (`tq retry`). It cannot create.
+
+**Attribution (`started_by`):** set `TQ_OPERATOR` in the MCP/CLI environment
+before submit/sync. If unset, `started_by` is empty and `my_tasks` will not find
+your tasks — use `attention_list` with a `project` filter as fallback.
+
+**Waiting for completion (preferred):** after create/retry, call
 `wait_for_task(project, task_id, timeout_sec=60)`; if `timed_out`, call it
 again; when settled call `task_result`. CLI equivalent:
 `tq wait project/task_id [more keys | --suite S | --group G | --tag T | --mine] [--any] [--timeout N] [--json]`
@@ -432,8 +484,8 @@ old single-task behaviour). In Claude Code, run `tq wait …` with
 a watcher, not a long job, so it does not violate the "no background shell
 jobs" rule.
 
-To make this the default habit, `submit_task` / `submit_matrix` (without
-`wait`) and `retry_task` / `enqueue_task` (on success) return a `next` object:
+`submit_task` / `submit_matrix` (without `wait`) and `retry_task` /
+`enqueue_task` (on success) return a `next` object:
 `{"tool": "wait_for_task", "arguments": {...}, "cli": "tq wait … --timeout 3600", "note": …}`.
 The CLI prints the same as a `Next: tq wait …` line on **stderr** after
 `tq sync`, `tq add` / `tq submit` and `tq retry`; set `TQ_NO_HINTS=1` to hide it.
