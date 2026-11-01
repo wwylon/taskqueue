@@ -33,6 +33,4 @@ def test_help_bundle_not_stale():
     regenerated = build_help_bundle("en")
     committed_s = json.dumps(committed, ensure_ascii=False, sort_keys=True)
     regenerated_s = json.dumps(regenerated, ensure_ascii=False, sort_keys=True)
-    assert committed_s == regenerated_s, (
-        "help-bundle.en.json is stale — run: uv run python scripts/build_docs.py"
-    )
+    assert committed_s == regenerated_s, "help-bundle.en.json is stale — run: uv run python scripts/build_docs.py"

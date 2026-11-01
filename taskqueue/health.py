@@ -8,6 +8,7 @@ Acknowledging stores a timestamp in ``{TASKQUEUE_HOME}/health_ack.json``; failur
 or before it drop from red to amber until they are retried, disabled or removed.
 Disabled tasks (``enabled = 0``) are shelved on purpose and never count.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,15 +24,15 @@ FAILED_STATUSES = ("failed", "unknown")
 _SAMPLE = 5
 
 # Emoji carry the colour where ANSI cannot (browser tab titles, notifications).
-LEVEL_ICONS = {"red": "\U0001F534", "amber": "\U0001F7E0", "green": "\U0001F7E2"}  # 🔴 🟠 🟢
+LEVEL_ICONS = {"red": "\U0001f534", "amber": "\U0001f7e0", "green": "\U0001f7e2"}  # 🔴 🟠 🟢
 PART_ICONS = {
-    "daemon_down": "\U0001F480",      # 💀
-    "new_failed": "❌",           # ❌
-    "failed": "⚠️",         # ⚠️
-    "frozen": "\U0001F9CA",           # 🧊
-    "interrupted": "⏸️",    # ⏸️
-    "running": "▶️",        # ▶️
-    "queued": "⏳",               # ⏳
+    "daemon_down": "\U0001f480",  # 💀
+    "new_failed": "❌",  # ❌
+    "failed": "⚠️",  # ⚠️
+    "frozen": "\U0001f9ca",  # 🧊
+    "interrupted": "⏸️",  # ⏸️
+    "running": "▶️",  # ▶️
+    "queued": "⏳",  # ⏳
 }
 _PLAIN_LEVEL = {"red": "[!!]", "amber": "[! ]", "green": "[ok]"}
 _ANSI = {"red": "\033[31m", "amber": "\033[33m", "green": "\033[32m"}
@@ -98,11 +99,7 @@ def compute_health(
         elif status == "queued":
             queued += 1
 
-    level = (
-        "red" if daemon_up is False or new_failed
-        else "amber" if failed or interrupted or frozen
-        else "green"
-    )
+    level = "red" if daemon_up is False or new_failed else "amber" if failed or interrupted or frozen else "green"
     acked = len(failed) - len(new_failed)
     parts = [
         {"kind": kind, "count": n, "text": text}
@@ -149,8 +146,7 @@ def format_line(health: dict[str, Any], *, icons: bool = True, color: bool = Fal
     live = [("running", c["running"]), ("queued", c["queued"])]
     if icons:
         problems = " ".join(
-            PART_ICONS[p["kind"]] + ("" if p["kind"] == "daemon_down" else str(p["count"]))
-            for p in health["parts"]
+            PART_ICONS[p["kind"]] + ("" if p["kind"] == "daemon_down" else str(p["count"])) for p in health["parts"]
         )
         activity = " ".join(f"{PART_ICONS[k]}{n}" for k, n in live if n)
         sep = "·" if problems and activity else ""

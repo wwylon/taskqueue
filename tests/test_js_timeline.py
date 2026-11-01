@@ -1,4 +1,5 @@
 """Behavior tests for views/timeline.js (Gantt SVG, stale handling, tick generation)."""
+
 from __future__ import annotations
 
 import json
@@ -7,12 +8,37 @@ from tests.test_js_app import run_js
 from tests.test_js_smoke import EV
 
 DATA = {
-    "window_start": "2026-01-01T10:00:00", "span_sec": 3600, "bunch_end_at": "2026-01-01T10:40:00",
+    "window_start": "2026-01-01T10:00:00",
+    "span_sec": 3600,
+    "bunch_end_at": "2026-01-01T10:40:00",
     "bars": [
-        {"project": "p", "task_id": "t<1>", "status": "running", "kind": "running", "start_sec": 0, "end_sec": 1200,
-         "start_at": "2026-01-01T10:00:00", "end_at": "2026-01-01T10:20:00", "duration_sec": 1200, "estimate_source": "history", "priority": 3},
-        {"project": "p", "task_id": "t2", "status": "queued", "kind": "queued", "start_sec": 1200, "end_sec": 2400,
-         "start_at": "2026-01-01T10:20:00", "end_at": "2026-01-01T10:40:00", "duration_sec": 1200, "estimate_source": "default", "priority": 0, "clipped": True},
+        {
+            "project": "p",
+            "task_id": "t<1>",
+            "status": "running",
+            "kind": "running",
+            "start_sec": 0,
+            "end_sec": 1200,
+            "start_at": "2026-01-01T10:00:00",
+            "end_at": "2026-01-01T10:20:00",
+            "duration_sec": 1200,
+            "estimate_source": "history",
+            "priority": 3,
+        },
+        {
+            "project": "p",
+            "task_id": "t2",
+            "status": "queued",
+            "kind": "queued",
+            "start_sec": 1200,
+            "end_sec": 2400,
+            "start_at": "2026-01-01T10:20:00",
+            "end_at": "2026-01-01T10:40:00",
+            "duration_sec": 1200,
+            "estimate_source": "default",
+            "priority": 0,
+            "clipped": True,
+        },
         {"task_id": "nightly", "kind": "cron", "start_sec": 3000, "end_sec": 3600, "duration_sec": 600},
     ],
 }

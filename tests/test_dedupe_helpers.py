@@ -1,4 +1,5 @@
 """Shared helpers behind retry_task / retry batch and the excess-running stops."""
+
 from __future__ import annotations
 
 from taskqueue import scheduler
@@ -35,9 +36,7 @@ def test_stop_excess_stops_only_up_to_excess_and_survives_errors(monkeypatch, ca
 
     monkeypatch.setattr(db, "request_stop_with_control", stop)
     rows = [{"project": "a", "task_id": str(i)} for i in (1, 2, 3, 4)]
-    n = scheduler._stop_excess(
-        None, None, rows, 2, lambda p, t, left: f"stopping {p}/{t} left={left}", "excess-stop"
-    )
+    n = scheduler._stop_excess(None, None, rows, 2, lambda p, t, left: f"stopping {p}/{t} left={left}", "excess-stop")
     assert calls == [("a", "1"), ("a", "2"), ("a", "3")] and n == 2
     err = capsys.readouterr().err
     assert "stopping a/1 left=2" in err and "warn: excess-stop a/2" in err
@@ -111,8 +110,10 @@ def test_restartability_levels(tmp_path):
     db.execute("UPDATE tasks SET resume_args='[\"--r\"]' WHERE task_id='res'")
     seed_queued_task(db, project="p", task_id="plain", dispatch="local")
     db.commit()
+
     def row(t):
         return db.execute("SELECT * FROM tasks WHERE task_id=?", (t,)).fetchone()
+
     assert _restartability(row("idem")) == 1.0
     assert _restartability(row("res")) == 0.6
     assert _restartability(row("plain")) == 0.0

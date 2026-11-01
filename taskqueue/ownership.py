@@ -33,6 +33,4 @@ def ownership_from_qs(conn: sqlite3.Connection, proj: str, task_id: str, qs: dic
     """HTTP query-string variant (?operator=&force=)."""
     operator = (qs.get("operator", [None])[0] or "").strip() or None
     force = qs.get("force", ["0"])[0] in ("1", "true", "yes")
-    return enforce_ownership(
-        conn, proj, task_id, operator=operator, force=force, log_prefix="[queue]"
-    )
+    return enforce_ownership(conn, proj, task_id, operator=operator, force=force, log_prefix="[queue]")

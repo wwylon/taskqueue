@@ -18,7 +18,9 @@ def test_snapshot_served_and_removed(tmp_path, monkeypatch):
     src.commit()
     src.close()
     proj = Project(name="proj", root=root, queue_dir=root / "q")
-    H, db, _ = make_handler_env(tmp_path / "h", {"proj": proj}) if (tmp_path / "h").mkdir() is None else (None, None, None)
+    H, db, _ = (
+        make_handler_env(tmp_path / "h", {"proj": proj}) if (tmp_path / "h").mkdir() is None else (None, None, None)
+    )
     now = datetime.now(UTC).isoformat()
     db.execute(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at) VALUES ('proj','T','x','running',?,?)",
@@ -33,6 +35,8 @@ def test_snapshot_served_and_removed(tmp_path, monkeypatch):
     # Paths outside data/ (or data.inputs) are rejected (Round 12 snapshot allowlist).
     bad, _ = http_request(H, "GET", f"/api/data/snapshot/{rid}/secret.db", extra_headers={"X-TQ-Finalize-Token": "tok"})
     assert bad == 403
-    status, body = http_request(H, "GET", f"/api/data/snapshot/{rid}/data/d.db", extra_headers={"X-TQ-Finalize-Token": "tok"})
+    status, body = http_request(
+        H, "GET", f"/api/data/snapshot/{rid}/data/d.db", extra_headers={"X-TQ-Finalize-Token": "tok"}
+    )
     assert status == 200
     assert not list((home / "snapshots").glob("*"))

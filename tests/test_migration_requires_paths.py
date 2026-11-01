@@ -9,9 +9,7 @@ from taskqueue.db import open_db
 
 
 def _paths(db, project: str, task_id: str) -> list[str]:
-    row = db.execute(
-        "SELECT requires_paths FROM tasks WHERE project=? AND task_id=?", (project, task_id)
-    ).fetchone()
+    row = db.execute("SELECT requires_paths FROM tasks WHERE project=? AND task_id=?", (project, task_id)).fetchone()
     return json.loads(row["requires_paths"])
 
 

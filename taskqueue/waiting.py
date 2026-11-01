@@ -3,6 +3,7 @@
 One definition of terminal statuses, one selector resolver, one polling loop.
 Reads go straight to SQLite (WAL) like the other read paths; no writes happen here.
 """
+
 from __future__ import annotations
 from taskqueue.jsonutil import json_list
 
@@ -13,10 +14,7 @@ from typing import Any
 
 # Finished: the task will not change again without an explicit retry.
 from taskqueue._db_tasks import get_task_status
-from taskqueue.statuses import TERMINAL_STATUSES  # single source of truth
-# Will not run until someone enables it; waiting on it would hang forever.
-STALLED_STATUSES = frozenset({"disabled"})
-SETTLED_STATUSES = TERMINAL_STATUSES | STALLED_STATUSES
+from taskqueue.statuses import SETTLED_STATUSES, STALLED_STATUSES, TERMINAL_STATUSES  # noqa: F401
 
 # Exit codes for ``tq wait`` (documented in docs/errors.md).
 EXIT_OK = 0
@@ -172,6 +170,7 @@ def snapshot_one(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
     status = r["status"]
     last = r["last_log_line"]
     from taskqueue._db_tasks import run_summary
+
     return {
         **run_summary(conn, project, task_id),
         "key": key,
@@ -209,6 +208,19 @@ def wait_for(
     """
     if mode not in ("all", "any"):
         raise ValueError("mode must be 'all' or 'any'")
+    # F-197: empty selection is not success — callers mistype suite/project.
+    if not keys:
+        return {
+            "ok": False,
+            "done": False,
+            "timed_out": False,
+            "mode": mode,
+            "waited_sec": 0.0,
+            "tasks": [],
+            "pending": [],
+            "not_found": [],
+            "error": "empty selection: no task keys to wait for",
+        }
     started = clock()
     deadline = started + timeout_sec if timeout_sec and timeout_sec > 0 else None
     interval = min(1.0, poll_sec) if poll_sec > 0 else 1.0
@@ -226,9 +238,7 @@ def wait_for(
                     tasks.append(snap)
             settled = [t for t in tasks if t["settled"]]
             pending = [t["key"] for t in tasks if not t["settled"]]
-            if not keys:
-                done = True
-            elif not_found and not tasks:
+            if not_found and not tasks:
                 done = True
             elif mode == "any":
                 done = bool(settled)

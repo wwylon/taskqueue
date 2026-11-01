@@ -1,4 +1,5 @@
 """Round 12 Wave A: F-137–F-141."""
+
 from __future__ import annotations
 
 import json
@@ -46,12 +47,14 @@ def test_f137_cpu_budget_is_max_of_ema_and_declared(monkeypatch) -> None:
 
 
 def test_f139_parse_worker_load_keeps_gpu_free_and_merges() -> None:
-    load = parse_worker_load({
-        "ram_used_gib": 10.0,
-        "vram_used_gib": 3.0,
-        "cpu_used": 2.0,
-        "gpu_free": [{"vram_free_gib": 5.0}, {"vram_free_gib": 1.5}],
-    })
+    load = parse_worker_load(
+        {
+            "ram_used_gib": 10.0,
+            "vram_used_gib": 3.0,
+            "cpu_used": 2.0,
+            "gpu_free": [{"vram_free_gib": 5.0}, {"vram_free_gib": 1.5}],
+        }
+    )
     assert load["ram_used_gib"] == 10.0
     assert load["gpu_free"][0]["vram_free_gib"] == 5.0
     worker = {
@@ -61,10 +64,12 @@ def test_f139_parse_worker_load_keeps_gpu_free_and_merges() -> None:
         "ram_gib": 64.0,
         "cpu_cores": 16,
         "gpu_vram_gib": 24.0,
-        "gpus_json": json.dumps([
-            {"index": 0, "vram_gib": 12.0, "vram_used_gib": 0.0},
-            {"index": 1, "vram_gib": 12.0, "vram_used_gib": 0.0},
-        ]),
+        "gpus_json": json.dumps(
+            [
+                {"index": 0, "vram_gib": 12.0, "vram_used_gib": 0.0},
+                {"index": 1, "vram_gib": 12.0, "vram_used_gib": 0.0},
+            ]
+        ),
         "tags": "[]",
         "projects": "[]",
         "load_json": json.dumps(load),

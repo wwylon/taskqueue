@@ -1,4 +1,4 @@
-// Minimal DOM stub + loader that runs the real static/js modules and the classic app.js in one Node context.
+// Minimal DOM stub + loader that runs the real static/js modules (and optional tqBootApp) in one Node context.
 // No jsdom (it would need npm install); elements are permissive recorders, enough for behavior/smoke tests.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -148,7 +148,7 @@ export class Doc {
 }
 
 /**
- * Install browser globals, import js/main.js and (optionally) evaluate app.js as a classic script.
+ * Install browser globals, import js/main.js and (optionally) run tqBootApp (was classic app.js).
  * `routes` maps URL substring -> JSON (or function(url, opts) -> JSON) for fetch().
  */
 export async function setup({ routes = {}, app = false, url = 'http://localhost:8765/?page=queue' } = {}) {
@@ -198,9 +198,11 @@ export async function setup({ routes = {}, app = false, url = 'http://localhost:
   doc.loadHtml(fs.readFileSync(path.join(STATIC, 'index.html'), 'utf8'));
   vm.runInThisContext(fs.readFileSync(path.join(STATIC, 'i18n.js'), 'utf8'), { filename: 'i18n.js' });
   await import(pathToFileURL(path.join(STATIC, 'js', 'main.js')).href + '?t=' + Date.now());
-  if (app) {
-    const src = fs.readFileSync(path.join(STATIC, 'app.js'), 'utf8');
-    vm.runInThisContext(src, { filename: 'app.js' });
+  // main.js auto-boots when document.readyState is complete (stub sets that).
+  // Only boot here if auto-boot did not run — resetting __tqBooted and booting again
+  // opened a second SSE stream and broke single-connection tests.
+  if (app && typeof g.tqBootApp === 'function' && !g.__tqBooted) {
+    g.tqBootApp();
   }
   return { doc, g, S: g.tqState };
 }

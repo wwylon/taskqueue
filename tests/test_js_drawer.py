@@ -1,12 +1,18 @@
 """Behavior tests for components/drawer.js (task drawer: info / YAML / history tabs and actions)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
 from tests.test_js_smoke import EV
 
 TASK = {
-    "project": "p", "task_id": "t1", "status": "failed", "priority": 40, "description": "train <x>",
-    "enqueued_at": "2026-01-01T10:00:00Z", "run_id": 7,
+    "project": "p",
+    "task_id": "t1",
+    "status": "failed",
+    "priority": 40,
+    "description": "train <x>",
+    "enqueued_at": "2026-01-01T10:00:00Z",
+    "run_id": 7,
 }
 
 
@@ -42,7 +48,7 @@ console.log('RESULT:' + JSON.stringify(r));
 """
     )
     assert out["head"][0] == "t1" and out["head"][1] is True
-    assert out["retry"] == [False, True, True]               # failed: retry ok, no force/stop
+    assert out["retry"] == [False, True, True]  # failed: retry ok, no force/stop
     assert "train &lt;x&gt;" in out["body"] and "tqDrawerPrio" in out["body"] and 'value="40"' in out["body"]
     assert out["activeTab"] == ["info"]
     assert out["prio"] == [["p", "t1", 30], ["p", "t1", 77]]
@@ -51,7 +57,7 @@ console.log('RESULT:' + JSON.stringify(r));
 
 
 def test_info_tab_lists_deps_while_queue_row_stays_compact():
-    """Queue shows Deps: n/m only; Details drawer lists every dependency chip."""
+    """Queue shows Deps: n/m + up to 3 unmet names; Details drawer lists every chip."""
     deps = [f"up{i}" for i in range(5)]
     task = {
         **TASK,
@@ -67,6 +73,7 @@ await g.flush();
 g.i18n = {{ t: (k, v) => {{
   if (k === 'task.depsCount') return 'Deps: ' + v.met + '/' + v.total;
   if (k === 'task.depsCountDead') return 'Deps: ' + v.ok + ' ok / ' + v.dead + ' broken of ' + v.total;
+  if (k === 'task.depsMore') return 'more dependencies';
   if (k === 'drawer.deps') return 'Dependencies';
   return k;
 }}}};
@@ -79,11 +86,97 @@ r.chips = (r.body.match(/dep-tag/g) || []).length;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert "dep-tag" not in out["queue"]
     assert "Deps: 3/5" in out["queue"]
+    # F-182: unmet names (up3, up4) appear in the row; completed up0–up2 stay drawer-only.
+    assert "up3" in out["queue"] and "up4" in out["queue"]
+    assert "up0" not in out["queue"]
     assert out["chips"] == 5
     assert "Dependencies" in out["body"]
     assert "up0" in out["body"] and "up4" in out["body"]
+
+
+def test_queue_dep_html_truncates_unmet_to_three_plus_ellipsis():
+    """F-185: five unmet deps → three names + …; zero unmet → count only."""
+    deps = [f"up{i}" for i in range(5)]
+    waiting = {
+        **TASK,
+        "depends_on": deps,
+        "dep_status": {d: "queued" for d in deps},
+        "missing_deps": [],
+    }
+    done = {
+        **TASK,
+        "depends_on": deps,
+        "dep_status": {d: "completed" for d in deps},
+        "missing_deps": [],
+    }
+    out = run_js(
+        EV
+        + f"""
+const {{ g }} = await setup({{ app: true }});
+await g.flush();
+g.i18n = {{ t: (k, v) => {{
+  if (k === 'task.depsCount') return 'Deps: ' + v.met + '/' + v.total;
+  if (k === 'task.depsMore') return 'more dependencies';
+  return k;
+}}}};
+const r = {{}};
+r.wait = g._queueDepHtml({waiting!r}, {{}});
+r.done = g._queueDepHtml({done!r}, {{}});
+r.waitTags = (r.wait.match(/dep-tag/g) || []).length;
+r.hasEllipsis = r.wait.includes('…');
+r.doneTags = (r.done.match(/dep-tag/g) || []).length;
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert out["waitTags"] == 3
+    assert out["hasEllipsis"] is True
+    assert "Deps: 0/5" in out["wait"]
+    assert out["doneTags"] == 0
+    assert "Deps: 5/5" in out["done"]
+    assert "…" not in out["done"]
+
+
+def test_queue_dep_html_truncates_unmet_to_three_plus_ellipsis():
+    """F-185: five unmet deps → three names + …; zero unmet → count only."""
+    deps = [f"up{i}" for i in range(5)]
+    waiting = {
+        **TASK,
+        "depends_on": deps,
+        "dep_status": {d: "queued" for d in deps},
+        "missing_deps": [],
+    }
+    done = {
+        **TASK,
+        "depends_on": deps,
+        "dep_status": {d: "completed" for d in deps},
+        "missing_deps": [],
+    }
+    out = run_js(
+        EV
+        + f"""
+const {{ g }} = await setup({{ app: true }});
+await g.flush();
+g.i18n = {{ t: (k, v) => {{
+  if (k === 'task.depsCount') return 'Deps: ' + v.met + '/' + v.total;
+  if (k === 'task.depsMore') return 'more dependencies';
+  return k;
+}}}};
+const r = {{}};
+r.wait = g._queueDepHtml({waiting!r}, {{}});
+r.done = g._queueDepHtml({done!r}, {{}});
+r.waitTags = (r.wait.match(/dep-tag/g) || []).length;
+r.hasEllipsis = r.wait.includes('…');
+r.doneTags = (r.done.match(/dep-tag/g) || []).length;
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert out["waitTags"] == 3
+    assert out["hasEllipsis"] is True
+    assert "Deps: 0/5" in out["wait"]
+    assert out["doneTags"] == 0
+    assert "Deps: 5/5" in out["done"]
+    assert "…" not in out["done"]
 
 
 def test_open_unknown_task_fetches_full_record_and_ignores_stale_response():
@@ -158,7 +251,15 @@ console.log('RESULT:' + JSON.stringify(r));
 
 
 def test_history_tab_lists_latest_five_runs_and_handles_empty():
-    runs = [{"run_id": i, "status": "completed", "started_at": "2026-01-01T10:00:00Z", "finished_at": "2026-01-01T10:01:00Z"} for i in range(8)]
+    runs = [
+        {
+            "run_id": i,
+            "status": "completed",
+            "started_at": "2026-01-01T10:00:00Z",
+            "finished_at": "2026-01-01T10:01:00Z",
+        }
+        for i in range(8)
+    ]
     out = run_js(
         EV
         + f"""
@@ -210,7 +311,12 @@ r.synced = S.drawerTask.status;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["calls"] == [["retry", "p", "t1", True], ["force", "p", "t1"], ["stop", "p", "t1"], ["panel", 7, "p", "t1", False]]
+    assert out["calls"] == [
+        ["retry", "p", "t1", True],
+        ["force", "p", "t1"],
+        ["stop", "p", "t1"],
+        ["panel", 7, "p", "t1", False],
+    ]
     assert out["closed"] is True
     assert out["noLog"] == [0, 1]
     assert out["synced"] == "completed"

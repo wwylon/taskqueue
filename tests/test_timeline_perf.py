@@ -19,8 +19,9 @@ def _seed(db, n: int, runs: int = 3):
         tid = f"suite_seed{i}"
         _mk_task(db, "proj", tid, priority=i % 5)
         for _ in range(runs):
-            _insert_run(db, "proj", f"hist_{i % 50}", base.isoformat(),
-                        (base + timedelta(seconds=60 + i % 7)).isoformat())
+            _insert_run(
+                db, "proj", f"hist_{i % 50}", base.isoformat(), (base + timedelta(seconds=60 + i % 7)).isoformat()
+            )
     db.commit()
 
 

@@ -1,4 +1,5 @@
 """Usability wave: force stop hygiene, group filter, deps sort."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -83,7 +84,9 @@ def test_queue_hide_blocked_keeps_gated_queued_hides_frozen_projects(tmp_path: P
     active = _get_queue_response(db, hide_blocked=True, limit=50)
     assert active["total"] == 3
     assert {(t["project"], t["task_id"]) for t in active["tasks"]} == {
-        ("p1", "ok"), ("p1", "gated"), ("p2", "other"),
+        ("p1", "ok"),
+        ("p1", "gated"),
+        ("p2", "other"),
     }
     set_project_frozen(db, "p2", True)
     frozen_hidden = _get_queue_response(db, hide_blocked=True, limit=50)
@@ -97,9 +100,7 @@ def test_health_and_new_failed_skip_frozen_projects(tmp_path: Path) -> None:
     p2 = _project("p2", tmp_path)
     upsert_task(db, parse_task_yaml(_write_task(p1, "bad"), p1))
     upsert_task(db, parse_task_yaml(_write_task(p2, "bad"), p2))
-    db.execute(
-        "UPDATE tasks SET status = 'failed', updated_at = '2026-10-17T08:00:00+00:00'"
-    )
+    db.execute("UPDATE tasks SET status = 'failed', updated_at = '2026-10-17T08:00:00+00:00'")
     db.commit()
     assert compute_health(db)["counts"]["new_failed"] == 2
     set_project_frozen(db, "p2", True)
@@ -142,8 +143,7 @@ def test_prior_run_seconds_sums_runs_since_last_completion(tmp_path: Path) -> No
         (4, "running", "2026-10-02T02:00:00+00:00", None),
     ]
     db.executemany(
-        "INSERT INTO runs (run_id, project, task_id, status, started_at, finished_at) "
-        "VALUES (?, 'p', 't', ?, ?, ?)",
+        "INSERT INTO runs (run_id, project, task_id, status, started_at, finished_at) VALUES (?, 'p', 't', ?, ?, ?)",
         rows,
     )
     db.commit()

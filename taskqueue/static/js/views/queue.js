@@ -3,6 +3,7 @@
 import { S } from '../core/state.js';
 import { projStyle } from '../util/projcolor.js';
 import { escHtml, jsq, taskKey, qrowId, domIdPart, fmt, dur, isMobileLayout, onLayoutChange, progressHealthHtml } from '../util/format.js';
+import { showToast } from '../components/modals.js';
 
 /** Must match queue table <th> count in index.html (incl. Started / Finished). */
 export const QUEUE_COLS = 9;
@@ -89,6 +90,15 @@ export function setQueueProject(proj, btn) {
 }
 
 export function sortQueue(field) {
+  // Unscoped deps/order sorts refuse past ~2k tasks server-side — nudge to pick a project.
+  if ((field === 'deps' || field === 'order')
+      && (!S.selectedProject || S.selectedProject === 'all')
+      && (S.queueTotal || 0) > 2000) {
+    try {
+      showToast(i18n.t('queue.heavySortNeedProject') || 'Pick a project before sorting by deps / start order on large queues.', 'warn');
+    } catch (_) {}
+    return;
+  }
   if (S.queueSort.field === field) S.queueSort.dir *= -1;
   else { S.queueSort.field = field; S.queueSort.dir = 1; }
   S.queuePage = 0;
@@ -241,22 +251,36 @@ export function _forceBtnHtml(t) {
 
 /** Resolve dep statuses/counts for a task. statusMap is optional (drawer may pass {}). */
 export function _depMeta(t, statusMap) {
-  const deps = Array.isArray(t.depends_on) ? t.depends_on : [];
+  const depsAll = Array.isArray(t.depends_on) ? t.depends_on : [];
+  const depsAny = Array.isArray(t.depends_on_any) ? t.depends_on_any : [];
+  const deps = depsAll.length ? depsAll : depsAny;
   const missingSet = new Set(Array.isArray(t.missing_deps) ? t.missing_deps : []);
   // Server-resolved status first: the loaded queue page does not hold deps that sit on other pages.
   const depSt = t.dep_status || {};
   const map = statusMap || {};
   const stOf = d => depSt[d] || map[`${t.project}/${d}`] || map[d] || '';
+  const deadish = st => ['failed', 'stopped', 'interrupted', 'disabled', 'cancelled'].includes(st);
   const okCount = deps.filter(d => stOf(d) === 'completed').length;
-  const deadCount = deps.filter(d => {
-    if (missingSet.has(d)) return true;
-    const st = stOf(d);
-    return ['failed', 'stopped', 'interrupted', 'disabled'].includes(st);
-  }).length;
+  const deadCount = deps.filter(d => missingSet.has(d) || deadish(stOf(d))).length;
+  // F-182/F-183: unmet = not completed. For depends_on_any alone, once any peer
+  // completed the gate is satisfied — treat as no unmet waiters.
+  let unmet = [];
+  if (depsAny.length && !depsAll.length) {
+    if (!depsAny.some(d => stOf(d) === 'completed')) {
+      unmet = depsAny.filter(d => stOf(d) !== 'completed');
+    }
+  } else {
+    unmet = depsAll.filter(d => stOf(d) !== 'completed');
+  }
+  unmet.sort((a, b) => {
+    const da = missingSet.has(a) || deadish(stOf(a));
+    const db = missingSet.has(b) || deadish(stOf(b));
+    return (db ? 1 : 0) - (da ? 1 : 0);
+  });
   const countLabel = !deps.length ? '' : (deadCount
     ? i18n.t('task.depsCountDead', {ok: okCount, dead: deadCount, total: deps.length})
     : i18n.t('task.depsCount', {met: okCount, total: deps.length}));
-  return { deps, missingSet, stOf, okCount, deadCount, countLabel };
+  return { deps, missingSet, stOf, okCount, deadCount, countLabel, unmet };
 }
 
 /** Clickable status chips for every dependency (Details drawer). */
@@ -284,11 +308,24 @@ export function _depTagsHtml(t, statusMap) {
   }).join('');
 }
 
-/** Queue row/card: compact count only — full chip list lives in the Details drawer. */
+/** Queue row/card: count + up to 3 unmet dep names (F-182); full chips in Details. */
 export function _queueDepHtml(t, statusMap) {
-  const { deps, countLabel } = _depMeta(t, statusMap);
+  const { deps, countLabel, unmet, missingSet, stOf } = _depMeta(t, statusMap);
   if (!deps.length) return '';
-  return `<div class="dep-line"><span class="dep-count">${countLabel}</span></div>`;
+  const show = (unmet || []).slice(0, 3);
+  const more = (unmet || []).length > 3;
+  const chips = show.map(d => {
+    const dead = missingSet.has(d) || ['failed', 'stopped', 'interrupted', 'disabled', 'cancelled'].includes(stOf(d));
+    const cls = dead ? 'dep-tag dead' : 'dep-tag wait';
+    const tip = dead ? (missingSet.has(d) ? 'missing' : stOf(d)) : (stOf(d) || 'waiting');
+    return `<button type="button" class="${cls}" style="max-width:7rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"
+      title="${escHtml(tip)} — ${escHtml(d)}" data-click="${tqAct([['gotoQueueDep', String(t.project), String(d)]])}">${escHtml(d)}</button>`;
+  }).join(' ');
+  const moreBit = more ? ` <span class="dep-more" title="${escHtml(i18n.t('task.depsMore') || 'more dependencies')}">…</span>` : '';
+  const forecast = (t.forecast_order != null)
+    ? ` <span class="dep-count" title="Timeline forecast start order">#${escHtml(String(t.forecast_order))}</span>`
+    : '';
+  return `<div class="dep-line"><span class="dep-count">${countLabel}</span>${forecast}${chips ? ' ' + chips : ''}${moreBit}</div>`;
 }
 
 export function _queueSelKey(project, taskId) { return project + '\0' + taskId; }
@@ -519,7 +556,8 @@ export function _buildQueueCard(t, liveMap, statusMap) {
   </div>`;
 
   if (isRunning) {
-    return `<div class="run-card${isFrozen ? ' frozen' : ''}" data-run-id="${merged.run_id || ''}">
+    // data-q-card / data-q-pbar / data-q-eta: live-patched by _patchQueueLiveFromRunning (F-165).
+    return `<div class="run-card${isFrozen ? ' frozen' : ''}" data-q-card="${escHtml(t.project)}/${escHtml(t.task_id)}" data-run-id="${merged.run_id || ''}">
       <div class="run-top">
         ${_queueCheckHtml(t)}
         ${merged.run_id ? `<span class="run-num" title="run_id">#${merged.run_id}</span>` : ''}
@@ -528,13 +566,13 @@ export function _buildQueueCard(t, liveMap, statusMap) {
         <span class="run-id">${escHtml(t.task_id)}</span>
         ${_gpuBadgeHtml(t)}
         <span class="run-worker" style="background:${live.worker_id ? '#4F46E5' : '#6B7280'};color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:bold;margin-left:4px">${escHtml(workerLabel)}</span>
-        ${elapsed ? `<span class="run-elapsed">${elapsed}</span>` : ''}
-        ${pctKnown ? `<span class="run-eta">${pct.toFixed(0)}%${isRunning ? eta : ' · ' + escHtml(i18n.t('progress.lastRun'))}</span>` : ''}
+        ${elapsed ? `<span class="run-elapsed" data-q-elapsed>${elapsed}</span>` : ''}
+        ${pctKnown ? `<span class="run-eta" data-q-eta>${pct.toFixed(0)}%${isRunning ? eta : ' · ' + escHtml(i18n.t('progress.lastRun'))}</span>` : ''}
         ${isFrozen ? `<span class="frozen-badge">FROZEN ${dur(idleSec)} no output</span>` : ''}
         <div class="run-actions">${acts.join('')}</div>
       </div>
-      <div class="pbar-wrap${isRunning ? '' : ' pbar-last'}"><div class="pbar${isRunning ? '' : ' pbar-' + escHtml(t.status)}" style="width:${Math.min(pct, 100)}%"></div></div>
-      <div class="run-log">${lastLine ? escHtml(lastLine) : i18n.t('log.noOutput')}</div>
+      <div class="pbar-wrap${isRunning ? '' : ' pbar-last'}"><div class="pbar${isRunning ? '' : ' pbar-' + escHtml(t.status)}" data-q-pbar style="width:${Math.min(pct, 100)}%"></div></div>
+      <div class="run-log" data-q-log>${lastLine ? escHtml(lastLine) : i18n.t('log.noOutput')}</div>
       ${lastTs ? `<div class="run-last-ts">${lastTs}</div>` : ''}
       ${merged.run_id ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${_usageHtml(merged, { panel: 'qc', project: t.project, taskId: t.task_id, isRunning })}</div>` : ''}
       ${taskTags}
@@ -565,33 +603,7 @@ export function _buildQueueCard(t, liveMap, statusMap) {
   </div>`;
 }
 
-export function _flushQueueBatch(tbody) {
-  if (_queueSentinelObs) { _queueSentinelObs.disconnect(); _queueSentinelObs = null; }
-  const sentinel = tbody.querySelector('tr.q-sentinel');
-  if (sentinel) sentinel.remove();
-
-  const statusMap = {};
-  _queueRenderRows.forEach(t => { statusMap[`${t.project}/${t.task_id}`] = t.status; });
-
-  const batch = _queueRenderRows.slice(_queueRenderOffset, _queueRenderOffset + _QUEUE_BATCH);
-  if (!batch.length) return;
-  const html = batch.map(t => _buildQueueRow(t, statusMap)).join('');
-  tbody.insertAdjacentHTML('beforeend', html);
-  _queueRenderOffset += batch.length;
-
-  if (_queueRenderOffset < _queueRenderRows.length) {
-    const remaining = _queueRenderRows.length - _queueRenderOffset;
-    const s = document.createElement('tr');
-    s.className = 'q-sentinel';
-    s.innerHTML = `<td colspan="${QUEUE_COLS}" style="text-align:center;padding:6px;color:var(--muted);font-size:11px">${i18n.t('queue.moreRows', {n: remaining})}</td>`;
-    tbody.appendChild(s);
-    _queueSentinelObs = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) _flushQueueBatch(tbody);
-    }, { rootMargin: '200px' });
-    _queueSentinelObs.observe(s);
-  }
-  _reapplyQueueFlash();
-}
+// F-207: removed dead _flushQueueBatch (referenced undeclared module locals).
 
 export function _flashQueueRow(project, taskId, { smooth = true } = {}) {
   S.queueFlashKey = project + '\0' + taskId;

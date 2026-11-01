@@ -1,4 +1,5 @@
 """Phase 1 write-path hardening: /api/cli/add file handling."""
+
 from __future__ import annotations
 
 import sys
@@ -125,10 +126,11 @@ def test_runner_metrics_flush_uses_own_connection_in_reader_thread(tmp_path):
         db_path = tmp_path / "x.db"
         _owner_thread = -1  # not the calling thread
 
-    def fake_update(db, run_id, payload):
+    def fake_update(db, run_id, payload, *, commit=True):
         seen.append(db)
 
     import sqlite3
+
     sqlite3.connect(str(Fake.db_path)).close()
     with patch.object(runner, "update_run_metrics", fake_update):
         runner.ActiveRun._flush_metrics_json(Fake())
@@ -219,10 +221,17 @@ def test_validate_task_spec_rejects_malformed(tmp_path):
     from taskqueue.db import validate_task_spec
 
     p = tmp_path / "t.yaml"
-    for bad in (None, {}, [], {"task_id": "a"}, {"task_id": "a", "command": " "},
-                {"task_id": "a\b", "command": "x"}, {"task_id": "a..b", "command": "x"},
-                {"task_id": "a", "command": "x", "wall_clock_cap_sec": -1},
-                {"task_id": "a", "command": "x", "resources": {"ram_gib": -2}}):
+    for bad in (
+        None,
+        {},
+        [],
+        {"task_id": "a"},
+        {"task_id": "a", "command": " "},
+        {"task_id": "a\b", "command": "x"},
+        {"task_id": "a..b", "command": "x"},
+        {"task_id": "a", "command": "x", "wall_clock_cap_sec": -1},
+        {"task_id": "a", "command": "x", "resources": {"ram_gib": -2}},
+    ):
         with pytest.raises((ValueError, KeyError)):
             validate_task_spec(bad, p)
     validate_task_spec({"task_id": "a", "command": "x"}, p)
@@ -290,7 +299,10 @@ def test_deps_dot_export(tmp_path: Path) -> None:
 
     g = {
         "nodes": [{"id": "p/a-1", "status": "completed"}, {"id": 'p/"b"', "status": "queued", "stub": True}],
-        "edges": [{"from": "p/a-1", "to": 'p/"b"', "health": "dead"}, {"from": "p/a-1", "to": "p/a-1", "health": "wait", "kind": "any"}],
+        "edges": [
+            {"from": "p/a-1", "to": 'p/"b"', "health": "dead"},
+            {"from": "p/a-1", "to": "p/a-1", "health": "wait", "kind": "any"},
+        ],
     }
     dot = deps_to_dot(g)
     assert dot.startswith("digraph tq_deps {") and dot.rstrip().endswith("}")
@@ -347,7 +359,7 @@ def test_metrics_endpoint(tmp_path: Path) -> None:
     from taskqueue.metrics_export import _sample
 
     bs = chr(92)
-    assert _sample('tq_x', 1, a='q"' + bs) == 'tq_x{a="q' + bs + '"' + bs + bs + '"} 1'
+    assert _sample("tq_x", 1, a='q"' + bs) == 'tq_x{a="q' + bs + '"' + bs + bs + '"} 1'
     db.close()
 
 
@@ -413,7 +425,7 @@ def test_run_detail_and_diff(tmp_path: Path) -> None:
         "VALUES ('proj','t1','python','[\"--lr\",\"1\"]','{\"SECRET\":\"hunter2\",\"MODE\":\"a\"}','x','x')"
     )
     r1 = insert_run(db, "proj", "t1", "log1")
-    db.execute("UPDATE tasks SET args_override = '[\"--lr\",\"2\"]', env = '{\"MODE\":\"b\"}' WHERE task_id='t1'")
+    db.execute('UPDATE tasks SET args_override = \'["--lr","2"]\', env = \'{"MODE":"b"}\' WHERE task_id=\'t1\'')
     r2 = insert_run(db, "proj", "t1", "log2")
     db.execute("UPDATE runs SET status='completed', exit_code=0, metrics_json='{\"loss\": 1.5}' WHERE run_id=?", (r1,))
     db.execute("UPDATE runs SET status='failed', exit_code=1, metrics_json='{\"loss\": 2.5}' WHERE run_id=?", (r2,))
@@ -442,7 +454,9 @@ def test_cross_run_log_search(tmp_path: Path) -> None:
     for tid, text in (("a", "ok\nCUDA out of memory\n"), ("b", "all good\n")):
         db.execute(
             "INSERT INTO tasks (project, task_id, command, args, env, enqueued_at, updated_at) "
-            "VALUES ('proj',?,'python','[]','{}','x','x')", (tid,))
+            "VALUES ('proj',?,'python','[]','{}','x','x')",
+            (tid,),
+        )
         lp = tmp_path / f"{tid}.log"
         lp.write_text(text)
         insert_run(db, "proj", tid, str(lp))
@@ -461,7 +475,8 @@ def test_log_incremental_fetch_from_offset(tmp_path: Path) -> None:
     H, db, _ = _env(tmp_path)
     db.execute(
         "INSERT INTO tasks (project, task_id, command, args, env, enqueued_at, updated_at) "
-        "VALUES ('proj','a','python','[]','{}','x','x')")
+        "VALUES ('proj','a','python','[]','{}','x','x')"
+    )
     lp = tmp_path / "a.log"
     lp.write_bytes(b"one\ntwo\npart")
     rid = insert_run(db, "proj", "a", str(lp))

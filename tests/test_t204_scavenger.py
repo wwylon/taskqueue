@@ -50,9 +50,7 @@ def test_parse_rejects_bad_class_and_at_most_once(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="class must be"):
         parse_task_yaml(_yaml(proj, "c", "class: bogus\n"), proj)
     with pytest.raises(ValueError, match="at_most_once"):
-        parse_task_yaml(
-            _yaml(proj, "d", "class: scavenger\nexecution_semantics: at_most_once\n"), proj
-        )
+        parse_task_yaml(_yaml(proj, "d", "class: scavenger\nexecution_semantics: at_most_once\n"), proj)
 
 
 def test_error_codes_registered() -> None:
@@ -62,7 +60,10 @@ def test_error_codes_registered() -> None:
 
 
 _SYS = {
-    "cpu_cores": 16, "ram_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": [],
+    "cpu_cores": 16,
+    "ram_gib": 64.0,
+    "gpu_vram_total_gib": 0.0,
+    "gpus": [],
     "cpu_used_cores_ema": 0.0,
 }
 
@@ -117,8 +118,7 @@ def _preempt_setup(tmp_path: Path):
     proj, db = _setup_busy(tmp_path)
     db.execute("UPDATE tasks SET status='running' WHERE task_id='scav'")
     db.execute(
-        "UPDATE tasks SET last_error_code=?, block_reason='max_running_tasks=1 reached' "
-        "WHERE task_id='norm'",
+        "UPDATE tasks SET last_error_code=?, block_reason='max_running_tasks=1 reached' WHERE task_id='norm'",
         (tqerr.BLOCK_RESOURCES,),
     )
     db.commit()

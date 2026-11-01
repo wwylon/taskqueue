@@ -1,4 +1,5 @@
 """Standby-mode minimal HTTP handler."""
+
 from __future__ import annotations
 
 import json
@@ -38,9 +39,7 @@ class StandbyHandler(BaseHTTPRequestHandler):
         from taskqueue.auth import extract_request_token
 
         try:
-            row = type(self)._conn_box[0].execute(
-                "SELECT value FROM config WHERE key='auth_token'"
-            ).fetchone()
+            row = type(self)._conn_box[0].execute("SELECT value FROM config WHERE key='auth_token'").fetchone()
             token = json.loads(row[0]) if row else ""
         except Exception:
             token = ""
@@ -56,9 +55,7 @@ class StandbyHandler(BaseHTTPRequestHandler):
             c = type(self)._conn_box[0]
             tasks = c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
             runs = c.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
-            schema_row = c.execute(
-                "SELECT value FROM config WHERE key='schema_version'"
-            ).fetchone()
+            schema_row = c.execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
             schema_v = int(schema_row[0]) if schema_row else 0
             return {"tasks_count": tasks, "runs_count": runs, "schema_version": schema_v}
         except Exception:
@@ -70,15 +67,21 @@ class StandbyHandler(BaseHTTPRequestHandler):
             return
         path = urlparse(self.path).path.rstrip("/") or "/"
         if path == "/api/status":
-            row = type(self)._conn_box[0].execute(
-                "SELECT holder, expires_at FROM master_lease WHERE singleton=1"
-            ).fetchone()
-            self._send_json(200, {
-                "mode": "standby",
-                "master_lease": dict(row) if row else None,
-                "db": str(type(self)._home / "queue.db"),
-                **self._row_counts(),
-            })
+            row = (
+                type(self)
+                ._conn_box[0]
+                .execute("SELECT holder, expires_at FROM master_lease WHERE singleton=1")
+                .fetchone()
+            )
+            self._send_json(
+                200,
+                {
+                    "mode": "standby",
+                    "master_lease": dict(row) if row else None,
+                    "db": str(type(self)._home / "queue.db"),
+                    **self._row_counts(),
+                },
+            )
         else:
             self._send_json(
                 404,
@@ -104,6 +107,7 @@ class StandbyHandler(BaseHTTPRequestHandler):
                 tmp_path = Path(tmp_name)
                 from taskqueue.export_import import import_home
                 from taskqueue.db import open_db as _open_db
+
                 try:
                     stream_request_body_to_file(self.rfile, length, tmp_path)
                     info = import_home(type(self)._home, tmp_path, force=True)

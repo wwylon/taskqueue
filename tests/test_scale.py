@@ -28,31 +28,30 @@ skip_unless_seeded = pytest.mark.skipif(not _SEEDED, reason="set LOADGEN_SEEDED=
 # Index budget: verify EXPLAIN QUERY PLAN uses index on /api/queue lookup.
 # ---------------------------------------------------------------------------
 
+
 def test_runs_query_uses_index(tmp_path):
     """The runs lookup for /api/queue must use an index, not a full scan."""
     from taskqueue.db import open_db
+
     db = open_db(tmp_path / "q.db")
 
     plan = db.execute(
-        "EXPLAIN QUERY PLAN "
-        "SELECT * FROM runs WHERE project=? AND task_id=? ORDER BY run_id DESC",
+        "EXPLAIN QUERY PLAN SELECT * FROM runs WHERE project=? AND task_id=? ORDER BY run_id DESC",
         ("proj", "task_001"),
     ).fetchall()
     # EXPLAIN QUERY PLAN rows: (id, parent, notused, detail)
     plan_text = " ".join(row[3] if len(row) > 3 else str(tuple(row)) for row in plan).upper()
-    assert "USING INDEX" in plan_text or "SEARCH" in plan_text, (
-        f"Expected index use, got: {plan_text!r}"
-    )
+    assert "USING INDEX" in plan_text or "SEARCH" in plan_text, f"Expected index use, got: {plan_text!r}"
 
 
 def test_tasks_priority_query_uses_index(tmp_path):
     """Scheduler ORDER BY priority DESC, enqueued_at ASC should use the covering index."""
     from taskqueue.db import open_db
+
     db = open_db(tmp_path / "q.db")
 
     plan = db.execute(
-        "EXPLAIN QUERY PLAN "
-        "SELECT * FROM tasks WHERE status='queued' ORDER BY priority DESC, enqueued_at ASC LIMIT 50"
+        "EXPLAIN QUERY PLAN SELECT * FROM tasks WHERE status='queued' ORDER BY priority DESC, enqueued_at ASC LIMIT 50"
     ).fetchall()
     plan_text = " ".join(row[3] if len(row) > 3 else str(tuple(row)) for row in plan).upper()
     # Pass if it uses any index; only fail on a confirmed unindexed full scan.
@@ -63,6 +62,7 @@ def test_tasks_priority_query_uses_index(tmp_path):
 # ---------------------------------------------------------------------------
 # DB size budget: < 5 MB per 1k tasks
 # ---------------------------------------------------------------------------
+
 
 def test_db_size_budget(tmp_path):
     """1000 tasks + 1000 runs should produce < 5 MB of DB."""
@@ -89,6 +89,7 @@ def test_db_size_budget(tmp_path):
 # ---------------------------------------------------------------------------
 # W4.1: server-side pagination and search correctness
 # ---------------------------------------------------------------------------
+
 
 def test_queue_api_paginated(tmp_path):
     """500 tasks — /api/queue response honours limit=10 and total is correct."""
@@ -159,6 +160,7 @@ def test_search_by_description(tmp_path):
 # ---------------------------------------------------------------------------
 # W5.3: _get_history_response extracted for testability
 # ---------------------------------------------------------------------------
+
 
 def test_groups_response(tmp_path):
     """_get_groups_response: returns status breakdown per group."""
@@ -294,8 +296,7 @@ def test_history_api_search(tmp_path):
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
     db.executemany(
-        "INSERT INTO runs (project, task_id, status, started_at, error_category, worker_id) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO runs (project, task_id, status, started_at, error_category, worker_id) VALUES (?,?,?,?,?,?)",
         [
             ("alpha", "train_needle", "completed", now, None, None),
             ("alpha", "other", "failed", now, "oom_kill", None),
@@ -322,6 +323,13 @@ def test_history_api_search(tmp_path):
     assert by_hash["total"] == 1
     assert by_hash["runs"][0]["run_id"] == run_id
 
+    by_status = _get_history_response(db, status="failed", limit=100, offset=0)
+    assert by_status["total"] == 1
+    assert by_status["runs"][0]["status"] == "failed"
+    # Status filter applies before LIMIT (same pattern as project/search).
+    crowded = _get_history_response(db, status="completed", limit=1, offset=0)
+    assert crowded["total"] == 3 and len(crowded["runs"]) == 1
+
     scoped = _get_history_response(db, project="beta", search="noise", limit=100, offset=0)
     assert scoped["total"] == 2
     assert all(r["project"] == "beta" for r in scoped["runs"])
@@ -330,6 +338,7 @@ def test_history_api_search(tmp_path):
 # ---------------------------------------------------------------------------
 # /api/queue response time budget (requires seeded data)
 # ---------------------------------------------------------------------------
+
 
 @skip_unless_seeded
 def test_api_queue_p95(tmp_path):

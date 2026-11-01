@@ -113,14 +113,7 @@ def test_classify_log_line(line: str, kind: str | None) -> None:
 
 
 def test_apply_log_lines_to_metrics_json() -> None:
-    chunk = (
-        "WARN: timed out\n"
-        "[queue] WARN ollama down\n"
-        "REJECT: skip\n"
-        "LOW SCORE\n"
-        "(47.0%)\n"
-        "0 errors\n"
-    )
+    chunk = "WARN: timed out\n[queue] WARN ollama down\nREJECT: skip\nLOW SCORE\n(47.0%)\n0 errors\n"
     out = json.loads(apply_log_lines_to_metrics_json(None, chunk.splitlines()))
     assert out["log"] == {"warnings": 2, "errors": 1, "other": 1}
 

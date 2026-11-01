@@ -1,4 +1,5 @@
 """Admission dry-run (taskqueue.plan / GET /api/plan)."""
+
 from __future__ import annotations
 
 from taskqueue.plan import build_plan
@@ -53,9 +54,7 @@ def test_plan_gpu_daily_budget_blocks_gpu_task_only(tmp_path, monkeypatch):
     _, db, _ = make_handler_env(tmp_path)
     monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 0.0)
     monkeypatch.setattr("taskqueue.plan.get_all_project_limits", lambda c: None, raising=False)
-    monkeypatch.setattr(
-        "taskqueue.db.get_all_project_limits", lambda c: {"p": {"max_gpu_hours_day": 2.0}}
-    )
+    monkeypatch.setattr("taskqueue.db.get_all_project_limits", lambda c: {"p": {"max_gpu_hours_day": 2.0}})
     monkeypatch.setattr("taskqueue.db.gpu_hours_today", lambda c, p: 2.5)
     db.execute(
         "INSERT INTO tasks (project, task_id, command, args, status, enabled, priority, "

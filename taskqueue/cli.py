@@ -26,10 +26,12 @@ Inspect queue
   tq plan [N] [--json]              Dry-run: which queued tasks would start next (approximate)
   tq fair-share                     Decayed GPU fair-share debt
   tq report [--project P] [--days N] Aggregate runs / error codes
+  tq report --hygiene [--days N] [--older-than 30d] [--project P] [--json]
+  tq hygiene …                     Alias for report --hygiene (churn, multi-use, archive proposals)
 
 Tasks
   tq sync [PROJECT ...] [--force] [--require-daemon]  Re-sync registered project YAML dirs (exit 3 offline)
-  tq archive [PROJECT ...] [--older-than 30d] [--status completed,failed] [--dry-run]
+  tq archive [PROJECT ...] [--older-than 30d] [--status completed,failed] [--max-completed-runs N] [--dry-run]
                                     Export old finished tasks to <home>/archive/*.jsonl and drop them from the queue
   tq add <yaml> --project P         Enqueue from a YAML file (via master HTTP)
   tq submit <yaml> --project P      Alias for add
@@ -55,6 +57,7 @@ Tasks
   tq result <project/task_id>       Last non-empty log line (exit 0 iff completed)
   tq tail <project/task_id> [--last N]  Follow log, or dump last N lines and exit
   tq diagnose <project/task_id>     Task + runs + log tail + worker bundle
+  tq explain <error_code>           Describe a tq.* error / block code
   tq deps <project/task_id> [--mermaid]  Dependency tree
   tq tag add|rm <project/task_id> <tags…>
   tq group list|stop|retry <project> <group>
@@ -77,6 +80,8 @@ Workers / power
   tq worker setup --master <url>    Clone projects + venvs on a worker
   tq worker --master <url> --worker-id <id>  Start worker agent
   tq worker sync <worker_id>        Queue git pull + uv sync on worker
+  tq worker outbox [--clear-quarantine]  Pending/quarantined finalize files
+  tq worker doctor [--master URL]   Local worker diagnostics (I5)
   tq sleep|wake <key> [--project P] Host sleep / wake helpers
 
 Config / maintenance
@@ -104,38 +109,46 @@ from pathlib import Path
 
 from taskqueue._cli_helpers import (  # noqa: F401
     emit_json,
-    _home, _db, _pid_path, _daemon_running, _web_port, _ui_url, _ensure_python, _split_key,
+    _home,
+    _db,
+    _pid_path,
+    _daemon_running,
+    _web_port,
+    _ui_url,
+    _ensure_python,
+    _split_key,
 )
-from taskqueue._cli_task import *     # noqa: F401,F403
+from taskqueue._cli_task import *  # noqa: F401,F403
 from taskqueue._cli_project import *  # noqa: F401,F403
-from taskqueue._cli_worker import *   # noqa: F401,F403
-from taskqueue._cli_admin import *    # noqa: F401,F403
+from taskqueue._cli_worker import *  # noqa: F401,F403
+from taskqueue._cli_admin import *  # noqa: F401,F403
 
 
 # ── arg helpers (shared by command wrappers) ─────────────────────────────────
 
+
 def _pop_project(lst: list[str]) -> tuple[str | None, list[str]]:
     for i, a in enumerate(lst):
         if a == "--project" and i + 1 < len(lst):
-            return lst[i + 1], lst[:i] + lst[i + 2:]
+            return lst[i + 1], lst[:i] + lst[i + 2 :]
         if a.startswith("--project="):
-            return a.split("=", 1)[1], lst[:i] + lst[i + 1:]
+            return a.split("=", 1)[1], lst[:i] + lst[i + 1 :]
     return None, lst
 
 
 def _pop_flag(lst: list[str], flag: str) -> tuple[bool, list[str]]:
     if flag in lst:
         i = lst.index(flag)
-        return True, lst[:i] + lst[i + 1:]
+        return True, lst[:i] + lst[i + 1 :]
     return False, lst
 
 
 def _pop_value(lst: list[str], flag: str) -> tuple[str | None, list[str]]:
     for i, a in enumerate(lst):
         if a == flag and i + 1 < len(lst):
-            return lst[i + 1], lst[:i] + lst[i + 2:]
+            return lst[i + 1], lst[:i] + lst[i + 2 :]
         if a.startswith(flag + "="):
-            return a.split("=", 1)[1], lst[:i] + lst[i + 1:]
+            return a.split("=", 1)[1], lst[:i] + lst[i + 1 :]
     return None, lst
 
 
@@ -155,6 +168,7 @@ def _parse_kv_flags(rest: list[str], spec: dict) -> tuple[dict, list[str]]:
 
 
 # ── thin command wrappers: (home, rest) -> int ───────────────────────────────
+
 
 def _reject_args(name: str, rest: list[str]) -> int | None:
     """Usage error (exit 2) for a command that takes no arguments, so `tq start --help` cannot act."""
@@ -225,10 +239,16 @@ def _cmd_list(home: Path, rest: list[str]) -> int:
             break
         tags_filter.append(tag)
 
-    kv, rest = _parse_kv_flags(rest, {
-        "--suite": None, "--status": None, "--worker": None,
-        "--limit": None, "--offset": None,
-    })
+    kv, rest = _parse_kv_flags(
+        rest,
+        {
+            "--suite": None,
+            "--status": None,
+            "--worker": None,
+            "--limit": None,
+            "--offset": None,
+        },
+    )
     if rest:
         print(f"Unknown argument: {rest[0]}")
         return 1
@@ -254,11 +274,17 @@ def _cmd_list(home: Path, rest: list[str]) -> int:
             return 1
 
     return cmd_list(
-        home, project,
-        tags=tags_filter or None, suite=suite,
-        status_filter=status_filter, worker_filter=worker_filter,
-        verbose=verbose, as_json=as_json,
-        limit=limit, offset=offset, artifacts=artifacts,
+        home,
+        project,
+        tags=tags_filter or None,
+        suite=suite,
+        status_filter=status_filter,
+        worker_filter=worker_filter,
+        verbose=verbose,
+        as_json=as_json,
+        limit=limit,
+        offset=offset,
+        artifacts=artifacts,
     )
 
 
@@ -294,21 +320,31 @@ def _cmd_sync(home: Path, rest: list[str]) -> int:
 def _cmd_archive(home: Path, rest: list[str]) -> int:
     from taskqueue._cli_project import cmd_archive
 
-    usage = "Usage: tq archive [PROJECT ...] [--older-than 30d] [--status completed,failed] [--dry-run]"
+    usage = (
+        "Usage: tq archive [PROJECT ...] [--older-than 30d] [--status completed,failed] "
+        "[--max-completed-runs N] [--dry-run]"
+    )
     dry_run, rest = _pop_flag(rest, "--dry-run")
     days = 30.0
     statuses: list[str] | None = None
+    max_completed_runs: int | None = None
     projects: list[str] = []
     i = 0
     while i < len(rest):
         a = rest[i]
-        if a in ("--older-than", "--status", "--project") and i + 1 < len(rest):
+        if a in ("--older-than", "--status", "--project", "--max-completed-runs") and i + 1 < len(rest):
             v = rest[i + 1]
             i += 2
             if a == "--project":
                 projects.append(v)
             elif a == "--status":
                 statuses = [x for x in v.split(",") if x]
+            elif a == "--max-completed-runs":
+                try:
+                    max_completed_runs = int(v)
+                except ValueError:
+                    print(usage)
+                    return 1
             else:
                 try:
                     days = float(v[:-1]) if v.endswith("d") else float(v)
@@ -322,7 +358,12 @@ def _cmd_archive(home: Path, rest: list[str]) -> int:
         projects.append(a)
         i += 1
     return cmd_archive(
-        home, projects=projects or None, older_than_days=days, statuses=statuses, dry_run=dry_run
+        home,
+        projects=projects or None,
+        older_than_days=days,
+        statuses=statuses,
+        dry_run=dry_run,
+        max_completed_runs=max_completed_runs,
     )
 
 
@@ -342,7 +383,7 @@ def _cmd_retry(home: Path, rest: list[str]) -> int:
             set_args.append(rest[i + 1])
             i += 2
         elif rest[i].startswith("--set="):
-            set_args.append(rest[i][len("--set="):])
+            set_args.append(rest[i][len("--set=") :])
             i += 1
         elif rest[i] in ("--downstream", "-d"):
             downstream = True
@@ -354,7 +395,7 @@ def _cmd_retry(home: Path, rest: list[str]) -> int:
             status_filter = rest[i + 1]
             i += 2
         elif rest[i].startswith("--status="):
-            status_filter = rest[i][len("--status="):]
+            status_filter = rest[i][len("--status=") :]
             i += 1
         else:
             rest_no_set.append(rest[i])
@@ -699,7 +740,9 @@ def _cmd_plan(home: Path, rest: list[str]) -> int:
         return 0
     print(f"running={plan['running']}  would_start={plan['would_start']}  (approximate: declared resources only)")
     for proj, b in sorted(plan.get("gpu_budget", {}).items()):
-        print(f"  GPU budget {proj}: {b['used_hours']:.2f}/{b['limit_hours']:g} h today (UTC), {b['remaining_hours']:.2f} h left")
+        print(
+            f"  GPU budget {proj}: {b['used_hours']:.2f}/{b['limit_hours']:g} h today (UTC), {b['remaining_hours']:.2f} h left"
+        )
     for e in plan["tasks"]:
         mark = f"START #{e['start_order']}" if e["verdict"] == "start" else "blocked"
         print(f"  {mark:<9} {e['project']}/{e['task_id']}  p={e['priority']}  {e['reason']}")
@@ -710,6 +753,9 @@ def _cmd_report(home: Path, rest: list[str]) -> int:
     project = None
     days = 7
     audit = False
+    hygiene = False
+    as_json = False
+    older_than = 30.0
     i = 0
     while i < len(rest):
         if rest[i] == "--project" and i + 1 < len(rest):
@@ -718,14 +764,90 @@ def _cmd_report(home: Path, rest: list[str]) -> int:
         elif rest[i] == "--days" and i + 1 < len(rest):
             days = int(rest[i + 1])
             i += 2
+        elif rest[i] == "--older-than" and i + 1 < len(rest):
+            v = rest[i + 1]
+            try:
+                older_than = float(v[:-1]) if v.endswith("d") else float(v)
+            except ValueError:
+                print("Usage: tq report [--hygiene] [--days N] [--older-than 30d] [--project P] [--json]")
+                return 1
+            i += 2
         elif rest[i] == "--audit-projects":
             audit = True
+            i += 1
+        elif rest[i] == "--hygiene":
+            hygiene = True
+            i += 1
+        elif rest[i] == "--json":
+            as_json = True
             i += 1
         else:
             i += 1
     if audit:
         return cmd_audit_projects(home)
+    if hygiene:
+        return _cmd_hygiene_impl(home, project=project, days=days, older_than=older_than, as_json=as_json)
     cmd_report(home, project, days)
+    return 0
+
+
+def _cmd_hygiene(home: Path, rest: list[str]) -> int:
+    """tq hygiene — alias for tq report --hygiene."""
+    return _cmd_report(home, ["--hygiene", *rest])
+
+
+def _cmd_hygiene_impl(
+    home: Path,
+    *,
+    project: str | None,
+    days: int,
+    older_than: float,
+    as_json: bool,
+) -> int:
+    from taskqueue.db import open_db
+    from taskqueue.hygiene import build_hygiene_report
+
+    db = _db(home)
+    if not db.exists():
+        print("No queue DB.")
+        return 1
+    conn = open_db(db, migrate=False)
+    try:
+        rep = build_hygiene_report(conn, project=project, days=days, older_than_days=older_than)
+    finally:
+        conn.close()
+    if as_json:
+        emit_json(rep, indent=None)
+        return 0
+    churn = rep["churn"]
+    print(f"hygiene days={rep['days']} since={rep['since']} project={rep['project'] or '*'}")
+    print(
+        f"added={churn['tasks_added']} ({churn['tasks_added_per_day_avg']}/day)  "
+        f"runs={churn['runs_started']} ({churn['runs_started_per_day_avg']}/day)  "
+        f"reruns={churn['reruns_started']}"
+    )
+    print(f"runs_by_status: {churn['runs_by_status']}")
+    if rep["multi_use"]:
+        print(f"multi_use (keep): {len(rep['multi_use'])}")
+        for m in rep["multi_use"][:10]:
+            print(
+                f"  {m['project']}/{m['task_id']}  completed={m['completed_runs']}  "
+                f"span_d={m['completed_span_days']}"
+            )
+    if rep["flaky"]:
+        print(f"flaky (review): {len(rep['flaky'])}")
+        for m in rep["flaky"][:10]:
+            print(f"  {m['project']}/{m['task_id']}  total={m['total_runs']} completed={m['completed_runs']}")
+    if rep["archive_proposals"]:
+        print("archive_proposals (dry-run until approved):")
+        for p in rep["archive_proposals"]:
+            print(
+                f"  {p['project']}: archivable={p['archivable_count']} "
+                f"skip_multi={p['skipped_multi_use_count']} skip_yaml={p['skipped_shared_yaml_count']}"
+            )
+            print(f"    {p['dry_run_command']}")
+    else:
+        print("archive_proposals: none")
     return 0
 
 
@@ -734,6 +856,36 @@ def _cmd_diagnose(home: Path, rest: list[str]) -> int:
         print("Usage: tq diagnose <project/task_id>")
         return 1
     return cmd_diagnose(home, rest[0])
+
+
+def _cmd_explain(home: Path, rest: list[str]) -> int:
+    """tq explain <error_code> — describe a stable tq.* code (F-M7 / C-004)."""
+    if not rest or rest[0] in ("-h", "--help"):
+        print("Usage: tq explain <error_code>")
+        print("Example: tq explain tq.block.deps")
+        return 0 if rest and rest[0] in ("-h", "--help") else 1
+    code = rest[0].strip()
+    from taskqueue import errors as tqerr
+
+    desc = tqerr.describe(code)
+    known = code in tqerr.all_codes()
+    cat = None
+    try:
+        cat = tqerr.classify_error(code, None, None)
+    except Exception:
+        cat = None
+    if "--json" in rest:
+        emit_json({"code": code, "known": known, "description": desc, "category": cat})
+        return 0 if known else 1
+    if not known:
+        print(f"{code}: unknown code (not in taskqueue.errors catalog)", file=sys.stderr)
+        if desc and desc != code:
+            print(desc)
+        return 1
+    print(f"{code}: {desc}")
+    if cat:
+        print(f"category: {cat}")
+    return 0
 
 
 def _cmd_metrics(home: Path, rest: list[str]) -> int:
@@ -841,15 +993,18 @@ def _worker_service_cmd(home: Path, rest: list[str]) -> int:
     i = 1
     while i < len(rest):
         if rest[i] == "--worker-id" and i + 1 < len(rest):
-            worker_id_arg = rest[i + 1]; i += 2
+            worker_id_arg = rest[i + 1]
+            i += 2
         elif rest[i] == "--home" and i + 1 < len(rest):
-            home_arg = Path(rest[i + 1]); i += 2
+            home_arg = Path(rest[i + 1])
+            i += 2
         else:
             i += 1
     if not worker_id_arg:
         conf_p = home_arg / "worker.yaml"
         if conf_p.is_file():
             import yaml as _yaml
+
             try:
                 _wconf = _yaml.safe_load(conf_p.read_text(encoding="utf-8")) or {}
                 worker_id_arg = _wconf.get("worker_id")
@@ -879,11 +1034,14 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         i = 1
         while i < len(rest):
             if rest[i] == "--master" and i + 1 < len(rest):
-                master_url_arg = rest[i+1]; i += 2
+                master_url_arg = rest[i + 1]
+                i += 2
             elif rest[i] == "--token" and i + 1 < len(rest):
-                auth_token_arg = rest[i+1]; i += 2
+                auth_token_arg = rest[i + 1]
+                i += 2
             elif not rest[i].startswith("--"):
-                worker_id_arg = rest[i]; i += 1
+                worker_id_arg = rest[i]
+                i += 1
             else:
                 i += 1
         if not worker_id_arg:
@@ -895,6 +1053,22 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
             print("Usage: tq worker remove <worker_id>")
             return 1
         return cmd_worker_remove(home, rest[1])
+    if rest[0] == "outbox":
+        from taskqueue._cli_worker import cmd_worker_outbox
+
+        return cmd_worker_outbox(home, clear_quarantine="--clear-quarantine" in rest)
+    if rest[0] == "doctor":
+        from taskqueue._cli_worker import cmd_worker_doctor
+
+        master_url_arg = None
+        i = 1
+        while i < len(rest):
+            if rest[i] == "--master" and i + 1 < len(rest):
+                master_url_arg = rest[i + 1]
+                i += 2
+            else:
+                i += 1
+        return cmd_worker_doctor(home, master_url=master_url_arg)
     if rest[0] in ("install-service", "uninstall-service"):
         return _worker_service_cmd(home, rest)
     if rest[0] == "build-wheel":
@@ -905,9 +1079,11 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         i = 1
         while i < len(rest):
             if rest[i] == "--master" and i + 1 < len(rest):
-                master_url_arg = rest[i+1]; i += 2
+                master_url_arg = rest[i + 1]
+                i += 2
             elif rest[i] == "--token" and i + 1 < len(rest):
-                auth_token_arg = rest[i+1]; i += 2
+                auth_token_arg = rest[i + 1]
+                i += 2
             else:
                 i += 1
         return cmd_worker_rotate_credential(home, master_url=master_url_arg, auth_token=auth_token_arg)
@@ -918,6 +1094,7 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         return cmd_worker_set_trust(home, rest[1], rest[2])
     if rest[0] == "config-master":
         from taskqueue._cli_worker import cmd_worker_config_master
+
         host = None
         out = None
         remote_only = False
@@ -925,23 +1102,26 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         i = 1
         while i < len(rest):
             if rest[i] == "--host" and i + 1 < len(rest):
-                host = rest[i + 1]; i += 2
+                host = rest[i + 1]
+                i += 2
             elif rest[i] == "--out" and i + 1 < len(rest):
-                out = Path(rest[i + 1]); i += 2
+                out = Path(rest[i + 1])
+                i += 2
             elif rest[i] == "--port" and i + 1 < len(rest):
-                port = int(rest[i + 1]); i += 2
+                port = int(rest[i + 1])
+                i += 2
             elif rest[i] == "--remote-only":
-                remote_only = True; i += 1
+                remote_only = True
+                i += 1
             else:
                 i += 1
         if not host:
             print("Usage: tq worker config-master --host <ip-or-hostname> [--out path] [--port N]")
             return 1
-        return cmd_worker_config_master(
-            home, host=host, out=out, remote_only=remote_only, port=port
-        )
+        return cmd_worker_config_master(home, host=host, out=out, remote_only=remote_only, port=port)
     if rest[0] == "setup":
         from taskqueue._cli_worker import cmd_worker_setup_from_join
+
         master_url = None
         worker_id = None
         auth_token = os.environ.get("TQ_AUTH_TOKEN")
@@ -949,13 +1129,13 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         i = 1
         while i < len(rest):
             if rest[i] == "--master" and i + 1 < len(rest):
-                master_url = rest[i+1]
+                master_url = rest[i + 1]
                 i += 2
             elif rest[i] == "--worker-id" and i + 1 < len(rest):
-                worker_id = rest[i+1]
+                worker_id = rest[i + 1]
                 i += 2
             elif rest[i] == "--token" and i + 1 < len(rest):
-                auth_token = rest[i+1]
+                auth_token = rest[i + 1]
                 i += 2
             elif rest[i] == "--from" and i + 1 < len(rest):
                 join_from = Path(rest[i + 1])
@@ -976,13 +1156,13 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
     i = 0
     while i < len(rest):
         if rest[i] == "--master" and i + 1 < len(rest):
-            master_url = rest[i+1]
+            master_url = rest[i + 1]
             i += 2
         elif rest[i] == "--worker-id" and i + 1 < len(rest):
-            worker_id = rest[i+1]
+            worker_id = rest[i + 1]
             i += 2
         elif rest[i] == "--token" and i + 1 < len(rest):
-            auth_token = rest[i+1]
+            auth_token = rest[i + 1]
             i += 2
         else:
             i += 1
@@ -991,6 +1171,7 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
         conf_p = home / "worker.yaml"
         if conf_p.is_file():
             import yaml
+
             try:
                 conf = yaml.safe_load(conf_p.read_text(encoding="utf-8")) or {}
                 if not master_url:
@@ -1169,8 +1350,15 @@ def _cmd_wait(home: Path, rest: list[str]) -> int:
             if name == "--tag":
                 tags.append(v)
             else:
-                sel[{"--project": "project", "--suite": "suite", "--group": "group",
-                     "--started-by": "started_by", "--downstream": "downstream_of"}[name]] = v
+                sel[
+                    {
+                        "--project": "project",
+                        "--suite": "suite",
+                        "--group": "group",
+                        "--started-by": "started_by",
+                        "--downstream": "downstream_of",
+                    }[name]
+                ] = v
         elif a == "--mine":
             op = (os.environ.get("TQ_OPERATOR") or "").strip()
             if not op:
@@ -1195,9 +1383,16 @@ def _cmd_wait(home: Path, rest: list[str]) -> int:
         print(usage)
         return 3
     return cmd_wait(
-        home, keys, timeout_sec=timeout_val, mode=mode, selectors=sel,
-        as_json=as_json, raw_exit=raw_exit, poll_sec=poll,
+        home,
+        keys,
+        timeout_sec=timeout_val,
+        mode=mode,
+        selectors=sel,
+        as_json=as_json,
+        raw_exit=raw_exit,
+        poll_sec=poll,
     )
+
 
 def _cmd_master_status(home: Path, rest: list[str]) -> int:
     return cmd_master_status(home)
@@ -1208,6 +1403,7 @@ def _cmd_master_migrate(home: Path, rest: list[str]) -> int:
         print("Usage: tq master-migrate <target_url>  (e.g. http://192.168.1.x:8765)")
         return 1
     from taskqueue._cli_admin import cmd_master_migrate
+
     return cmd_master_migrate(home, rest[0])
 
 
@@ -1218,8 +1414,7 @@ def _wait_usage_project(rest: list[str]) -> str:
     while i < len(rest):
         a = rest[i]
         name, eq, val = a.partition("=")
-        if name in ("--project", "--downstream", "--suite", "--group", "--started-by", "--tag",
-                    "--timeout", "--poll"):
+        if name in ("--project", "--downstream", "--suite", "--group", "--started-by", "--tag", "--timeout", "--poll"):
             if not eq:
                 i += 1
                 val = rest[i] if i < len(rest) else ""
@@ -1274,8 +1469,12 @@ def _record_cli_call(home: Path, cmd: str, rest: list[str], t0: float, rc: objec
         conn = open_db(db_path, migrate=False)
         try:
             record_direct(
-                conn, "cli", f"tq {cmd}", client=f"tq-cli/{__version__}",
-                operator=os.environ.get("TQ_OPERATOR") or "", project=project,
+                conn,
+                "cli",
+                f"tq {cmd}",
+                client=f"tq-cli/{__version__}",
+                operator=os.environ.get("TQ_OPERATOR") or "",
+                project=project,
                 ms=(_t.monotonic() - t0) * 1000.0,
                 error_code=_cli_usage_error_code(cmd, rest, rc),
             )
@@ -1295,8 +1494,15 @@ def _cmd_agents(home: Path, rest: list[str]) -> int:
     opts: dict = {"days": 7}
     as_json = False
     i = 0
-    flags = {"--days": "days", "--by": "by", "--task-by": "task_by", "--project": "project",
-             "--channel": "channel", "--operator": "operator", "--limit": "limit"}
+    flags = {
+        "--days": "days",
+        "--by": "by",
+        "--task-by": "task_by",
+        "--project": "project",
+        "--channel": "channel",
+        "--operator": "operator",
+        "--limit": "limit",
+    }
     while i < len(rest):
         a = rest[i]
         name, eq, val = a.partition("=")
@@ -1308,8 +1514,10 @@ def _cmd_agents(home: Path, rest: list[str]) -> int:
                 val = rest[i] if i < len(rest) else ""
             opts[flags[name]] = int(val) if flags[name] in ("days", "limit") and val.isdigit() else val
         else:
-            print("Usage: tq agents [--days N] [--by dims] [--task-by dims] [--project P] "
-                  "[--channel C] [--operator O] [--limit N] [--json]")
+            print(
+                "Usage: tq agents [--days N] [--by dims] [--task-by dims] [--project P] "
+                "[--channel C] [--operator O] [--limit N] [--json]"
+            )
             return 1
         i += 1
     db_path = _db(home)
@@ -1367,9 +1575,7 @@ def _cmd_health(home: Path, rest: list[str]) -> int:
         return 3
     conn = open_db(db_path, migrate=False)
     try:
-        health = compute_health(
-            conn, ack_at=read_ack(home), daemon_up=_daemon_running(home) is not None
-        )
+        health = compute_health(conn, ack_at=read_ack(home), daemon_up=_daemon_running(home) is not None)
     finally:
         conn.close()
     plain = "--plain" in rest
@@ -1397,6 +1603,7 @@ def _cmd_health(home: Path, rest: list[str]) -> int:
 def _cmd_usage(home: Path, rest: list[str]) -> int:
     import json as _json
     import time as _time
+
     path = home / "usage.jsonl"
     if not path.exists():
         print("No usage recorded yet.")
@@ -1419,17 +1626,18 @@ def _cmd_usage(home: Path, rest: list[str]) -> int:
     for c, n in sorted(counts.items(), key=lambda x: -x[1]):
         ago = int(_time.time()) - last_seen.get(c, 0)
         if ago < 3600:
-            when = f"{ago//60}m ago"
+            when = f"{ago // 60}m ago"
         elif ago < 86400:
-            when = f"{ago//3600}h ago"
+            when = f"{ago // 3600}h ago"
         else:
-            when = f"{ago//86400}d ago"
+            when = f"{ago // 86400}d ago"
         print(f"  {c:<18} {n:>6}  {when}")
     return 0
 
 
 def _cmd_prune(home: Path, rest: list[str]) -> int:
     from taskqueue._cli_prune import cmd_prune
+
     apply = "--apply" in rest
     verbose = "--verbose" in rest or "-v" in rest
     return cmd_prune(home, dry_run=not apply, verbose=verbose)
@@ -1581,7 +1789,9 @@ COMMANDS: dict[str, Callable[[Path, list[str]], int]] = {
     "capacity": _cmd_capacity,
     "plan": _cmd_plan,
     "report": _cmd_report,
+    "hygiene": _cmd_hygiene,
     "diagnose": _cmd_diagnose,
+    "explain": _cmd_explain,
     "metrics": _cmd_metrics,
     "export": _cmd_export,
     "import": _cmd_import,
@@ -1638,6 +1848,7 @@ def main(argv: list[str] | None = None) -> int:
     # I-01: Force UTF-8 stdout on Windows to avoid cp1252 crashes on box-drawing chars
     if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
         import io
+
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     if not args or args[0] in ("--help", "-h", "help"):
@@ -1650,16 +1861,29 @@ def main(argv: list[str] | None = None) -> int:
     def _record_usage(command: str, flags: list[str]) -> None:
         import json
         import time
+
         try:
             path = home / "usage.jsonl"
-            entry = {"ts": round(time.time()), "cmd": command,
-                     "flags": [f for f in flags if f.startswith("-")]}
+            entry = {"ts": round(time.time()), "cmd": command, "flags": [f for f in flags if f.startswith("-")]}
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry) + "\n")
         except Exception:
             pass
 
-    if cmd not in ("usage", "agents", "health", "status", "list", "watch", "doctor", "workers", "logs", "log", "tail", "result"):
+    if cmd not in (
+        "usage",
+        "agents",
+        "health",
+        "status",
+        "list",
+        "watch",
+        "doctor",
+        "workers",
+        "logs",
+        "log",
+        "tail",
+        "result",
+    ):
         _record_usage(cmd, rest)
 
     handler = COMMANDS.get(cmd)

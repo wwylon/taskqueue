@@ -1,4 +1,5 @@
 """Stalled chip and negative-result badge."""
+
 from __future__ import annotations
 
 import json

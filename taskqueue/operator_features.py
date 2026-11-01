@@ -45,15 +45,6 @@ _WRITE_PREFIXES = (
 )
 
 
-
-
-
-
-
-
-
-
-
 def percentile(sorted_vals: list[float], p: float) -> float | None:
     """Nearest-rank percentile. ``p`` is 0–100. Empty input is None."""
     n = len(sorted_vals)
@@ -65,16 +56,23 @@ def percentile(sorted_vals: list[float], p: float) -> float | None:
     return float(sorted_vals[min(idx, n - 1)])
 
 
+# Unscoped /api/task-stats can scan every terminal run; cap the grouped response.
+TASK_STATS_UNSCOPED_LIMIT = 500
+
+
 def task_stats(
     conn: sqlite3.Connection,
     *,
     project: str | None = None,
     task_id: str | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     """One row per (project, task_id) from terminal runs with a duration.
 
     ``mean_sec`` / ``p50_sec`` / ``p95_sec`` use **completed** runs only.
     ``count`` and ``success_rate`` cover all terminal statuses.
+    Without ``project`` (and without ``task_id``), results are capped at
+    ``TASK_STATS_UNSCOPED_LIMIT`` (most recently finished tasks first).
     """
     sql = (
         "SELECT project, task_id, started_at, finished_at, status FROM runs "
@@ -111,17 +109,25 @@ def task_stats(
             p95_sec: float | None = round(percentile(completed_durs, 95) or 0, 1)
         else:
             mean_sec = p50_sec = p95_sec = None
-        out.append({
-            "project": proj,
-            "task_id": tid,
-            "last_finish": last_finish,
-            "mean_sec": mean_sec,
-            "p50_sec": p50_sec,
-            "p95_sec": p95_sec,
-            "count": n,
-            "success_rate": round(completed_n / n, 3) if n else 0,
-        })
-    out.sort(key=lambda r: (r["project"], r["task_id"]))
+        out.append(
+            {
+                "project": proj,
+                "task_id": tid,
+                "last_finish": last_finish,
+                "mean_sec": mean_sec,
+                "p50_sec": p50_sec,
+                "p95_sec": p95_sec,
+                "count": n,
+                "success_rate": round(completed_n / n, 3) if n else 0,
+            }
+        )
+    if not project and not task_id:
+        cap = TASK_STATS_UNSCOPED_LIMIT if limit is None else max(0, int(limit))
+        out.sort(key=lambda r: r["last_finish"] or "", reverse=True)
+        out = out[:cap]
+        out.sort(key=lambda r: (r["project"], r["task_id"]))
+    else:
+        out.sort(key=lambda r: (r["project"], r["task_id"]))
     return out
 
 
@@ -176,7 +182,9 @@ def next_cron_fire(expr: str, now: datetime | None = None, *, hours: int = 48) -
     return None
 
 
-def schedules(conn: sqlite3.Connection, *, project: str | None = None, now: datetime | None = None) -> list[dict[str, Any]]:
+def schedules(
+    conn: sqlite3.Connection, *, project: str | None = None, now: datetime | None = None
+) -> list[dict[str, Any]]:
     sql = (
         "SELECT project, task_id, status, enabled, schedule FROM tasks "
         "WHERE schedule IS NOT NULL AND schedule != '' AND schedule != 'null'"
@@ -197,14 +205,16 @@ def schedules(conn: sqlite3.Connection, *, project: str | None = None, now: date
         if not cron_expr:
             continue
         nxt = next_cron_fire(str(cron_expr), now)
-        out.append({
-            "project": row["project"],
-            "task_id": row["task_id"],
-            "status": row["status"],
-            "enabled": int(row["enabled"] or 0),
-            "cron": str(cron_expr),
-            "next_fire": _iso(nxt) if nxt else None,
-        })
+        out.append(
+            {
+                "project": row["project"],
+                "task_id": row["task_id"],
+                "status": row["status"],
+                "enabled": int(row["enabled"] or 0),
+                "cron": str(cron_expr),
+                "next_fire": _iso(nxt) if nxt else None,
+            }
+        )
     out.sort(key=lambda r: (r["next_fire"] or "z", r["project"], r["task_id"]))
     return out
 
@@ -277,12 +287,14 @@ def rule_is_firing(
                 continue
             elapsed = (moment - started).total_seconds()
             if elapsed > threshold:
-                offenders.append({
-                    "run_id": row["run_id"],
-                    "project": row["project"],
-                    "task_id": row["task_id"],
-                    "elapsed_sec": round(elapsed, 1),
-                })
+                offenders.append(
+                    {
+                        "run_id": row["run_id"],
+                        "project": row["project"],
+                        "task_id": row["task_id"],
+                        "elapsed_sec": round(elapsed, 1),
+                    }
+                )
         return bool(offenders), offenders
     if kind == "failed_count":
         cutoff = moment - timedelta(seconds=max(window, 0))
@@ -465,7 +477,9 @@ def evaluate_alerts(
     return fired
 
 
-def _emit_alert(home: Path | None, cfg: dict[str, Any] | None, rule: sqlite3.Row, offenders: list[dict[str, Any]]) -> None:
+def _emit_alert(
+    home: Path | None, cfg: dict[str, Any] | None, rule: sqlite3.Row, offenders: list[dict[str, Any]]
+) -> None:
     if home is None:
         return
     try:
@@ -507,8 +521,7 @@ def write_audit(
 ) -> None:
     try:
         conn.execute(
-            "INSERT INTO operator_audit (ts, actor, action, project, target, detail) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO operator_audit (ts, actor, action, project, target, detail) VALUES (?, ?, ?, ?, ?, ?)",
             (
                 _iso(_now()),
                 (actor or "web").strip() or "web",
@@ -593,9 +606,7 @@ def _clean_projects(projects: Any) -> list[str]:
     return out
 
 
-def create_token(
-    conn: sqlite3.Connection, name: str, scope: str, projects: Any = None
-) -> dict[str, Any]:
+def create_token(conn: sqlite3.Connection, name: str, scope: str, projects: Any = None) -> dict[str, Any]:
     name = (name or "").strip()
     allowed = _clean_projects(projects)
     if allowed and scope.strip() == "admin":
@@ -610,8 +621,7 @@ def create_token(
     digest = _hash_token(secret)
     now = _iso(_now())
     cur = conn.execute(
-        "INSERT INTO api_tokens (name, token_hash, prefix, scope, created_at, projects) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO api_tokens (name, token_hash, prefix, scope, created_at, projects) VALUES (?, ?, ?, ?, ?, ?)",
         (name, digest, prefix, scope, now, json.dumps(allowed) if allowed else None),
     )
     conn.commit()
@@ -628,8 +638,7 @@ def create_token(
 
 def list_tokens(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
-        "SELECT id, name, prefix, scope, created_at, last_used_at, revoked_at, projects "
-        "FROM api_tokens ORDER BY id"
+        "SELECT id, name, prefix, scope, created_at, last_used_at, revoked_at, projects FROM api_tokens ORDER BY id"
     ).fetchall()
     out = []
     for r in rows:
@@ -739,6 +748,7 @@ def resolve_access(
     if prev:
         try:
             from datetime import datetime, timezone
+
             prev_dt = _parse_iso(str(prev))
             if prev_dt.tzinfo is None:
                 prev_dt = prev_dt.replace(tzinfo=timezone.utc)
@@ -756,11 +766,7 @@ def resolve_access(
 
 def is_worker_path(path: str) -> bool:
     path = path.rstrip("/") or "/"
-    return (
-        path.startswith("/api/worker")
-        or path == "/api/yield-master"
-        or path.startswith("/api/transfer/")
-    )
+    return path.startswith("/api/worker") or path == "/api/yield-master" or path.startswith("/api/transfer/")
 
 
 def scope_allows(scope: str | None, method: str, path: str) -> bool:
@@ -776,9 +782,10 @@ def scope_allows(scope: str | None, method: str, path: str) -> bool:
         return scope in ("read", "write")
     if scope != "write":
         return False
-    if any(path.startswith(prefix.rstrip("/")) and (
-        path == prefix.rstrip("/") or path.startswith(prefix)
-    ) for prefix in _WRITE_PREFIXES):
+    if any(
+        path.startswith(prefix.rstrip("/")) and (path == prefix.rstrip("/") or path.startswith(prefix))
+        for prefix in _WRITE_PREFIXES
+    ):
         return True
     if path.startswith("/api/groups/") and (path.endswith("/stop") or path.endswith("/retry")):
         return True
@@ -805,8 +812,7 @@ def pause_task(conn: sqlite3.Connection, project: str, task_id: str) -> tuple[bo
     from taskqueue.db import _now as _db_now
 
     conn.execute(
-        "UPDATE tasks SET enabled = 0, status = 'disabled', updated_at = ? "
-        "WHERE project = ? AND task_id = ?",
+        "UPDATE tasks SET enabled = 0, status = 'disabled', updated_at = ? WHERE project = ? AND task_id = ?",
         (_db_now(), project, task_id),
     )
     conn.commit()
@@ -814,8 +820,17 @@ def pause_task(conn: sqlite3.Connection, project: str, task_id: str) -> tuple[bo
 
 
 _RUN_DIFF_FIELDS = (
-    "status", "exit_code", "wall_sec", "worker_id", "package_hash", "last_error_code",
-    "error_category", "peak_ram_gib", "peak_vram_gib", "peak_cpu_pct", "spec_command",
+    "status",
+    "exit_code",
+    "wall_sec",
+    "worker_id",
+    "package_hash",
+    "last_error_code",
+    "error_category",
+    "peak_ram_gib",
+    "peak_vram_gib",
+    "peak_cpu_pct",
+    "spec_command",
 )
 
 
@@ -844,6 +859,27 @@ ANOMALY_RATIO = 1.5
 _ANOMALY_METRICS = (("peak_ram_gib", "ram"), ("peak_vram_gib", "vram"), ("wall_sec", "wall"))
 
 
+def _anomaly_flags_from_baseline(
+    run: dict[str, Any],
+    prior: list[Any],
+) -> list[dict[str, Any]]:
+    """Compare one run against prior completed-run rows (already filtered by run_id)."""
+    from taskqueue.estimate import _p95
+
+    if len(prior) < ANOMALY_MIN_SAMPLES:
+        return []
+    flags: list[dict[str, Any]] = []
+    for col, label in _ANOMALY_METRICS:
+        value = run.get(col)
+        base = _p95([float(r[col]) for r in prior if r[col] is not None])
+        if value is None or base <= 0:
+            continue
+        ratio = float(value) / base
+        if ratio > ANOMALY_RATIO:
+            flags.append({"metric": label, "value": value, "baseline_p95": base, "ratio": round(ratio, 2)})
+    return flags
+
+
 def run_anomaly(conn: sqlite3.Connection, run: dict[str, Any]) -> dict[str, Any]:
     """Flag peaks/wall time well above what earlier completed runs of the task used.
 
@@ -851,28 +887,46 @@ def run_anomaly(conn: sqlite3.Connection, run: dict[str, Any]) -> dict[str, Any]
     ``ANOMALY_MIN_SAMPLES`` of them nothing is flagged. A metric is flagged when it exceeds
     ``ANOMALY_RATIO`` x baseline.
     """
-    from taskqueue.estimate import _p95
-
     rows = conn.execute(
         "SELECT peak_ram_gib, peak_vram_gib, wall_sec FROM runs "
         "WHERE project = ? AND task_id = ? AND run_id < ? AND status = 'completed' "
         "ORDER BY run_id DESC LIMIT 20",
         (run.get("project"), run.get("task_id"), run.get("run_id")),
     ).fetchall()
-    out: dict[str, Any] = {"samples": len(rows), "flags": []}
-    if len(rows) < ANOMALY_MIN_SAMPLES:
-        return out
-    for col, label in _ANOMALY_METRICS:
-        value = run.get(col)
-        base = _p95([float(r[col]) for r in rows if r[col] is not None])
-        if value is None or base <= 0:
-            continue
-        ratio = float(value) / base
-        if ratio > ANOMALY_RATIO:
-            out["flags"].append(
-                {"metric": label, "value": value, "baseline_p95": base, "ratio": round(ratio, 2)}
-            )
-    return out
+    return {"samples": len(rows), "flags": _anomaly_flags_from_baseline(run, list(rows))}
+
+
+def annotate_run_anomalies(conn: sqlite3.Connection, runs: list[dict[str, Any]]) -> None:
+    """Batch-attach ``anomalies`` flags for completed runs on a history page.
+
+    One prior-run query per distinct (project, task_id) instead of N+1.
+    Mutates ``runs`` in place; skips non-completed rows.
+    """
+    completed = [r for r in runs if r.get("status") == "completed"]
+    if not completed:
+        return
+    by_task: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for r in completed:
+        key = (str(r.get("project") or ""), str(r.get("task_id") or ""))
+        by_task.setdefault(key, []).append(r)
+    for (project, task_id), group in by_task.items():
+        max_run = max(int(r.get("run_id") or 0) for r in group)
+        # Extra headroom so each page run still has up to 20 priors before it.
+        fetch_n = 20 + len(group)
+        priors = list(
+            conn.execute(
+                "SELECT run_id, peak_ram_gib, peak_vram_gib, wall_sec FROM runs "
+                "WHERE project = ? AND task_id = ? AND run_id < ? AND status = 'completed' "
+                "ORDER BY run_id DESC LIMIT ?",
+                (project, task_id, max_run, fetch_n),
+            ).fetchall()
+        )
+        for r in group:
+            rid = int(r.get("run_id") or 0)
+            before = [p for p in priors if int(p["run_id"]) < rid][:20]
+            flags = _anomaly_flags_from_baseline(r, before)
+            if flags:
+                r["anomalies"] = flags
 
 
 def diff_runs(conn: sqlite3.Connection, a: int, b: int) -> dict[str, Any] | None:
@@ -892,11 +946,21 @@ def diff_runs(conn: sqlite3.Connection, a: int, b: int) -> dict[str, Any] | None
     ma = ra["metrics"] if isinstance(ra["metrics"], dict) else {}
     mb = rb["metrics"] if isinstance(rb["metrics"], dict) else {}
     # `_series` (sparkline samples) always differs between runs; compare the values, not the curves.
-    mchg = {k: {"a": ma.get(k), "b": mb.get(k)} for k in sorted((set(ma) | set(mb)) - {"_series", "_progress"})
-            if ma.get(k) != mb.get(k)}
+    mchg = {
+        k: {"a": ma.get(k), "b": mb.get(k)}
+        for k in sorted((set(ma) | set(mb)) - {"_series", "_progress"})
+        if ma.get(k) != mb.get(k)
+    }
     if mchg:
         changes["metrics"] = mchg
-    return {"a": a, "b": b, "same_task": (ra["project"], ra["task_id"]) == (rb["project"], rb["task_id"]),
-            "identical": not changes, "changes": changes,
-            "runs": {"a": {k: ra[k] for k in ("run_id", "project", "task_id", "started_at", "finished_at")},
-                     "b": {k: rb[k] for k in ("run_id", "project", "task_id", "started_at", "finished_at")}}}
+    return {
+        "a": a,
+        "b": b,
+        "same_task": (ra["project"], ra["task_id"]) == (rb["project"], rb["task_id"]),
+        "identical": not changes,
+        "changes": changes,
+        "runs": {
+            "a": {k: ra[k] for k in ("run_id", "project", "task_id", "started_at", "finished_at")},
+            "b": {k: rb[k] for k in ("run_id", "project", "task_id", "started_at", "finished_at")},
+        },
+    }

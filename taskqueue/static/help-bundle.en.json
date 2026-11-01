@@ -7,14 +7,14 @@
       "page": {
         "id": "page-queue",
         "title": "Queue",
-        "html": "<p>The <strong>Queue</strong> page lists tasks with status chips, search, tags, and group chips. The header project filter limits the list and the four status counts. Those counts are totals for the project, not just the rows on screen. The <strong>active</strong> project chip shows every project except frozen or paused ones; queued tasks waiting on deps/resources (<code>tq.block.*</code>) stay visible.</p>\n<ul>\n<li>Changing the header project clears the selected <strong>group</strong> filter (groups belong to a project&#x27;s task set). The Groups page <strong>View in queue</strong> link selects the group&#x27;s project as well.</li>\n<li>Wait reasons under Status use color: muted for normal waits (resources, exclusive, healthy deps), warn for frozen/paused/service blocks, red when waiting on a dead dependency (<code>failed</code> / <code>interrupted</code> / <code>stopped</code> / missing).</li>\n<li><strong>Columns</strong> hides optional table columns (priority, status, started, finished, resources, description); the choice is kept in this browser.</li>\n<li><strong>Saved filters</strong> remember status, search, and project. <strong>Failed today</strong> only hides rows on the loaded page whose finish time is today.</li>\n<li>Selecting rows shows the bulk bar; <strong>Select all N matching</strong> extends the selection to every task matching the current filters (all pages, up to 5000). Bulk stop and retry send one request (<code>/api/tasks/bulk</code>, <code>/api/tasks/retry-batch</code>).</li>\n<li><strong>Retry all failed</strong> retries the failed query and asks before more than 500. CSV and JSON export download the rows on screen.</li>\n<li>Running rows show <strong>last progress N ago</strong> once the % has not moved for a minute, and <strong>⚠ possibly stalled</strong> when it has not moved for over 3x the run&#x27;s usual interval (at least 2 min) — a slow run stays below that (same rule as <code>tq status</code>). A task that exited with one of its <code>negative_exit_codes</code> shows a dashed <strong>completed · no</strong> badge: a negative result, not a failure.</li>\n<li>Cap hits show as <strong><code>interrupted</code></strong> with code <strong><code>tq.run.cap</code></strong> (often safe to retry or auto-retried via YAML <code>auto_retry_on_cap</code>). Real crashes show <strong><code>failed</code></strong> / <strong><code>tq.run.nonzero</code></strong>. CLI equivalent: <code>tq retry --project P --status failed,interrupted</code>.</li>\n<li>Select rows for bulk Retry, Stop, and Re-queue. <strong>Force</strong> is only offered on <code>queued</code> tasks.</li>\n<li>With a project selected, <strong>Pause project</strong>, <strong>Block project</strong> and <strong>Stop All</strong> sit in the filter bar. Pause keeps queued tasks waiting while running ones continue (<code>tq pause</code>); Block (freeze) makes the scheduler skip the project entirely.</li>\n<li>Click a task cell to open the drawer (info, YAML, last five runs). <strong>Log</strong> opens the bottom panel; its toolbar filters lines by regex (an invalid pattern matches literally), shows only warnings/errors or errors, toggles line wrap, and downloads the log (last 8 MiB). The drawer shows <strong>Metrics (TQ_METRIC)</strong> sparklines when the task&#x27;s latest run printed numeric <code>TQ_METRIC</code> values (task-chosen keys — see <a href=\"/docs/tq-metric\">Metrics (TQ_METRIC)</a>; not the same as the <strong>📊 metrics</strong> resource-usage modal). <strong>Why not running?</strong> lists what holds the task back: the scheduler&#x27;s last block reason, an unmet dependency, a paused project, <code>max_attempts</code>, and for queued tasks a dry-run verdict (same as <code>tq why</code>).</li>\n<li><strong>Stop</strong> waits 5 seconds and shows a toast with <strong>Undo</strong> before it is sent (a stopped run cannot continue mid-step).</li>\n<li><strong>Ctrl+K</strong> (Cmd+K on macOS) opens the command palette on any page: type to jump to a page, open a task on the loaded queue page in the drawer, or refresh / show shortcuts.</li>\n<li>Shortcuts while this page is active and focus is not in a field: <code>j</code> / <code>k</code> move the row, <code>/</code> focuses search, <code>r</code> retries and <code>s</code> stops (both ask to confirm), <code>a</code> selects visible rows, Enter opens the drawer, <code>?</code> toggles the shortcut list, Esc closes the top layer (an open dialog first). Shortcuts are ignored with Ctrl/Alt/Cmd held, and Enter on a focused button activates the button instead of opening the drawer.</li>\n<li><strong>Shareable URLs</strong> keep the section and filters: <code>page</code> (or legacy <code>tab</code>), <code>project</code>, <code>status</code>, <code>q</code>, <code>group</code>, <code>tag</code>, <code>doc</code>. A <code>tq_token</code> in an opened link is saved in the browser and then removed from the address bar, so shared URLs never carry it. Example: <code>/?page=queue&amp;project=omnicard3&amp;status=failed</code>. Browser Back and Forward restore them.</li>\n<li>A <strong>lock contention</strong> banner appears when queued tasks wait on a shared <code>resources.locks</code> mutex and the holder&#x27;s project still has headroom under <code>max_tasks</code>.</li>\n<li>Queued tasks can also wait on <strong><code>exclusive</code></strong> (blocks all other tasks while it runs) or <strong><code>exclusive_project</code></strong> (blocks only same-project peers). Those show as <code>tq.block.exclusive</code> / <code>tq.block.exclusive_project</code> — Force does not bypass them.</li>\n<li>Live updates use <strong>SSE</strong> (<code>/api/events</code>) when the browser supports EventSource; the list refreshes within about a second of status changes. If SSE drops, the page falls back to a slower poll.</li>\n</ul>",
+        "html": "<p>The <strong>Queue</strong> page lists tasks with status chips, search, tags, and group chips. The header project filter limits the list and the four status counts. Those counts are totals for the project, not just the rows on screen. The <strong>active</strong> project chip shows every project except frozen or paused ones; queued tasks waiting on deps/resources (<code>tq.block.*</code>) stay visible.</p>\n<ul>\n<li>Changing the header project clears the selected <strong>group</strong> filter (groups belong to a project&#x27;s task set). The Groups page <strong>View in queue</strong> link selects the group&#x27;s project as well.</li>\n<li>Wait reasons under Status use color: muted for normal waits (resources, exclusive, healthy deps), warn for frozen/paused/service blocks, red when waiting on a dead dependency (<code>failed</code> / <code>interrupted</code> / <code>stopped</code> / missing).</li>\n<li>Dependency lines show <code>Deps: met/total</code> plus up to <strong>three unmet</strong> dependency task ids (then <code>…</code>). Click a name to jump to that task. Full chips remain in the Details drawer.</li>\n<li><strong>Start order</strong> sorts by the Timeline forecast projected start (advisory — same caveats as Timeline; does not change fairshare admission). Prefer a project filter on large queues. <strong>Deps ↑</strong> ranks by how many incomplete peers depend on the task.</li>\n<li><strong>Columns</strong> hides optional table columns (priority, status, started, finished, resources, description); the choice is kept in this browser.</li>\n<li><strong>Saved filters</strong> remember status, search, and project. <strong>Failed today</strong> only hides rows on the loaded page whose finish time is today.</li>\n<li>Selecting rows shows the bulk bar; <strong>Select all N matching</strong> extends the selection to every task matching the current filters (all pages, up to 5000). Bulk stop and retry send one request (<code>/api/tasks/bulk</code>, <code>/api/tasks/retry-batch</code>).</li>\n<li><strong>Retry all failed</strong> retries the failed query and asks before more than 500. CSV and JSON export download the rows on screen.</li>\n<li>Running rows show <strong>last progress N ago</strong> once the % has not moved for a minute, and <strong>⚠ possibly stalled</strong> when it has not moved for over 3x the run&#x27;s usual interval (at least 2 min) — a slow run stays below that (same rule as <code>tq status</code>). A task that exited with one of its <code>negative_exit_codes</code> shows a dashed <strong>completed · no</strong> badge: a negative result, not a failure.</li>\n<li>Cap hits show as <strong><code>interrupted</code></strong> with code <strong><code>tq.run.cap</code></strong> (often safe to retry or auto-retried via YAML <code>auto_retry_on_cap</code>). Real crashes show <strong><code>failed</code></strong> / <strong><code>tq.run.nonzero</code></strong>. CLI equivalent: <code>tq retry --project P --status failed,interrupted</code>.</li>\n<li>Select rows for bulk Retry, Stop, and Re-queue. <strong>Force</strong> is only offered on <code>queued</code> tasks.</li>\n<li>With a project selected, <strong>Pause project</strong>, <strong>Block project</strong> and <strong>Stop All</strong> sit in the filter bar. Pause keeps queued tasks waiting while running ones continue (<code>tq pause</code>); Block (freeze) makes the scheduler skip the project entirely.</li>\n<li>Click a task cell to open the drawer (info, YAML, last five runs). <strong>Log</strong> opens the bottom panel; its toolbar filters lines by regex (an invalid pattern matches literally), shows only warnings/errors or errors, toggles line wrap, and downloads the log (last 8 MiB). The drawer shows <strong>Metrics (TQ_METRIC)</strong> sparklines when the task&#x27;s latest run printed numeric <code>TQ_METRIC</code> values (task-chosen keys — see <a href=\"/docs/tq-metric\">Metrics (TQ_METRIC)</a>; not the same as the <strong>📊 metrics</strong> resource-usage modal). <strong>Why not running?</strong> lists what holds the task back: the scheduler&#x27;s last block reason, an unmet dependency, a paused project, <code>max_attempts</code>, and for queued tasks a dry-run verdict (same as <code>tq why</code>).</li>\n<li><strong>Stop</strong> waits 5 seconds and shows a toast with <strong>Undo</strong> before it is sent (a stopped run cannot continue mid-step).</li>\n<li><strong>Ctrl+K</strong> (Cmd+K on macOS) opens the command palette on any page: type to jump to a page, open a task on the loaded queue page in the drawer, or refresh / show shortcuts.</li>\n<li>Shortcuts while this page is active and focus is not in a field: <code>j</code> / <code>k</code> move the row, <code>/</code> focuses search, <code>r</code> retries and <code>s</code> stops (both ask to confirm), <code>a</code> selects visible rows, Enter opens the drawer, <code>?</code> toggles the shortcut list, Esc closes the top layer (an open dialog first). Shortcuts are ignored with Ctrl/Alt/Cmd held, and Enter on a focused button activates the button instead of opening the drawer.</li>\n<li><strong>Shareable URLs</strong> keep the section and filters: <code>page</code> (or legacy <code>tab</code>), <code>project</code>, <code>status</code>, <code>q</code>, <code>group</code>, <code>tag</code>, <code>doc</code>. A <code>tq_token</code> in an opened link is saved in the browser and then removed from the address bar, so shared URLs never carry it. Example: <code>/?page=queue&amp;project=omnicard3&amp;status=failed</code>. Browser Back and Forward restore them.</li>\n<li>A <strong>lock contention</strong> banner appears when queued tasks wait on a shared <code>resources.locks</code> mutex and the holder&#x27;s project still has headroom under <code>max_tasks</code>.</li>\n<li>Queued tasks can also wait on <strong><code>exclusive</code></strong> (blocks all other tasks while it runs) or <strong><code>exclusive_project</code></strong> (blocks only same-project peers). Those show as <code>tq.block.exclusive</code> / <code>tq.block.exclusive_project</code> — Force does not bypass them.</li>\n<li>Live updates use <strong>SSE</strong> (<code>/api/events</code>) when the browser supports EventSource; the list refreshes within about a second of status changes. If SSE drops, the page falls back to a slower poll.</li>\n</ul>",
         "read_more": "/docs/web-ui#page-queue"
       },
       "general": [
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -40,33 +40,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -75,6 +97,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -97,6 +120,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -104,6 +128,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -121,7 +146,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -147,33 +172,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -182,6 +229,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -204,6 +252,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -211,6 +260,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -221,14 +271,14 @@
       "page": {
         "id": "page-history",
         "title": "History",
-        "html": "<p><strong>History</strong> lists recent execution attempts. Each row is <strong><code>#run_id</code></strong> for a project/task — use this id when discussing logs, metrics, or a specific failure.</p>\n<p>The list loads <strong>20</strong> runs at a time (Load more fetches the next 20). Click <strong>History</strong> on a row for that task’s prior runs plus duration stats (average / P50 / P95 from completed runs). <strong>Metrics</strong> opens the resource chart for that run. <strong>Re-run</strong> (after a confirm) queues the task again with the arguments that run used (subject to the task&#x27;s <code>overridable_args</code>); <code>tq clone</code> makes a new task from one instead. Click a row to inspect duration, exit status, and link to log search. Filter by project from the header selector. Use the search box to match <strong>task id</strong>, <strong>project</strong>, <strong><code>#run_id</code></strong>, error category, or worker id (server-side; works with Load more). <code>/</code> focuses search while this page is active.</p>\n<h2>Comparing two runs</h2>\n<p>Click <strong>⇄ Compare</strong> on one run row (or the <strong>⇄</strong> button on a dashboard history card), then on a second run. A dialog lists only the fields</p>\n<p>that differ: status, exit code, wall time, peak CPU/RAM/VRAM, worker, package hash, command,</p>\n<p>effective arguments, environment variable <strong>names</strong> (values are never stored) and the numeric</p>\n<p>metrics. The same data is available from <code>GET /api/runs/&lt;id&gt;</code> and <code>GET /api/runs/diff?a=&amp;b=</code>.</p>\n<p>Runs started before the upgrade have no argument/environment snapshot.</p>\n<p><code>GET /api/runs/&lt;id&gt;</code> also returns an <code>anomaly</code> block: peak RAM, peak VRAM or wall time more than 1.5x the p95 of the last 20 completed runs of the same task is listed in <code>anomaly.flags</code>. With fewer than 5 completed earlier runs nothing is flagged.</p>\n<p><strong>Re-run with a past run&#x27;s args.</strong> <code>POST /api/runs/&lt;run_id&gt;/rerun</code> re-queues the run&#x27;s task using the args recorded for that run. The recorded args replace the task&#x27;s argv tail for one run, so they must stay within the task&#x27;s <code>overridable_args</code>; otherwise the request is refused with 409 and nothing changes. The task must be in a retryable state. Requires admin scope.</p>\n<p>Completed runs that exceeded the anomaly threshold (see <code>GET /api/runs/&lt;id&gt;</code>) show a ⚠ <strong>Unusual</strong> badge next to their status; hover it for the metric, value and the p95 baseline. <code>GET /api/history</code> returns the same flags as <code>anomalies</code> on each affected run, and the <strong>Unusual run</strong> alert (Alerts page) fires when such a run finishes.</p>",
+        "html": "<p><strong>History</strong> lists recent execution attempts. Each row is <strong><code>#run_id</code></strong> for a project/task — use this id when discussing logs, metrics, or a specific failure.</p>\n<p>The list pages <strong>20</strong> runs at a time (Prev / Next move a fixed offset — the DOM keeps one page, not a growing cumulative window). Log and per-task history expand rows mount only when opened. Click <strong>History</strong> on a row for that task’s prior runs plus duration stats (average / P50 / P95 from completed runs). <strong>Metrics</strong> opens the resource chart for that run. <strong>Re-run</strong> (after a confirm) queues the task again with the arguments that run used (subject to the task&#x27;s <code>overridable_args</code>); <code>tq clone</code> makes a new task from one instead. Click a row to inspect duration, exit status, and link to log search. Filter by project from the header selector. Use the search box to match <strong>task id</strong>, <strong>project</strong>, <strong><code>#run_id</code></strong>, error category, or worker id (server-side; works across pages). <code>/</code> focuses search while this page is active.</p>\n<h2>Comparing two runs</h2>\n<p>Click <strong>⇄ Compare</strong> on one run row (or the <strong>⇄</strong> button on a dashboard history card), then on a second run. A dialog lists only the fields</p>\n<p>that differ: status, exit code, wall time, peak CPU/RAM/VRAM, worker, package hash, command,</p>\n<p>effective arguments, environment variable <strong>names</strong> (values are never stored) and the numeric</p>\n<p>metrics. The same data is available from <code>GET /api/runs/&lt;id&gt;</code> and <code>GET /api/runs/diff?a=&amp;b=</code>.</p>\n<p>Runs started before the upgrade have no argument/environment snapshot.</p>\n<p><code>GET /api/runs/&lt;id&gt;</code> also returns an <code>anomaly</code> block: peak RAM, peak VRAM or wall time more than 1.5x the p95 of the last 20 completed runs of the same task is listed in <code>anomaly.flags</code>. With fewer than 5 completed earlier runs nothing is flagged.</p>\n<p><strong>Re-run with a past run&#x27;s args.</strong> <code>POST /api/runs/&lt;run_id&gt;/rerun</code> re-queues the run&#x27;s task using the args recorded for that run. The recorded args replace the task&#x27;s argv tail for one run, so they must stay within the task&#x27;s <code>overridable_args</code>; otherwise the request is refused with 409 and nothing changes. The task must be in a retryable state. Requires admin scope.</p>\n<p>Completed runs that exceeded the anomaly threshold (see <code>GET /api/runs/&lt;id&gt;</code>) show a ⚠ <strong>Unusual</strong> badge next to their status; hover it for the metric, value and the p95 baseline. <code>GET /api/history</code> returns the same flags as <code>anomalies</code> on each affected run, and the <strong>Unusual run</strong> alert (Alerts page) fires when such a run finishes.</p>",
         "read_more": "/docs/web-ui#page-history"
       },
       "general": [
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -254,33 +304,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -289,6 +361,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -311,6 +384,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -318,6 +392,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -335,7 +410,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -361,33 +436,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -396,6 +493,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -418,6 +516,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -425,6 +524,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -442,7 +542,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -468,33 +568,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -503,6 +625,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -525,6 +648,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -532,6 +656,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -549,7 +674,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -575,33 +700,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -610,6 +757,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -632,6 +780,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -639,6 +788,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -656,7 +806,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -682,33 +832,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -717,6 +889,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -739,6 +912,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -746,6 +920,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -763,7 +938,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -789,33 +964,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -824,6 +1021,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -846,6 +1044,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -853,6 +1052,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -870,7 +1070,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -896,33 +1096,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -931,6 +1153,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -953,6 +1176,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -960,6 +1184,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -977,7 +1202,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1003,33 +1228,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1038,6 +1285,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1060,6 +1308,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1067,6 +1316,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -1084,7 +1334,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1110,33 +1360,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1145,6 +1417,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1167,6 +1440,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1174,6 +1448,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -1191,7 +1466,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1217,33 +1492,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1252,6 +1549,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1274,6 +1572,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1281,6 +1580,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -1298,7 +1598,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1324,33 +1624,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1359,6 +1681,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1381,6 +1704,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1388,6 +1712,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -1405,7 +1730,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1431,33 +1756,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1466,6 +1813,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1488,6 +1836,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1495,6 +1844,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]
@@ -1512,7 +1862,7 @@
         {
           "id": "block-project",
           "title": "Block project",
-          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
+          "html": "<p>With a project selected, <strong>Block project</strong> (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.</p>\n<p>This is different from the idle <strong>FROZEN</strong> badge on a running card (no recent log output).</p>"
         },
         {
           "id": "force-run",
@@ -1538,33 +1888,55 @@
           "id": "prod-vs-dev",
           "title": "Daemon home and port",
           "html": "<p>Default daemon home is <code>~/.taskqueue</code> on port <strong>8765</strong>. Confirm with <code>tq doctor</code>.</p>"
+        },
+        {
+          "id": "queue-hygiene",
+          "title": "Queue Hygiene",
+          "html": "<h1>Queue hygiene</h1>\n<p>Use hygiene when the queue grows (many completed tasks, heavy projects) and you</p>\n<p>want rates and archive suggestions — not when you need live status.</p>\n<h2>What it reports</h2>\n<ul>\n<li><strong>Churn:</strong> how many <strong>new task rows</strong> were added (<code>enqueued_at</code> — not YAML</li>\n</ul>\n<p>mtime), how many runs started, and how many were <strong>re-runs</strong>.</p>\n<ul>\n<li><strong>Multi-use:</strong> tasks completed many times over days (reusable pipelines). Keep</li>\n</ul>\n<p>these; do not archive them by default.</p>\n<ul>\n<li><strong>Flaky:</strong> many attempts with few completions — review manually.</li>\n<li><strong>Archive proposals:</strong> projects with stale one-shot completed tasks that</li>\n</ul>\n<p><code>tq archive … --max-completed-runs 1 --dry-run</code> would take. Shared multi-task</p>\n<p>YAMLs are skipped (same rule as archive).</p>\n<h2>Commands</h2>\n<pre><code class=\"language-text\">tq hygiene --json\ntq report --hygiene --days 7 --older-than 30d</code></pre>\n<p>MCP: <code>report</code> with <code>kind=hygiene</code>. HTTP: <code>GET /api/hygiene</code>.</p>\n<h2>Safety</h2>\n<p>Hygiene <strong>never</strong> archives. Proposals include a dry-run command. Drop</p>\n<p><code>--dry-run</code> only after an operator (or an agent with an explicit apply ask)</p>\n<p>approves.</p>\n<p>Related: <code>tq prune</code> deletes old <strong>runs/logs</strong> (retention); <code>tq archive</code> removes</p>\n<p><strong>task rows</strong> from the live queue into <code>&lt;home&gt;/archive/</code>.</p>"
         }
       ],
       "references": [
         {
+          "id": "capabilities",
+          "title": "Capabilities",
+          "url": "/docs/capabilities",
+          "capability": "observe"
+        },
+        {
+          "id": "surface-map",
+          "title": "Surface Map",
+          "url": "/docs/surface-map",
+          "capability": "observe"
+        },
+        {
           "id": "errors",
           "title": "Errors",
-          "url": "/docs/errors"
+          "url": "/docs/errors",
+          "capability": "diagnose"
         },
         {
           "id": "task-standards",
           "title": "Task Standards",
-          "url": "/docs/task-standards"
+          "url": "/docs/task-standards",
+          "capability": "submit"
         },
         {
           "id": "scheduler",
           "title": "Scheduler",
-          "url": "/docs/scheduler"
+          "url": "/docs/scheduler",
+          "capability": "admit"
         },
         {
           "id": "mcp",
           "title": "MCP",
-          "url": "/docs/mcp"
+          "url": "/docs/mcp",
+          "capability": "wait_notify"
         },
         {
           "id": "security",
           "title": "Security",
-          "url": "/docs/security"
+          "url": "/docs/security",
+          "capability": "auth"
         }
       ],
       "guides": [
@@ -1573,6 +1945,7 @@
           "title": "Web UI",
           "audience": "human",
           "url": "/docs/web-ui",
+          "capability": "observe",
           "ui_pages": [
             "queue",
             "dashboard",
@@ -1595,6 +1968,7 @@
           "title": "Quickstart",
           "audience": "human",
           "url": "/docs/quickstart",
+          "capability": "submit",
           "ui_pages": []
         },
         {
@@ -1602,6 +1976,7 @@
           "title": "Agent Recipes",
           "audience": "agent",
           "url": "/docs/agent-recipes",
+          "capability": "wait_notify",
           "ui_pages": []
         }
       ]

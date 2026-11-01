@@ -56,9 +56,7 @@ def test_requeue_spares_remote_running(tmp_path: Path) -> None:
     assert n == 1
     assert get_task(db, "p", "local")["status"] == STATUS_QUEUED
     assert get_task(db, "p", "remote")["status"] == STATUS_RUNNING
-    remote_run = db.execute(
-        "SELECT status FROM runs WHERE task_id = 'remote' ORDER BY run_id DESC LIMIT 1"
-    ).fetchone()
+    remote_run = db.execute("SELECT status FROM runs WHERE task_id = 'remote' ORDER BY run_id DESC LIMIT 1").fetchone()
     assert remote_run["status"] == "running"
 
 
@@ -91,9 +89,7 @@ def test_start_compensates_when_popen_fails(tmp_path: Path) -> None:
     assert "start failed" in err
     assert get_task(db, "p", "spawn")["status"] == "failed"
     assert get_task(db, "p", "spawn")["last_error_code"] == tqerr.RUN_PREFLIGHT
-    last = db.execute(
-        "SELECT status FROM runs WHERE task_id = 'spawn' ORDER BY run_id DESC LIMIT 1"
-    ).fetchone()
+    last = db.execute("SELECT status FROM runs WHERE task_id = 'spawn' ORDER BY run_id DESC LIMIT 1").fetchone()
     assert last["status"] == "failed"
 
 

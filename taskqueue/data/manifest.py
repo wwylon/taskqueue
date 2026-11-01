@@ -1,4 +1,5 @@
 """Content-addressed storage and manifest utilities for the data: YAML block."""
+
 from __future__ import annotations
 
 import hashlib
@@ -45,17 +46,16 @@ def build_manifest(
             continue
         size = fp.stat().st_size
         if max_bytes is not None and total + size > max_bytes:
-            raise ValueError(
-                f"data.inputs exceeds max_bytes ({max_bytes}): "
-                f"total so far {total + size}"
-            )
+            raise ValueError(f"data.inputs exceeds max_bytes ({max_bytes}): total so far {total + size}")
         total += size
         rel = fp.relative_to(root)
-        files.append({
-            "path": rel.as_posix(),
-            "size": size,
-            "sha256": _sha256_file(fp),
-        })
+        files.append(
+            {
+                "path": rel.as_posix(),
+                "size": size,
+                "sha256": _sha256_file(fp),
+            }
+        )
     return files
 
 
@@ -107,6 +107,7 @@ def sqlite_snapshot(db_path: Path, dest: Path) -> str:
     Returns sha256 of the snapshot.
     """
     import sqlite3
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(".tmp.db")
     try:

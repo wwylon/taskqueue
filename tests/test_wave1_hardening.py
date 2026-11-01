@@ -84,7 +84,9 @@ def test_service_probe_cache_ignores_gpu_drift_without_vram_requirement(monkeypa
     sch.clear_service_probe_cache()
     svc = json.dumps([{"name": "s", "health_url": "http://127.0.0.1:1/h"}])
     for used in (1.0, 5.0, 9.0):
-        sch.check_services_cached(svc, system_info={"hostname": "h", "gpus": [{"index": 0, "vram_gib": 24, "vram_used_gib": used}]})
+        sch.check_services_cached(
+            svc, system_info={"hostname": "h", "gpus": [{"index": 0, "vram_gib": 24, "vram_used_gib": used}]}
+        )
     assert len(calls) == 1
 
 
@@ -101,7 +103,9 @@ def test_shared_gpu_probe_runs_once_per_ttl():
 def test_redact_config_masks_notify_url_secrets():
     from taskqueue.web.responses import _redact_config
 
-    out = _redact_config({"auth_token": "t", "notify_url": "https://user:pw@hooks.example.com/services/T0/B0/SECRET?key=abc"})
+    out = _redact_config(
+        {"auth_token": "t", "notify_url": "https://user:pw@hooks.example.com/services/T0/B0/SECRET?key=abc"}
+    )
     assert out["auth_token"] == "***"
     assert out["notify_url"] == "https://hooks.example.com/***"
     assert "SECRET" not in out["notify_url"] and "pw" not in out["notify_url"]

@@ -65,9 +65,7 @@ def fix_legacy_keys(
             res["ram_gib"] = ram
             changes.append(f"moved ram_gib → resources.ram_gib ({ram})")
         else:
-            changes.append(
-                f"dropped top-level ram_gib ({ram}); resources.ram_gib already set"
-            )
+            changes.append(f"dropped top-level ram_gib ({ram}); resources.ram_gib already set")
         out["resources"] = res
 
     if "timeout_s" in out:
@@ -76,9 +74,7 @@ def fix_legacy_keys(
             out["wall_clock_cap_sec"] = t
             changes.append(f"renamed timeout_s → wall_clock_cap_sec ({t})")
         else:
-            changes.append(
-                f"dropped timeout_s ({t}); wall_clock_cap_sec already set"
-            )
+            changes.append(f"dropped timeout_s ({t}); wall_clock_cap_sec already set")
 
     if "hypothesis" in out:
         h = out.pop("hypothesis")
@@ -112,8 +108,7 @@ def fix_legacy_yaml_file(path: Path, *, project_name: str) -> list[str]:
     docs = list(yaml.safe_load_all(text))
     if len(docs) > 1:
         raise ValueError(
-            f"{path.name}: legacy fixer does not support multi-document YAML "
-            f"({len(docs)} documents separated by '---')"
+            f"{path.name}: legacy fixer does not support multi-document YAML ({len(docs)} documents separated by '---')"
         )
     raw = docs[0] if docs else None
     if not isinstance(raw, dict):

@@ -1,4 +1,5 @@
 """Command table: help per command, completion scripts generated from it."""
+
 from __future__ import annotations
 
 from taskqueue import cli

@@ -39,7 +39,8 @@ def test_prune_runs_keeps_last_run_and_cleans_history(tmp_path):
     db.execute("INSERT INTO resource_history (run_id, ts) VALUES (?, 1)", (old1,))
     db.execute("INSERT INTO resource_history (run_id, ts) VALUES (?, 1)", (fresh,))
     db.execute(
-        "INSERT INTO tasks (project, task_id, command, enqueued_at, updated_at, last_run_id) VALUES ('p','t','x','2020-01-01','2020-01-01',?)", (old2,)
+        "INSERT INTO tasks (project, task_id, command, enqueued_at, updated_at, last_run_id) VALUES ('p','t','x','2020-01-01','2020-01-01',?)",
+        (old2,),
     )
     db.commit()
     cfg = {"retention_run_days": 180}
@@ -67,8 +68,7 @@ def test_prune_runs_batches(tmp_path):
 
 
 def test_retention_projects_accepts_json_string():
-    cfg = {"retention_log_days": 90, "retention_run_days": 180,
-           "retention_projects": '{"p": {"run_days": 7}}'}
+    cfg = {"retention_log_days": 90, "retention_run_days": 180, "retention_projects": '{"p": {"run_days": 7}}'}
     assert _per_project_retention(cfg, "p") == (90, 7)
     assert _per_project_retention({"retention_projects": "not json"}, "p") == (90, 180)
 
@@ -82,8 +82,7 @@ def test_prune_logs_protects_listed_paths(tmp_path):
         f.write_text("x")
         t = time.time() - 400 * 86400
         os.utime(f, (t, t))
-    res = prune_logs(tmp_path, {"retention_log_days": 30}, dry_run=False,
-                     protected={str(keep.resolve())})
+    res = prune_logs(tmp_path, {"retention_log_days": 30}, dry_run=False, protected={str(keep.resolve())})
     assert res["logs_deleted"] == 1
     assert not old.exists() and keep.exists()
 
@@ -130,7 +129,9 @@ def test_cmd_prune_keeps_each_tasks_latest_log(tmp_path):
         "INSERT INTO tasks (project, task_id, command, enqueued_at, updated_at, last_run_id) VALUES ('p','t','x','2020-01-01','2020-01-01',?)",
         (run_latest,),
     )
-    db.execute("INSERT INTO config (key, value) VALUES ('retention_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value='true'")
+    db.execute(
+        "INSERT INTO config (key, value) VALUES ('retention_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value='true'"
+    )
     db.execute(
         "INSERT INTO config (key, value) VALUES ('retention_log_max_bytes', '0') "
         "ON CONFLICT(key) DO UPDATE SET value='0'"
@@ -149,9 +150,7 @@ def test_cap_finished_logs_shrinks_and_preserves_mtime(tmp_path):
     big.write_bytes(b"HEAD\n" + b"y" * 2000 + b"\nTAIL_LINE\n")
     old_mtime = time.time() - 10 * 86400
     os.utime(big, (old_mtime, old_mtime))
-    res = cap_finished_logs(
-        tmp_path, {"retention_log_max_bytes": 64}, dry_run=False, unfinished=set()
-    )
+    res = cap_finished_logs(tmp_path, {"retention_log_max_bytes": 64}, dry_run=False, unfinished=set())
     assert res["logs_capped"] == 1
     assert res["logs_bytes_reclaimed"] > 0
     data = big.read_bytes()

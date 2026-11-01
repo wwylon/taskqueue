@@ -38,9 +38,9 @@ def create_project_bundle(
             if not line or line.startswith("#"):
                 continue
             if line.startswith("include:"):
-                includes.append(line[len("include:"):].strip())
+                includes.append(line[len("include:") :].strip())
             elif line.startswith("exclude:"):
-                excludes.append(line[len("exclude:"):].strip())
+                excludes.append(line[len("exclude:") :].strip())
     else:
         includes = ["bin/**", "scripts/**", "*.py", "pyproject.toml", "uv.lock"]
         excludes = ["data/**", "build/**", "*.log", ".git/**", ".venv/**"]
@@ -48,14 +48,10 @@ def create_project_bundle(
     def should_include(rel_path: str) -> bool:
         rel_path = rel_path.replace("\\", "/")
         for pattern in excludes:
-            if fnmatch.fnmatch(rel_path, pattern) or any(
-                fnmatch.fnmatch(p, pattern) for p in rel_path.split("/")
-            ):
+            if fnmatch.fnmatch(rel_path, pattern) or any(fnmatch.fnmatch(p, pattern) for p in rel_path.split("/")):
                 return False
         for pattern in includes:
-            if fnmatch.fnmatch(rel_path, pattern) or any(
-                fnmatch.fnmatch(p, pattern) for p in rel_path.split("/")
-            ):
+            if fnmatch.fnmatch(rel_path, pattern) or any(fnmatch.fnmatch(p, pattern) for p in rel_path.split("/")):
                 return True
         return False
 
@@ -66,9 +62,11 @@ def create_project_bundle(
     try:
         # Reproducible archive: fixed gzip mtime and sorted walk, so unchanged files
         # always hash the same and workers do not re-download identical bundles.
-        with open(temp_tar.name, "wb") as raw, gzip.GzipFile(
-            filename="", fileobj=raw, mode="wb", mtime=0
-        ) as gz, tarfile.open(fileobj=gz, mode="w") as tar:
+        with (
+            open(temp_tar.name, "wb") as raw,
+            gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz,
+            tarfile.open(fileobj=gz, mode="w") as tar,
+        ):
             for dirpath, dirnames, filenames in os.walk(root):
                 dirnames.sort()
                 for f in sorted(filenames):

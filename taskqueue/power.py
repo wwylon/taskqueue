@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 import sys
 
-_ES_CONTINUOUS        = 0x80000000
-_ES_SYSTEM_REQUIRED   = 0x00000001
+_ES_CONTINUOUS = 0x80000000
+_ES_SYSTEM_REQUIRED = 0x00000001
 _ES_AWAYMODE_REQUIRED = 0x00000040  # prevents away-mode / connected-standby sleep
 _inhibiting = False
 
@@ -33,5 +33,3 @@ def set_prevent_sleep(enable: bool) -> bool:
         print(f"[queue] warn: prevent_sleep failed: {exc}", file=sys.stderr)
         _inhibiting = False
         return False
-
-

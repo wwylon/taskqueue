@@ -1,4 +1,5 @@
 """Docs drift guard: every MCP tool / tq command is documented (scripts/check_docs.py)."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -18,8 +19,6 @@ def test_surface_is_documented() -> None:
 
 
 def test_new_undocumented_tool_is_flagged(monkeypatch) -> None:
-    monkeypatch.setattr(
-        mcp_server, "TOOLS", [*mcp_server.TOOLS, {"name": "brand_new_tool", "inputSchema": {}}]
-    )
+    monkeypatch.setattr(mcp_server, "TOOLS", [*mcp_server.TOOLS, {"name": "brand_new_tool", "inputSchema": {}}])
     errs = check_docs.check_surface_documented()
     assert errs == ["MCP tool 'brand_new_tool' is not documented in docs/mcp.md"]

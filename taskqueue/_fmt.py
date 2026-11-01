@@ -33,8 +33,12 @@ def fmt_bytes(n: int) -> str:
 # Status colours for terminal output, matching the health levels (taskqueue.health):
 # red = failed, amber = needs a look, green = done, cyan = running.
 _STATUS_ANSI = {
-    "failed": "31", "unknown": "31", "cancelled": "31",
-    "interrupted": "33", "stopped": "33", "suspended": "33",
+    "failed": "31",
+    "unknown": "31",
+    "cancelled": "31",
+    "interrupted": "33",
+    "stopped": "33",
+    "suspended": "33",
     "completed": "32",
     "running": "36",
 }

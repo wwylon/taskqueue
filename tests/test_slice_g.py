@@ -101,20 +101,21 @@ def test_report_and_diagnose(tmp_path: Path) -> None:
     proj = _project("demo", tmp_path)
     path = tmp_path / "t.yaml"
     path.write_text(
-        yaml.dump({
-            "task_id": "t1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "t1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(path, proj))
     set_task_error(db, "demo", "t1", tqerr.RUN_PROGRESS_SUSPECT, block_reason="lie")
-    db.execute(
-        "UPDATE tasks SET status = 'failed' WHERE project = 'demo' AND task_id = 't1'"
-    )
+    db.execute("UPDATE tasks SET status = 'failed' WHERE project = 'demo' AND task_id = 't1'")
     from datetime import UTC, datetime, timedelta
+
     started = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     finished = (datetime.now(UTC) - timedelta(days=1, minutes=-1)).strftime("%Y-%m-%dT%H:%M:%SZ")
     db.execute(

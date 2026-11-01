@@ -93,13 +93,38 @@ TOOLS = [
         },
     },
     {
+        "name": "explain_error",
+        "description": (
+            "Describe a stable taskqueue error code from the built-in catalog. "
+            "This is read-only and does not require a queue database."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"error_code": {"type": "string", "description": "For example tq.block.deps"}},
+            "required": ["error_code"],
+        },
+    },
+    {
         "name": "report",
-        "description": "Aggregate runs/errors report for recent days.",
+        "description": (
+            "Aggregate runs/errors report for recent days (kind=summary, default), "
+            "or queue hygiene (kind=hygiene): add/run/re-run rates, multi-use vs flaky, "
+            "archive proposals + agent_prompt. Never auto-archives."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
                 "days": {"type": "integer"},
+                "kind": {
+                    "type": "string",
+                    "description": "summary (default) or hygiene",
+                    "enum": ["summary", "hygiene"],
+                },
+                "older_than_days": {
+                    "type": "number",
+                    "description": "Hygiene archive age threshold (default 30)",
+                },
             },
         },
     },
@@ -145,7 +170,10 @@ TOOLS = [
                 "task_id": {"type": "string"},
                 "offset": {"type": "integer", "description": "Byte offset from start of file (default: read from end)"},
                 "max_bytes": {"type": "integer", "description": "Max bytes to return (default 32768)"},
-                "grep": {"type": "string", "description": "Optional filter: only lines containing this string (case-insensitive)"},
+                "grep": {
+                    "type": "string",
+                    "description": "Optional filter: only lines containing this string (case-insensitive)",
+                },
             },
             "required": ["project", "task_id"],
         },
@@ -167,8 +195,7 @@ TOOLS = [
                 "set": {
                     "type": "object",
                     "description": (
-                        "Optional arg overrides keyed by overridable_args entries, "
-                        "e.g. {\"--locales\": \"pl\"}"
+                        'Optional arg overrides keyed by overridable_args entries, e.g. {"--locales": "pl"}'
                     ),
                 },
             },
@@ -178,7 +205,7 @@ TOOLS = [
     {
         "name": "patch_task",
         "description": (
-            "W6.8: Update a task's YAML fields (priority, enabled, wall_clock_cap_sec, description). "
+            "W6.8: Update a task's YAML fields (priority, enabled, wall_clock_cap_sec, max_attempts). "
             "Pass updates as a dict of key→value. "
             "Returns {ok, applied, message}."
         ),
@@ -189,7 +216,7 @@ TOOLS = [
                 "task_id": {"type": "string"},
                 "updates": {
                     "type": "object",
-                    "description": "Fields to update, e.g. {\"priority\": 80, \"enabled\": true}",
+                    "description": 'Fields to update, e.g. {"priority": 80, "enabled": true}',
                 },
             },
             "required": ["project", "task_id", "updates"],
@@ -213,6 +240,25 @@ TOOLS = [
                 },
             },
             "required": ["project", "task_id"],
+        },
+    },
+    {
+        "name": "retry_tasks",
+        "description": (
+            "M7: Preview or retry a selected batch. Select by task keys, project/status, "
+            "suite, group, or downstream_of. Use dry_run=true to inspect actions without mutation."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tasks": {"type": "array", "items": {"type": "string"}, "description": "project/task_id keys"},
+                "project": {"type": "string"},
+                "status": {"type": ["string", "array"], "items": {"type": "string"}},
+                "suite": {"type": "string"},
+                "group": {"type": "string"},
+                "downstream_of": {"type": "string", "description": "project/root key"},
+                "dry_run": {"type": "boolean", "default": True},
+            },
         },
     },
     {
@@ -242,8 +288,14 @@ TOOLS = [
             "properties": {
                 "project": {"type": "string", "description": "Registered project name"},
                 "yaml_text": {"type": "string", "description": "Full YAML content of the task"},
-                "filename": {"type": "string", "description": "Optional filename hint (default: unique submitted_*.yaml)"},
-                "wait": {"type": "boolean", "description": "Also block until the task settles (see wait_for_task); result gains a 'wait' object"},
+                "filename": {
+                    "type": "string",
+                    "description": "Optional filename hint (default: unique submitted_*.yaml)",
+                },
+                "wait": {
+                    "type": "boolean",
+                    "description": "Also block until the task settles (see wait_for_task); result gains a 'wait' object",
+                },
                 "timeout_sec": {"type": "number", "description": "With wait=true: max seconds (default 60, cap 100)"},
             },
             "required": ["project", "yaml_text"],
@@ -281,7 +333,7 @@ TOOLS = [
         "description": (
             "C3: Block until task(s) settle (completed/failed/interrupted/stopped/suspended; "
             "disabled returns as settled but not finished). Preferred way to learn a task finished. "
-            "Select with project+task_id, tasks=[\"proj/id\", ...], or filters project/suite/group/tag/mine "
+            'Select with project+task_id, tasks=["proj/id", ...], or filters project/suite/group/tag/mine '
             "(filters wait only for tasks not yet settled). mode=all (default) or any. "
             "Returns {ok, done, timed_out, waited_sec, tasks:[{status, exit_code, last_error_code, "
             "stop_reason, wall_sec, progress_pct, last_lines, next_actions, log_tail?}], pending, not_found}. "
@@ -367,15 +419,24 @@ def _conn(home: Path):
     return open_db(tqconfig.db_path(home), migrate=False)
 
 
+_MCP_SECRET_FIELDS = ("env", "args_override", "yaml_source", "finalize_token", "metadata")
+
+
+def _redact_task_row(row: Any) -> dict[str, Any]:
+    """F-203: strip secrets from MCP task projections (parity with web _task_dict)."""
+    d = dict(row)
+    for f in _MCP_SECRET_FIELDS:
+        d.pop(f, None)
+    return d
+
+
 def _my_tasks(home: Path, args: dict[str, Any]) -> Any:
     operator = (args.get("operator") or os.environ.get("TQ_OPERATOR") or "").strip()
     if not operator:
         raise ValueError("operator required (argument or TQ_OPERATOR env)")
     conn = _conn(home)
     try:
-        rows = [dict(r) for r in list_operator_tasks(
-            conn, operator=operator, project=args.get("project")
-        )]
+        rows = [_redact_task_row(r) for r in list_operator_tasks(conn, operator=operator, project=args.get("project"))]
     finally:
         conn.close()
     return {"tasks": rows, "items": rows, "count": len(rows)}
@@ -424,11 +485,19 @@ def _diagnose(home: Path, args: dict[str, Any]) -> Any:
 
 
 def _report(home: Path, args: dict[str, Any]) -> Any:
-    from taskqueue.reports import build_report
-
     conn = _conn(home)
     try:
         days = int(args.get("days") or 7)
+        kind = str(args.get("kind") or "summary").strip().lower()
+        if kind == "hygiene":
+            from taskqueue.hygiene import build_hygiene_report
+
+            older = float(args.get("older_than_days") or 30)
+            return build_hygiene_report(
+                conn, project=args.get("project"), days=days, older_than_days=older
+            )
+        from taskqueue.reports import build_report
+
         return build_report(conn, project=args.get("project"), days=days)
     finally:
         conn.close()
@@ -438,10 +507,7 @@ def _queue_status(home: Path, _args: dict[str, Any]) -> Any:
     conn = _conn(home)
     cfg = get_config(conn)
     counts = {
-        r["status"]: r["n"]
-        for r in conn.execute(
-            "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status"
-        ).fetchall()
+        r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()
     }
     from taskqueue.db import last_boot_kind, latest_daemon_event, list_daemon_events
 
@@ -484,6 +550,138 @@ def _drain_notifications(home: Path, args: dict[str, Any]) -> Any:
 from taskqueue.waiting import SETTLED_STATUSES as _TERMINAL_STATUSES  # noqa: E402
 
 
+def _explain_error(home: Path, args: dict[str, Any]) -> Any:
+    """M7: Read one stable error-code description from the catalog."""
+    from taskqueue.errors import all_codes, block_kind, describe
+
+    code = str(args.get("error_code") or "").strip()
+    if not code:
+        raise ValueError("error_code is required")
+    catalog = all_codes()
+    return {
+        "ok": code in catalog,
+        "code": code,
+        "known": code in catalog,
+        "description": describe(code),
+        "block_kind": block_kind(code),
+    }
+
+
+def _retry_tasks(home: Path, args: dict[str, Any]) -> Any:
+    """M7: Preview or execute suite/group/downstream-style retries."""
+    from taskqueue._db_tasks import RETRYABLE_STATUSES, collect_downstream_task_ids, retry_skip_reason
+
+    conn = _conn(home)
+    try:
+        raw_tasks = args.get("tasks") or []
+        if not isinstance(raw_tasks, list):
+            raise ValueError("tasks must be a list of project/task_id keys")
+        selectors = sum(bool(args.get(k)) for k in ("project", "suite", "group", "downstream_of"))
+        if raw_tasks and selectors:
+            raise ValueError("tasks cannot be combined with another selector")
+        if not raw_tasks and selectors == 0:
+            raise ValueError("pass tasks, project, suite, group, or downstream_of")
+
+        keys: list[tuple[str, str]] = []
+        if raw_tasks:
+            for raw in raw_tasks:
+                key = str(raw)
+                if "/" not in key:
+                    raise ValueError(f"bad task key (need project/task_id): {key}")
+                keys.append(tuple(key.split("/", 1)))  # type: ignore[arg-type]
+        elif args.get("downstream_of"):
+            root = str(args["downstream_of"])
+            if "/" not in root:
+                raise ValueError("downstream_of must be project/task_id")
+            project, task_id = root.split("/", 1)
+            keys = [(project, task_id)]
+            keys.extend((project, tid) for tid in collect_downstream_task_ids(conn, project, task_id))
+        else:
+            clauses = ["1=1"]
+            params: list[Any] = []
+            for field in ("project", "suite", "group"):
+                value = args.get(field)
+                if value:
+                    column = "grp" if field == "group" else field
+                    clauses.append(f"{column} = ?")
+                    params.append(str(value))
+            raw_status = args.get("status")
+            if raw_status is None:
+                statuses = set(RETRYABLE_STATUSES)
+                if args.get("group") or args.get("project"):
+                    statuses.discard("completed")
+            elif isinstance(raw_status, list):
+                statuses = {str(s) for s in raw_status}
+            else:
+                statuses = {s.strip() for s in str(raw_status).split(",") if s.strip()}
+            bad = statuses - set(RETRYABLE_STATUSES)
+            if bad:
+                raise ValueError(f"invalid status filter: {sorted(bad)}")
+            clauses.append("status IN (" + ",".join("?" for _ in statuses) + ")")
+            params.extend(sorted(statuses))
+            rows = conn.execute(
+                f"SELECT project, task_id FROM tasks WHERE {' AND '.join(clauses)} ORDER BY project, task_id",
+                params,
+            ).fetchall()
+            keys = [(str(r["project"]), str(r["task_id"])) for r in rows]
+
+        actions: list[dict[str, Any]] = []
+        retry_keys: list[tuple[str, str]] = []
+        for project, task_id in keys:
+            row = get_task(conn, project, task_id)
+            if row is None:
+                actions.append({"key": f"{project}/{task_id}", "action": "skip", "reason": "not found"})
+                continue
+            reason = retry_skip_reason(conn, project, task_id)
+            item: dict[str, Any] = {
+                "key": f"{project}/{task_id}",
+                "status": row["status"],
+                "action": "retry" if reason is None else "skip",
+            }
+            if reason is not None:
+                item["reason"] = reason
+            else:
+                retry_keys.append((project, task_id))
+            actions.append(item)
+    finally:
+        conn.close()
+
+    dry_run = bool(args.get("dry_run", True))
+    result: dict[str, Any] = {
+        "ok": True,
+        "dry_run": dry_run,
+        "actions": actions,
+        "requeued": [],
+        "skipped": [a for a in actions if a["action"] == "skip"],
+    }
+    if dry_run or not retry_keys:
+        return result
+
+    from taskqueue.master_client import via_master
+
+    if args.get("downstream_of"):
+        project, task_id = str(args["downstream_of"]).split("/", 1)
+        api = via_master(home, "POST", f"/api/tasks/{project}/{task_id}/retry", body={"downstream": True})
+        if api is not None:
+            return {"ok": bool(api.get("ok")), "dry_run": False, **api}
+    api = via_master(
+        home,
+        "POST",
+        "/api/tasks/retry-batch",
+        body={"task_ids": [f"{p}/{t}" for p, t in retry_keys]},
+    )
+    if api is not None:
+        return {"ok": bool(api.get("ok")), "dry_run": False, **api}
+    from taskqueue.db import retry_tasks_batch
+
+    conn = _conn(home)
+    try:
+        batch = retry_tasks_batch(conn, retry_keys)
+    finally:
+        conn.close()
+    return {"ok": True, "dry_run": False, **batch}
+
+
 def _log_tail(home: Path, args: dict[str, Any]) -> Any:
     """W6.13: Return log tail with optional offset and grep filter.
 
@@ -516,16 +714,26 @@ def _log_tail(home: Path, args: dict[str, Any]) -> Any:
 
     if not run_row or not run_row["log_path"]:
         return {
-            "text": "", "size_bytes": 0, "offset": 0, "next_offset": 0, "log_path": None,
-            "task_status": task_status, "run_finished": run_finished,
+            "text": "",
+            "size_bytes": 0,
+            "offset": 0,
+            "next_offset": 0,
+            "log_path": None,
+            "task_status": task_status,
+            "run_finished": run_finished,
             "message": f"no log found for {project}/{task_id}",
         }
 
     log_path = Path(run_row["log_path"])
     if not log_path.exists():
         return {
-            "text": "", "size_bytes": 0, "offset": 0, "next_offset": 0, "log_path": str(log_path),
-            "task_status": task_status, "run_finished": run_finished,
+            "text": "",
+            "size_bytes": 0,
+            "offset": 0,
+            "next_offset": 0,
+            "log_path": str(log_path),
+            "task_status": task_status,
+            "run_finished": run_finished,
             "message": "log file missing",
         }
 
@@ -581,23 +789,34 @@ def _enqueue_task(home: Path, args: dict[str, Any]) -> Any:
             return {"ok": False, "status": None, "message": f"task not found: {project}/{task_id}"}
         current_status = row["status"]
         from taskqueue._db_tasks import run_summary
+
         runs_before = run_summary(conn, project, task_id)["run_number"]
 
-        # args_override must be a JSON list of "key=val" strings, not a dict.
-        # Use f"{k}={v}" unconditionally so falsy values (0, False, "") are preserved.
-        _override_list: list[str] = [f"{k}={v}" for k, v in set_overrides.items()]
-        # S7: same allowlist check as the web retry route.
-        if _override_list:
+        # F-195: merge set deltas into base argv (same as CLI --set). Runner
+        # treats args_override as the full argv tail, not a patch list.
+        from taskqueue.arg_overrides import merge_arg_overrides, overrides_from_set_dict
+        from taskqueue.jsonutil import json_list
+
+        _delta = overrides_from_set_dict(set_overrides)
+        _override_list: list[str] = []
+        if _delta:
+            try:
+                _base = list(json_list(row["args"]))
+            except Exception:
+                _base = []
+            _override_list = merge_arg_overrides(_base, _delta)
             from taskqueue.db import check_arg_overrides
 
-            _err = check_arg_overrides(row, _override_list)
+            _err = check_arg_overrides(row, _delta)
             if _err:
                 return {"ok": False, "status": current_status, "message": _err}
     finally:
         conn.close()
 
     result = retry_task_op(
-        home, project, task_id,
+        home,
+        project,
+        task_id,
         args_override=_override_list or None,
     )
     ok = bool(result.get("ok"))
@@ -633,9 +852,8 @@ def _patch_task(home: Path, args: dict[str, Any]) -> Any:
         if row is None or not row["yaml_source"]:
             return {"ok": False, "applied": [], "message": f"task not found or has no yaml_source: {project}/{task_id}"}
         from taskqueue.master_client import via_master
-        api = via_master(
-            home, "POST", f"/api/tasks/{project}/{task_id}/patch", body={"updates": updates}
-        )
+
+        api = via_master(home, "POST", f"/api/tasks/{project}/{task_id}/patch", body={"updates": updates})
         if api is not None:
             return {
                 "ok": bool(api.get("ok")),
@@ -651,9 +869,9 @@ def _patch_task(home: Path, args: dict[str, Any]) -> Any:
         proj = projects.get(project)
         if proj is None:
             return {"ok": False, "applied": applied, "message": f"project not registered: {project}"}
-        upsert_task(conn, parse_task_yaml(
-            path, proj, allow_remote_notify=bool(get_config(conn).get("notify_allow_remote"))
-        ))
+        upsert_task(
+            conn, parse_task_yaml(path, proj, allow_remote_notify=bool(get_config(conn).get("notify_allow_remote")))
+        )
     finally:
         conn.close()
     return {"ok": True, "applied": applied, "message": f"patched {', '.join(applied)}"}
@@ -674,8 +892,13 @@ def _stop_task(home: Path, args: dict[str, Any]) -> Any:
             return {"ok": False, "status": None, "message": f"task not found: {project}/{task_id}"}
         current_status = row["status"]
         if current_status not in ("running", "queued"):
-            return {"ok": False, "status": current_status, "message": f"task is not running or queued (status={current_status})"}
+            return {
+                "ok": False,
+                "status": current_status,
+                "message": f"task is not running or queued (status={current_status})",
+            }
         from taskqueue.master_client import via_master
+
         # Same as the web UI: a queued task is marked interrupted, a running one gets a stop request.
         api = via_master(home, "POST", f"/api/stop/{project}/{task_id}")
         if api is not None:
@@ -684,10 +907,16 @@ def _stop_task(home: Path, args: dict[str, Any]) -> Any:
             return {
                 "ok": ok,
                 "status": final or current_status,
-                "message": ("stopped before start" if final else "stop requested") if ok else (api.get("error") or "stop failed"),
+                "message": ("stopped before start" if final else "stop requested")
+                if ok
+                else (api.get("error") or "stop failed"),
             }
         if current_status == "queued":
-            return {"ok": False, "status": "queued", "message": "stopping a queued task needs the master (daemon not reachable)"}
+            return {
+                "ok": False,
+                "status": "queued",
+                "message": "stopping a queued task needs the master (daemon not reachable)",
+            }
         request_stop_with_control(conn, home, project, task_id)
     finally:
         conn.close()
@@ -717,29 +946,37 @@ def _progress_snapshot(home: Path, args: dict[str, Any]) -> Any:
                 "SELECT task_id FROM tasks WHERE project = ? AND status = 'running'",
                 (project,),
             ).fetchall()
+        # F-205: one home/config for the batch; build_run_metrics still opens
+        # HTTP overlay once per task but web_port key is fixed (was "port").
         result = []
         for row in rows:
             m = build_run_metrics(
-                conn, project, row["task_id"],
-                home=home, samples=samples, include_history=include_history,
+                conn,
+                project,
+                row["task_id"],
+                home=home,
+                samples=samples,
+                include_history=include_history,
             )
             # Keep legacy top-level keys for existing agents.
-            result.append({
-                "task_id": m["task_id"],
-                "status": m["status"],
-                "progress_pct": m["progress_pct"],
-                "eta_sec": m["eta_sec"],
-                "last_line": m["last_line"],
-                "elapsed_sec": m["elapsed_sec"],
-                "requires_gpu": m["requires_gpu"],
-                "log": m["log"],
-                "metrics": m["metrics"],
-                "run_id": m["run_id"],
-                "resources": m["resources"],
-                "history_summary": m["history_summary"],
-                "source": m["source"],
-                **({"history": m["history"]} if include_history else {}),
-            })
+            result.append(
+                {
+                    "task_id": m["task_id"],
+                    "status": m["status"],
+                    "progress_pct": m["progress_pct"],
+                    "eta_sec": m["eta_sec"],
+                    "last_line": m["last_line"],
+                    "elapsed_sec": m["elapsed_sec"],
+                    "requires_gpu": m["requires_gpu"],
+                    "log": m["log"],
+                    "metrics": m["metrics"],
+                    "run_id": m["run_id"],
+                    "resources": m["resources"],
+                    "history_summary": m["history_summary"],
+                    "source": m["source"],
+                    **({"history": m["history"]} if include_history else {}),
+                }
+            )
     finally:
         conn.close()
     return {"project": project, "tasks": result, "items": result, "count": len(result)}
@@ -750,11 +987,14 @@ def _submit_task(home: Path, args: dict[str, Any]) -> Any:
     result = _submit_task_nowait(home, args)
     if args.get("wait") and result.get("ok") and result.get("task_ids"):
         project = args.get("project") or ""
-        result["wait"] = _wait_for_task(home, {
-            "tasks": [f"{project}/{t}" for t in result["task_ids"]],
-            "mode": "all",
-            "timeout_sec": args.get("timeout_sec"),
-        })
+        result["wait"] = _wait_for_task(
+            home,
+            {
+                "tasks": [f"{project}/{t}" for t in result["task_ids"]],
+                "mode": "all",
+                "timeout_sec": args.get("timeout_sec"),
+            },
+        )
     elif result.get("ok") and result.get("task_ids"):
         project = args.get("project") or ""
         result["next"] = _wait_next([f"{project}/{t}" for t in result["task_ids"]])
@@ -787,21 +1027,32 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
     matrix = args.get("matrix")  # optional list of dicts for submit_matrix
 
     if not project or not yaml_text.strip():
-        return {"ok": False, "task_ids": [], "errors": [{"field": "project/yaml_text", "message": "project and yaml_text are required"}]}
+        return {
+            "ok": False,
+            "task_ids": [],
+            "errors": [{"field": "project/yaml_text", "message": "project and yaml_text are required"}],
+        }
 
     # inject matrix into yaml_text if provided via submit_matrix
     if matrix is not None:
         try:
             import yaml as _yaml
+
             doc = _yaml.safe_load(yaml_text) or {}
             if not isinstance(doc, dict):
-                return {"ok": False, "task_ids": [], "errors": [{"field": "yaml_text", "message": "YAML must be a mapping"}]}
+                return {
+                    "ok": False,
+                    "task_ids": [],
+                    "errors": [{"field": "yaml_text", "message": "YAML must be a mapping"}],
+                }
             doc["matrix"] = matrix
             yaml_text = _yaml.dump(doc, allow_unicode=True)
         except Exception as exc:
             return {"ok": False, "task_ids": [], "errors": [{"field": "matrix", "message": str(exc)}]}
 
-    api = via_master(home, "POST", "/api/cli/add", body={"project": project, "yaml_text": yaml_text, "filename": filename})
+    api = via_master(
+        home, "POST", "/api/cli/add", body={"project": project, "yaml_text": yaml_text, "filename": filename}
+    )
     if api is not None:
         if api.get("ok"):
             return {"ok": True, "task_ids": api.get("task_ids") or [], "errors": []}
@@ -812,7 +1063,11 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
     projects = load_projects(home)
     proj = projects.get(project)
     if proj is None:
-        return {"ok": False, "task_ids": [], "errors": [{"field": "project", "message": f"Unknown project '{project}'"}]}
+        return {
+            "ok": False,
+            "task_ids": [],
+            "errors": [{"field": "project", "message": f"Unknown project '{project}'"}],
+        }
     import time as _time
     import uuid as _uuid
     from pathlib import Path as _P
@@ -840,6 +1095,7 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
             return {"ok": False, "task_ids": [], "errors": [{"field": "yaml_text", "message": str(exc)}]}
         ids = []
         from taskqueue.db import stamp_provenance
+
         for task in tasks:
             upsert_task(db, task)
             ids.append(task.task_id)
@@ -853,14 +1109,17 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
 def _list_projects(home: Path, _args: dict[str, Any]) -> Any:
     """C2: List registered projects."""
     from taskqueue.config import load_projects
+
     projects = load_projects(home)
     result = []
     for name, proj in projects.items():
-        result.append({
-            "name": name,
-            "queue_dir": str(proj.queue_dir),
-            "root": str(proj.root),
-        })
+        result.append(
+            {
+                "name": name,
+                "queue_dir": str(proj.queue_dir),
+                "root": str(proj.root),
+            }
+        )
     return {"projects": result, "items": result, "count": len(result)}
 
 
@@ -903,21 +1162,35 @@ def _wait_for_task(home: Path, args: dict[str, Any], on_tick: Any = None) -> Any
         raise ValueError("pass project+task_id, tasks, or a filter (project/suite/group/tag/mine)")
     mode = args.get("mode") or "all"
     cap = _mcp_wait_max_sec()
-    timeout_sec = min(float(args.get("timeout_sec") or MCP_WAIT_DEFAULT_SEC), cap)
+    # F-158: clamp to (0, cap] — waiting.wait_for treats <=0 as wait-forever.
+    try:
+        raw_timeout = float(args.get("timeout_sec") or MCP_WAIT_DEFAULT_SEC)
+    except (TypeError, ValueError):
+        raw_timeout = float(MCP_WAIT_DEFAULT_SEC)
+    timeout_sec = min(max(raw_timeout, 0.001), cap)
     poll_sec = float(args.get("poll_sec") or 5)
 
     conn = _conn(home)
     try:
         resolved = resolve_selectors(
-            conn, keys=keys, project=project or None, tags=tags, suite=suite,
-            group=group, started_by=started_by,
+            conn,
+            keys=keys,
+            project=project or None,
+            tags=tags,
+            suite=suite,
+            group=group,
+            started_by=started_by,
             include_finished=bool(args.get("include_finished")),
         )
     finally:
         conn.close()
     result = wait_for(
-        lambda: _conn(home), resolved, mode=mode, timeout_sec=timeout_sec,
-        poll_sec=poll_sec, on_tick=on_tick,
+        lambda: _conn(home),
+        resolved,
+        mode=mode,
+        timeout_sec=timeout_sec,
+        poll_sec=poll_sec,
+        on_tick=on_tick,
     )
     _attach_failure_details(home, result)
     if len(result["tasks"]) == 1:  # back-compat flat shape for single-task callers
@@ -960,6 +1233,7 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
             (project, task_id),
         ).fetchone()
         from taskqueue._db_tasks import run_summary
+
         run_info = run_summary(conn, project, task_id)
     finally:
         conn.close()
@@ -978,6 +1252,7 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
         if run["started_at"] and run["finished_at"]:
             try:
                 from datetime import datetime
+
                 s = _parse_iso(run["started_at"])
                 f = _parse_iso(run["finished_at"])
                 duration_sec = round((f - s).total_seconds(), 1)
@@ -993,8 +1268,21 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
     try:
         raw_arts = json_list(task["artifacts"])
         from pathlib import Path as _P
+        from taskqueue.config import load_projects
+
+        # F-158: resolve relative artifacts against the registered project root,
+        # not the MCP process CWD.
+        root = None
+        try:
+            root = load_projects(home).get(project)
+            root = root.root if root is not None else None
+        except Exception:
+            root = None
         for a in raw_arts:
-            artifacts.append({"path": str(a), "exists": _P(str(a)).exists()})
+            p = _P(str(a))
+            if not p.is_absolute() and root is not None:
+                p = (_P(root) / p).resolve()
+            artifacts.append({"path": str(p), "exists": p.exists()})
     except Exception:
         pass
 
@@ -1059,9 +1347,14 @@ def _agent_usage_summary(home: Path, args: dict[str, Any]) -> Any:
     conn = _conn(home)
     try:
         return agent_usage(
-            conn, days=int(args.get("days") or 7), by=args.get("by"), task_by=args.get("task_by"),
-            project=args.get("project") or None, channel=args.get("channel") or None,
-            operator=args.get("operator") or None, limit=int(args.get("limit") or 200),
+            conn,
+            days=int(args.get("days") or 7),
+            by=args.get("by"),
+            task_by=args.get("task_by"),
+            project=args.get("project") or None,
+            channel=args.get("channel") or None,
+            operator=args.get("operator") or None,
+            limit=int(args.get("limit") or 200),
         )
     finally:
         conn.close()
@@ -1082,6 +1375,7 @@ _HANDLERS: dict[str, Any] = {
     "attention_list": _attention,
     "task_health": _task_health,
     "diagnose": _diagnose,
+    "explain_error": _explain_error,
     "why_not_running": _why_not_running,
     "report": _report,
     "queue_status": _queue_status,
@@ -1090,6 +1384,7 @@ _HANDLERS: dict[str, Any] = {
     "log_tail": _log_tail,
     "enqueue_task": _enqueue_task,
     "retry_task": _enqueue_task,
+    "retry_tasks": _retry_tasks,
     "patch_task": _patch_task,
     "stop_task": _stop_task,
     "submit_task": _submit_task,
@@ -1135,7 +1430,9 @@ def _record_usage(home: Path, name: Any, args: dict[str, Any], t0: float, error_
         conn = _conn(home)
         try:
             record_direct(
-                conn, "mcp", str(name or "?"),
+                conn,
+                "mcp",
+                str(name or "?"),
                 client=_CLIENT_INFO["name"],
                 operator=(args.get("operator") or os.environ.get("TQ_OPERATOR") or ""),
                 project=str(args.get("project") or ""),
@@ -1174,39 +1471,42 @@ def _run_tool_call(home: Path, msg_id: Any, params: dict[str, Any]) -> None:
                 if token is None or info["waited_sec"] - last[0] < 10:
                     return
                 last[0] = info["waited_sec"]
-                _emit({
-                    "jsonrpc": "2.0",
-                    "method": "notifications/progress",
-                    "params": {
-                        "progressToken": token,
-                        "progress": info["waited_sec"],
-                        "message": f"waiting on {len(info['pending'])} task(s)",
-                    },
-                })
+                _emit(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/progress",
+                        "params": {
+                            "progressToken": token,
+                            "progress": info["waited_sec"],
+                            "message": f"waiting on {len(info['pending'])} task(s)",
+                        },
+                    }
+                )
 
             result = _wait_for_task(home, args, on_tick=_tick)
         else:
             result = _call_tool(home, name, args)
-        if (
-            isinstance(result, dict)
-            and name not in ("wait_for_task", "drain_notifications")
-            and not args.get("wait")
-        ):
+        if isinstance(result, dict) and name not in ("wait_for_task", "drain_notifications") and not args.get("wait"):
             try:
                 fin = _finished_since_last_call(home)
                 if fin:
                     result["finished_since_last_call"] = fin
             except Exception:
                 pass
+        is_err = False
         if isinstance(result, dict) and result.get("ok") is False:
             err = str(result.get("error_code") or "ok_false")
+            is_err = True  # F-203: surface ok:false as MCP isError
         elif isinstance(result, dict) and result.get("timed_out"):
             err = "wait.timeout"
         _record_usage(home, name, args, t0, err)
-        _respond(msg_id, {
+        payload: dict[str, Any] = {
             "content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}],
             "structuredContent": result,
-        })
+        }
+        if is_err:
+            payload["isError"] = True
+        _respond(msg_id, payload)
     except Exception as exc:
         _record_usage(home, name, args, t0, "mcp.error")
         # MCP: a failing tool is a tool *result* with isError, so the model sees the message.
@@ -1241,25 +1541,29 @@ def run_stdio(home: Path | None = None) -> int:
             if ci.get("name"):
                 _CLIENT_INFO["name"] = f"mcp/{ci.get('name')} {ci.get('version', '')}".strip()[:64]
             from taskqueue import master_client as _mc
+
             _mc.set_identity("mcp", _CLIENT_INFO["name"])
-            _respond(msg_id, {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "taskqueue", "version": __version__},
-            })
+            _respond(
+                msg_id,
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "taskqueue", "version": __version__},
+                },
+            )
         elif method == "notifications/initialized":
             continue
         elif method == "tools/list":
             _respond(msg_id, {"tools": TOOLS})
         elif method == "tools/call":
             _a = params.get("arguments") or {}
-            if params.get("name") == "wait_for_task" or _a.get("wait") or (
-                params.get("name") == "drain_notifications" and _a.get("wait_sec")
+            if (
+                params.get("name") == "wait_for_task"
+                or _a.get("wait")
+                or (params.get("name") == "drain_notifications" and _a.get("wait_sec"))
             ):
                 # Blocking: run off the read loop so other tools stay responsive.
-                threading.Thread(
-                    target=_run_tool_call, args=(home, msg_id, params), daemon=True
-                ).start()
+                threading.Thread(target=_run_tool_call, args=(home, msg_id, params), daemon=True).start()
             else:
                 _run_tool_call(home, msg_id, params)
         elif method == "ping":

@@ -127,7 +127,7 @@ def test_cmd_result_exit_codes(tmp_path: Path, monkeypatch, capsys) -> None:
     home.mkdir()
     db = home / "queue.db"
     log = tmp_path / "out.log"
-    log.write_text("noise\n{\"ok\": true}\n\n", encoding="utf-8")
+    log.write_text('noise\n{"ok": true}\n\n', encoding="utf-8")
     conn = open_db(db)
     _seed_task(conn, status="completed", log_path=str(log))
     conn.close()

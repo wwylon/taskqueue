@@ -45,6 +45,7 @@ export function tqSyncPrefs() {
     if (qh) qh.value = localStorage.getItem('tq_quiet_hours') || '';
   } catch (e) {}
   tqSyncOperatorPrefs();
+  tqSyncTokenPrefs();
   const sel = document.getElementById('tq-lang-switcher');
   if (sel) sel.value = lang;
   const mql = window.matchMedia('(prefers-color-scheme: dark)');
@@ -123,4 +124,20 @@ export function tqSetMineScope(mine) {
   if (typeof _populateProjectChips === 'function' && S.projects) _populateProjectChips(S.projects);
   if (typeof refresh === 'function') refresh();
   if (!S.applyingUrl && typeof _syncUrl === 'function') _syncUrl({ replace: true });
+}
+
+/** F-207: API token field in Preferences (also settable via ?tq_token=). */
+export function tqSyncTokenPrefs() {
+  const inp = document.getElementById('prefs-token');
+  if (!inp) return;
+  try { inp.value = localStorage.getItem('tq_token') || ''; } catch (e) { inp.value = ''; }
+}
+
+export function tqSetApiToken(el) {
+  const v = (el && el.value || '').trim();
+  try {
+    if (v) localStorage.setItem('tq_token', v);
+    else localStorage.removeItem('tq_token');
+  } catch (e) {}
+  if (typeof showToast === 'function') showToast(v ? 'API token saved' : 'API token cleared', 'ok');
 }

@@ -20,29 +20,56 @@ LOCALES = ROOT / "taskqueue" / "static" / "locales"
 
 # Ratchet: `tq` subcommands that predate the README-coverage check. Do not add to this
 # list -- document new commands in README.md instead.
-LEGACY_UNDOCUMENTED_CLI = frozenset({
-    "describe", "submit", "suspend", "my-tasks", "resync", "fair-share", "sleep", "wake",
-    "master-status", "master-migrate", "usage", "prune",
-})
+LEGACY_UNDOCUMENTED_CLI = frozenset(
+    {
+        "describe",
+        "submit",
+        "suspend",
+        "my-tasks",
+        "resync",
+        "fair-share",
+        "sleep",
+        "wake",
+        "master-status",
+        "master-migrate",
+        "usage",
+        "prune",
+    }
+)
+
+SURFACE_MAP = ROOT / "docs" / "surface_map.json"
+
+
+def load_surface_map() -> dict:
+    try:
+        return json.loads(SURFACE_MAP.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"_error": f"cannot read docs/surface_map.json: {exc}"}
 
 
 def check_surface_documented() -> list[str]:
-    """Every MCP tool must be in docs/mcp.md and every `tq` command in README.md."""
-    import re
-
+    """Every live MCP tool and CLI command has a capability-map entry."""
     from taskqueue import cli, mcp_server
 
     errors: list[str] = []
     mcp_doc = (ROOT / "docs" / "mcp.md").read_text(encoding="utf-8")
+    surface = load_surface_map()
+    if "_error" in surface:
+        return [surface["_error"]]
+    mapped_mcp = {name for item in surface.get("capabilities", {}).values() for name in item.get("mcp", [])}
+    mapped_cli = {name for item in surface.get("capabilities", {}).values() for name in item.get("cli", [])}
     for tool in mcp_server.TOOLS:
         if f"`{tool['name']}`" not in mcp_doc:
             errors.append(f"MCP tool {tool['name']!r} is not documented in docs/mcp.md")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        elif tool["name"] not in mapped_mcp:
+            errors.append(f"MCP tool {tool['name']!r} is missing from docs/surface_map.json")
     for cmd in cli.COMMANDS:
-        if cmd in LEGACY_UNDOCUMENTED_CLI:
-            continue
-        if not re.search(r"tq " + re.escape(cmd) + r"\b", readme):
-            errors.append(f"tq command {cmd!r} is not documented in README.md")
+        if cmd not in mapped_cli:
+            errors.append(f"tq command {cmd!r} is missing from docs/surface_map.json")
+    for name in sorted(mapped_mcp - {tool["name"] for tool in mcp_server.TOOLS}):
+        errors.append(f"surface_map lists unknown MCP tool {name!r}")
+    for name in sorted(mapped_cli - set(cli.COMMANDS)):
+        errors.append(f"surface_map lists unknown tq command {name!r}")
     return errors
 
 
@@ -56,6 +83,8 @@ def main() -> int:
 
     bundle = static_dir() / "help-bundle.en.json"
     labels = static_dir() / "error_labels.json"
+    if not SURFACE_MAP.is_file():
+        errors.append("missing docs/surface_map.json")
     if not bundle.is_file():
         errors.append("missing taskqueue/static/help-bundle.en.json — run scripts/build_docs.py")
     if not labels.is_file():

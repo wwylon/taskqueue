@@ -2,6 +2,7 @@
 // openAlert, refresh.
 import { S } from '../core/state.js';
 import { escHtml } from '../util/format.js';
+import { latest } from '../core/api.js';
 
 // ---- I-25/I-27: Resources panel ----
 
@@ -42,11 +43,13 @@ export function renderClusterUsage(cap) {
 }
 
 export async function loadResources() {
+  const live = latest('resources');
   try {
     const [cap, hw] = await Promise.all([
       fetch('/api/capacity').then(r => r.json()).catch(() => null),
       fetch('/api/hardware').then(r => r.json()).catch(() => ({})),
     ]);
+    if (!live()) return;
     // H1: cache cpu_cores_total for _usageHtml
     if (cap && cap.cpu_cores_total) S.cpuTotalCores = cap.cpu_cores_total;
     renderClusterUsage(cap);  // M1/M2
@@ -144,7 +147,10 @@ export async function saveResLimits() {
     openAlert(String(e.message || e));
     return;
   }
-  await refresh();
+  try {
+    const rfn = typeof window !== 'undefined' ? window.refresh : null;
+    if (typeof rfn === 'function') await rfn();
+  } catch (_) {}
   loadResources();
 }
 

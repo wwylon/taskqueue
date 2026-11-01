@@ -48,8 +48,7 @@ def _seed(
     )
     if status == "running":
         conn.execute(
-            "INSERT INTO runs (project, task_id, started_at, status, log_path) "
-            "VALUES ('p', ?, ?, 'running', ?)",
+            "INSERT INTO runs (project, task_id, started_at, status, log_path) VALUES ('p', ?, ?, 'running', ?)",
             (task_id, now, str(Path("nul"))),
         )
     conn.commit()

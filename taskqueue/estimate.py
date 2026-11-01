@@ -43,9 +43,7 @@ def _p95(values: list[float]) -> float:
     return float(vals[min(idx, len(vals) - 1)])
 
 
-def _peaks_for(
-    conn: sqlite3.Connection, where: str, params: tuple, limit: int
-) -> tuple[list[float], list[float]]:
+def _peaks_for(conn: sqlite3.Connection, where: str, params: tuple, limit: int) -> tuple[list[float], list[float]]:
     """Return (ram_peaks, vram_peaks) for runs matching *where*."""
     rows = conn.execute(
         "SELECT r.peak_ram_gib, r.peak_vram_gib "
@@ -139,9 +137,7 @@ def predict_task_resources(
             return hit
         # Prefetch covered this key and found no peaks — fall through to sibling/group.
     else:
-        ram, vram = _peaks_for(
-            conn, "r.project = ? AND r.task_id = ?", (project, task_id), limit
-        )
+        ram, vram = _peaks_for(conn, "r.project = ? AND r.task_id = ?", (project, task_id), limit)
         if ram or vram:
             return {"ram_gib": _p95(ram), "vram_gib": _p95(vram), "source": SOURCE_HISTORY}
 
@@ -211,8 +207,12 @@ def estimate_task_resources(
     _d = declared or {}
     # Declared resources are part of the key: editing a YAML must not serve a stale estimate.
     key = (
-        project, task_id, float(default_ram_gib), int(predict_runs),
-        float(_d.get("ram_gib") or 0.0), float(_d.get("gpu_vram_gib") or 0.0),
+        project,
+        task_id,
+        float(default_ram_gib),
+        int(predict_runs),
+        float(_d.get("ram_gib") or 0.0),
+        float(_d.get("gpu_vram_gib") or 0.0),
         float(_d.get("cpu_cores") or 1.0),
     )
     if cache is not None and key in cache:
@@ -224,8 +224,12 @@ def estimate_task_resources(
     dec_cpu = float(d.get("cpu_cores") or 1.0)
 
     pred = predict_task_resources(
-        conn, project, task_id, predict_runs=predict_runs,
-        exact_peaks=exact_peaks, exact_checked=exact_checked,
+        conn,
+        project,
+        task_id,
+        predict_runs=predict_runs,
+        exact_peaks=exact_peaks,
+        exact_checked=exact_checked,
     )
 
     ram = max(dec_ram, pred["ram_gib"], float(default_ram_gib))

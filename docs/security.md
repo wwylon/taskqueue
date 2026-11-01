@@ -11,8 +11,8 @@ By default the daemon binds to `127.0.0.1` (loopback only) with no auth token. A
 Setting an auth token is **required** before exposing the daemon on a network interface:
 
 ```bash
-tq token-generate          # generates and stores a random token
-tq config set auth_token=$(tq token-generate --print)   # manual
+tq token generate          # generates and stores a random token
+tq config set auth_token=<strong-random-token>   # manual
 ```
 
 Once set, all `/api/*` requests must include the token in one of:
@@ -29,8 +29,8 @@ To expose the daemon on the LAN (e.g. for remote workers):
 
 ```bash
 tq config set auth_token=<strong-random-token>
-# Then start daemon with bind flag (not yet a CLI option — set in systemd unit):
-# python -m taskqueue.daemon --bind 0.0.0.0 --port 8765
+# Then restart the daemon so it uses the new bind:
+tq restart
 ```
 
 The daemon **refuses** to bind to a non-loopback address without `auth_token` being set.
@@ -134,7 +134,7 @@ For a single-host development machine:
 - The OS user-boundary is your security perimeter.
 
 For a LAN with remote workers:
-- Set a strong `auth_token` (e.g. `tq token-generate`).
+- Set a strong `auth_token` (e.g. `tq token generate`).
 - Bind to the host's LAN address, not `0.0.0.0` if possible.
 - Consider a reverse proxy with TLS if the LAN is not fully trusted.
 - Treat workers as trusted; use `requires: {os: linux}` to restrict which workers can claim tasks, not for security.

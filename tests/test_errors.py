@@ -37,12 +37,14 @@ def test_set_and_clear_task_error(tmp_path: Path) -> None:
     proj = _project("p", tmp_path)
     path = tmp_path / "t.yaml"
     path.write_text(
-        yaml.dump({
-            "task_id": "t1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "t1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(path, proj))

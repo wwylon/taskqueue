@@ -1,4 +1,5 @@
 """POST /api/runs/<id>/rerun re-queues a task with a past run's recorded args."""
+
 from __future__ import annotations
 
 from tests.helpers.master_worker import http_request, make_handler_env
@@ -11,10 +12,7 @@ def _seed(db, *, args_json='["--a=1","--epochs=5"]', status="failed"):
         "('p','t','x','[\"--a=1\"]','[\"--epochs\"]',?,1,'n','n')",
         (status,),
     )
-    db.execute(
-        "INSERT INTO runs (run_id, project, task_id, status, started_at) "
-        "VALUES (1,'p','t','failed','n')"
-    )
+    db.execute("INSERT INTO runs (run_id, project, task_id, status, started_at) VALUES (1,'p','t','failed','n')")
     # An insert trigger snapshots the task's args; override it with the run's own.
     db.execute("UPDATE runs SET args_json = ? WHERE run_id = 1", (args_json,))
     db.commit()

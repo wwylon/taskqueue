@@ -1,4 +1,5 @@
 """Module-level HTTP Handler composed of route mixins."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -82,7 +83,6 @@ def _loopback_bypass_ok(headers: Any) -> bool:
     return _host_is_local_name(headers.get("Host") or "")
 
 
-
 # The UI is same-origin and has no inline scripts (theme-boot.js, data-click delegation).
 # Inline styles remain in rendered markup, so style-src keeps 'unsafe-inline'.
 _UI_CSP = (
@@ -91,6 +91,7 @@ _UI_CSP = (
     "worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; "
     "frame-ancestors 'none'; form-action 'self'"
 )
+
 
 class Handler(
     ReadRoutes,
@@ -140,6 +141,7 @@ class Handler(
     def _rconn(self) -> sqlite3.Connection:
         """Per-thread read connection — avoids races with the daemon's write conn."""
         from taskqueue.db import open_db as _open_db
+
         tls = type(self)._tls
         if not getattr(tls, "conn", None):
             tls.conn = _open_db(type(self)._db_path, migrate=False)
@@ -156,11 +158,13 @@ class Handler(
     def _open_write_conn(self, timeout: float = 10.0) -> sqlite3.Connection:
         """W5.4: short-lived write connection that applies the same pragmas as open_db."""
         from taskqueue.db import open_write_conn as _owc
+
         return _owc(type(self)._db_path, timeout)
 
     def _wconn(self) -> sqlite3.Connection:
         """Wave D4: per-thread write connection for mutating routes (not the read TLS conn)."""
         from taskqueue.db import open_write_conn as _owc
+
         tls = type(self)._tls
         wconn = getattr(tls, "wconn", None)
         if wconn is None:
@@ -178,9 +182,7 @@ class Handler(
             entry = _resp._projects_cache_by_db.get(db_key)
             if entry is not None and now - entry[0] < _resp._PROJECTS_CACHE_TTL:
                 return list(entry[1])
-        db_projects = {
-            r[0] for r in self._rconn().execute("SELECT DISTINCT project FROM tasks").fetchall()
-        }
+        db_projects = {r[0] for r in self._rconn().execute("SELECT DISTINCT project FROM tasks").fetchall()}
         fresh = sorted(set(self._projects_ref().keys()) | db_projects)
         with _resp._projects_lock:
             _resp._projects_cache_by_db[db_key] = (_time.monotonic(), fresh)
@@ -239,11 +241,7 @@ class Handler(
                 except ValueError:
                     expected_port = None
                 origin_port = o.port
-                if (
-                    expected_port is not None
-                    and origin_port is not None
-                    and origin_port != expected_port
-                ):
+                if expected_port is not None and origin_port is not None and origin_port != expected_port:
                     self._send_error_json(403, "Cross-origin request rejected")
                     return False
 
@@ -319,19 +317,19 @@ class Handler(
         elif path.startswith("/static/js/"):
             self._serve_js_module(path)
         elif path.startswith("/api/bundle/"):
-            parts = path[len("/api/bundle/"):].split("/")
+            parts = path[len("/api/bundle/") :].split("/")
             if len(parts) == 2:
                 self._serve_bundle(parts[0], parts[1])
             else:
                 self.send_error(400)
         elif path.startswith("/api/package/"):
-            parts = path[len("/api/package/"):].split("/")
+            parts = path[len("/api/package/") :].split("/")
             if len(parts) == 2:
                 self._serve_package_overlay(parts[0], parts[1])
             else:
                 self.send_error(400)
         elif path.startswith("/api/transfer/get/"):
-            rest_t = path[len("/api/transfer/get/"):]
+            rest_t = path[len("/api/transfer/get/") :]
             proj_name_t, sep_t, rel_t = rest_t.partition("/")
             if sep_t:
                 self._serve_transfer_file(proj_name_t, rel_t)
@@ -339,22 +337,22 @@ class Handler(
                 self._send_error_json(400, "Missing path")
         elif path.startswith("/api/data/blob/"):
             # D1: CAS blob fetch — /api/data/blob/<sha256>
-            sha256 = path[len("/api/data/blob/"):]
+            sha256 = path[len("/api/data/blob/") :]
             self._serve_cas_blob(sha256)
         elif path.startswith("/api/data/snapshot/"):
             # D2: SQLite snapshot — /api/data/snapshot/<run_id>/<rel_path>
-            rest_snap = path[len("/api/data/snapshot/"):]
+            rest_snap = path[len("/api/data/snapshot/") :]
             snap_run_id, snap_sep, snap_rel = rest_snap.partition("/")
             if snap_sep:
                 self._serve_sqlite_snapshot(snap_run_id, snap_rel)
             else:
                 self._send_error_json(400, "Missing db path")
         elif path.startswith("/api/sync/fingerprint/"):
-            self._serve_sync_fingerprint(path[len("/api/sync/fingerprint/"):])
+            self._serve_sync_fingerprint(path[len("/api/sync/fingerprint/") :])
         elif path.startswith("/api/sync/manifest/"):
-            self._serve_sync_manifest(path[len("/api/sync/manifest/"):])
+            self._serve_sync_manifest(path[len("/api/sync/manifest/") :])
         elif path.startswith("/api/sync/file/"):
-            rest_s = path[len("/api/sync/file/"):]
+            rest_s = path[len("/api/sync/file/") :]
             proj_s, sep_s, rel_s = rest_s.partition("/")
             if sep_s:
                 self._serve_sync_file(proj_s, rel_s)
@@ -362,54 +360,54 @@ class Handler(
                 self._send_error_json(400, "Missing path")
         elif path.startswith("/api/data/manifest/"):
             # D1 per-run manifest (numeric run_id) vs legacy project manifest
-            suffix = path[len("/api/data/manifest/"):]
+            suffix = path[len("/api/data/manifest/") :]
             if suffix.isdigit():
                 self._serve_data_manifest_for_run(suffix)
             else:
                 self._serve_data_manifest(suffix)
         elif path.startswith("/api/data/file/"):
-            rest = path[len("/api/data/file/"):]
+            rest = path[len("/api/data/file/") :]
             proj_name, sep, rel_path = rest.partition("/")
             if sep:
                 self._serve_data_file(proj_name, rel_path)
             else:
                 self.send_error(400)
         elif path.startswith("/api/logs/"):
-            rest = path[len("/api/logs/"):]
+            rest = path[len("/api/logs/") :]
             if rest.endswith("/stream"):
                 try:
-                    self._stream_log_sse(int(rest[:-len("/stream")]))
+                    self._stream_log_sse(int(rest[: -len("/stream")]))
                 except ValueError:
                     self.send_error(400)
             else:
                 self._serve_logs(path)
-        elif path.startswith("/api/runs/") and path[len("/api/runs/"):].isdigit():
-            self._serve_run_detail(int(path[len("/api/runs/"):]))
+        elif path.startswith("/api/runs/") and path[len("/api/runs/") :].isdigit():
+            self._serve_run_detail(int(path[len("/api/runs/") :]))
         elif path.startswith("/api/runs/") and path.endswith("/history"):
             try:
-                self._serve_run_history(int(path[len("/api/runs/"):-len("/history")]))
+                self._serve_run_history(int(path[len("/api/runs/") : -len("/history")]))
             except ValueError:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/yaml"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/yaml")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/yaml")].partition("/")
             if sep:
                 self._serve_task_yaml(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/log-search"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/log-search")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/log-search")].partition("/")
             if sep:
                 self._serve_log_search(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/runs"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/runs")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/runs")].partition("/")
             if sep:
                 self._serve_task_runs(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/why"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/why")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/why")].partition("/")
             if not sep:
                 self.send_error(400)
                 return
@@ -421,14 +419,14 @@ class Handler(
             self._json(info, status=200 if info.get("ok") else 404)
         elif path.startswith("/api/service/"):
             # D3: HTTP-proxy service broker — /api/service/<name>/<subpath>
-            rest_svc = path[len("/api/service/"):]
+            rest_svc = path[len("/api/service/") :]
             svc_name, svc_sep, svc_sub = rest_svc.partition("/")
             if svc_name:
                 self._proxy_service_request(svc_name, svc_sub)
             else:
                 self._send_error_json(400, "Missing service name")
         elif path.startswith("/api/tasks/"):
-            proj, sep, tid = path[len("/api/tasks/"):].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") :].partition("/")
             if sep and tid:
                 self._json(self._get_task_detail(proj, tid))
             else:
@@ -452,26 +450,26 @@ class Handler(
 
         # Prefix-match dispatch
         if path.startswith("/api/groups/") and path.endswith("/stop"):
-            self._bulk(lambda: self._group_stop(unquote(path[len("/api/groups/"):-len("/stop")]), qs))
+            self._bulk(lambda: self._group_stop(unquote(path[len("/api/groups/") : -len("/stop")]), qs))
         elif path.startswith("/api/groups/") and path.endswith("/retry"):
-            self._bulk(lambda: self._group_retry(unquote(path[len("/api/groups/"):-len("/retry")]), qs))
+            self._bulk(lambda: self._group_retry(unquote(path[len("/api/groups/") : -len("/retry")]), qs))
         elif path.startswith("/api/suites/") and path.endswith("/retry"):
-            self._bulk(lambda: self._suite_retry(unquote(path[len("/api/suites/"):-len("/retry")]), qs))
+            self._bulk(lambda: self._suite_retry(unquote(path[len("/api/suites/") : -len("/retry")]), qs))
         elif path.startswith("/api/notify/dead/") and path.endswith("/retry"):
             try:
-                self._retry_dead_notify(int(path[len("/api/notify/dead/"):-len("/retry")]))
+                self._retry_dead_notify(int(path[len("/api/notify/dead/") : -len("/retry")]))
             except ValueError:
                 self._json({"ok": False, "error": "bad id"}, status=400)
         elif path.startswith("/api/stop/"):
             self._post_stop(path, qs)
         elif path.startswith("/api/retry/"):
             # Wave E: thin-wrap legacy path onto the full /api/tasks/.../retry handler.
-            proj, task_id = self._split2(path[len("/api/retry/"):])
+            proj, task_id = self._split2(path[len("/api/retry/") :])
             self.path = f"/api/tasks/{proj}/{task_id}/retry"
             self._task_retry(proj, task_id)
             return
         elif path.startswith("/api/force/"):
-            proj, task_id = self._split2(path[len("/api/force/"):])
+            proj, task_id = self._split2(path[len("/api/force/") :])
             err = force_task(self._rconn(), proj, task_id)
             if err is None:
                 self._audit("force", proj, task_id)
@@ -479,7 +477,7 @@ class Handler(
         elif path.startswith("/api/mark-processed/"):
             self._post_mark_processed(path)
         elif path.startswith("/api/enable/"):
-            proj, task_id = self._split2(path[len("/api/enable/"):])
+            proj, task_id = self._split2(path[len("/api/enable/") :])
             enabled_q = (qs.get("enabled", ["1"])[0] or "1").strip().lower()
             if enabled_q in ("0", "false", "no"):
                 ok, err = pause_task(self._rconn(), proj, task_id)
@@ -496,23 +494,23 @@ class Handler(
         elif path.startswith("/api/priority/"):
             self._post_priority(path, qs)
         elif path.startswith("/api/project-limits/"):
-            self._post_project_limits(path[len("/api/project-limits/"):])
+            self._post_project_limits(path[len("/api/project-limits/") :])
         elif path.startswith("/api/worker/sync/"):
-            self._worker_sync(path[len("/api/worker/sync/"):])
+            self._worker_sync(path[len("/api/worker/sync/") :])
         elif path.startswith("/api/worker/file-sync/"):
-            self._worker_file_sync(path[len("/api/worker/file-sync/"):])
+            self._worker_file_sync(path[len("/api/worker/file-sync/") :])
         elif path.startswith("/api/transfer/put/"):
-            rest_t = path[len("/api/transfer/put/"):]
+            rest_t = path[len("/api/transfer/put/") :]
             proj_name_t, sep_t, rel_t = rest_t.partition("/")
             if sep_t:
                 self._receive_transfer_file(proj_name_t, rel_t)
             else:
                 self._send_error_json(400, "Missing path")
         elif path.startswith("/api/data/upload/"):
-            self._handle_data_upload(path[len("/api/data/upload/"):])
+            self._handle_data_upload(path[len("/api/data/upload/") :])
         elif path.startswith("/api/data/push/"):
             # D1: CAS blob upload — /api/data/push/<run_id>/<rel_path>
-            rest_push = path[len("/api/data/push/"):]
+            rest_push = path[len("/api/data/push/") :]
             push_run_id, push_sep, push_rel = rest_push.partition("/")
             if push_sep:
                 self._receive_cas_blob(push_run_id, push_rel)
@@ -520,40 +518,40 @@ class Handler(
                 self._send_error_json(400, "Missing rel_path")
         elif path.startswith("/api/service/"):
             # D3: HTTP-proxy service broker (POST) — /api/service/<name>/<subpath>
-            rest_svc = path[len("/api/service/"):]
+            rest_svc = path[len("/api/service/") :]
             svc_name, svc_sep, svc_sub = rest_svc.partition("/")
             if svc_name:
                 self._proxy_service_request(svc_name, svc_sub)
             else:
                 self._send_error_json(400, "Missing service name")
         elif path.startswith("/api/audit/") and path.endswith("/rollback"):
-            self._post_audit_rollback(path[len("/api/audit/"):-len("/rollback")])
+            self._post_audit_rollback(path[len("/api/audit/") : -len("/rollback")])
         elif path.startswith("/api/runs/") and path.endswith("/rerun"):
-            self._post_run_rerun(path[len("/api/runs/"):-len("/rerun")])
+            self._post_run_rerun(path[len("/api/runs/") : -len("/rerun")])
         elif path == "/api/tasks/bulk":
             self._post_tasks_bulk(qs)
         elif path == "/api/tasks/retry-batch":
             self._task_retry_batch()
         elif path.startswith("/api/tasks/") and path.endswith("/retry"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/retry")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/retry")].partition("/")
             if sep:
                 self._task_retry(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/patch"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/patch")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/patch")].partition("/")
             if sep:
                 self._task_patch(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/tasks/") and path.endswith("/priority"):
-            proj, sep, tid = path[len("/api/tasks/"):-len("/priority")].partition("/")
+            proj, sep, tid = path[len("/api/tasks/") : -len("/priority")].partition("/")
             if sep:
                 self._task_set_priority(proj, tid)
             else:
                 self.send_error(400)
         elif path.startswith("/api/project/freeze/"):
-            proj_name = path[len("/api/project/freeze/"):]
+            proj_name = path[len("/api/project/freeze/") :]
             if not proj_name:
                 self.send_error(400)
                 return
@@ -561,7 +559,7 @@ class Handler(
             self._audit("freeze", proj_name, proj_name)
             self._json({"ok": True})
         elif path.startswith("/api/project/unfreeze/"):
-            proj_name = path[len("/api/project/unfreeze/"):]
+            proj_name = path[len("/api/project/unfreeze/") :]
             if not proj_name:
                 self.send_error(400)
                 return
@@ -570,7 +568,7 @@ class Handler(
             self._json({"ok": True})
         elif path.startswith("/api/project/pause/") or path.startswith("/api/project/resume/"):
             pause = path.startswith("/api/project/pause/")
-            proj_name = path[len("/api/project/pause/" if pause else "/api/project/resume/"):]
+            proj_name = path[len("/api/project/pause/" if pause else "/api/project/resume/") :]
             if not proj_name:
                 self.send_error(400)
                 return
@@ -582,9 +580,9 @@ class Handler(
         elif path.startswith("/api/remove/"):
             self._post_remove_task(path, qs)
         elif path.startswith("/api/project/remove/"):
-            self._post_remove_project(path[len("/api/project/remove/"):], qs)
+            self._post_remove_project(path[len("/api/project/remove/") :], qs)
         elif path.startswith("/api/project/stop-all/"):
-            proj_name = path[len("/api/project/stop-all/"):]
+            proj_name = path[len("/api/project/stop-all/") :]
             if not proj_name:
                 self.send_error(400)
                 return
@@ -605,7 +603,7 @@ class Handler(
             return
         path = urlparse(self.path).path
         if path.startswith("/api/tasks/") and path.endswith("/yaml"):
-            rest = path[len("/api/tasks/"):-len("/yaml")]
+            rest = path[len("/api/tasks/") : -len("/yaml")]
             proj, sep, tid = rest.partition("/")
             if sep:
                 self._task_save_yaml(proj, tid)
@@ -619,13 +617,13 @@ class Handler(
         path = urlparse(self.path).path.rstrip("/") or "/"
         sys_prefix = "/api/alerts/system/"
         if path.startswith(sys_prefix):
-            key = path[len(sys_prefix):]
+            key = path[len(sys_prefix) :]
             if key:
                 self._patch_system_alert(key)
                 return
         prefix = "/api/alerts/"
-        if path.startswith(prefix) and path[len(prefix):].isdigit():
-            self._patch_alert(path[len(prefix):])
+        if path.startswith(prefix) and path[len(prefix) :].isdigit():
+            self._patch_alert(path[len(prefix) :])
             return
         self.send_error(404)
 
@@ -638,7 +636,7 @@ class Handler(
             ("/api/alerts/", self._delete_alert),
             ("/api/tokens/", self._delete_token),
         ):
-            rest = path[len(prefix):] if path.startswith(prefix) else ""
+            rest = path[len(prefix) :] if path.startswith(prefix) else ""
             if rest.isdigit():
                 handler(rest)
                 return
@@ -767,6 +765,7 @@ class Handler(
         enc = self.headers.get("Accept-Encoding", "")
         if "gzip" in enc.lower() and len(body) > 1024:
             import gzip
+
             body = gzip.compress(body, compresslevel=3)
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Length", str(len(body)))
@@ -789,7 +788,6 @@ class Handler(
                 self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
-
 
 
 def _record_request(h: "Handler", t0: float) -> None:
@@ -858,6 +856,7 @@ _GET_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/capacity": lambda h: h._json(build_capacity(h._rconn(), get_config(h._rconn()))),
     "/api/plan": lambda h: h._json(h._get_plan()),
     "/api/report": lambda h: h._json(h._get_report()),
+    "/api/hygiene": lambda h: h._json(h._get_hygiene()),
     "/api/diagnose": lambda h: h._json(h._get_diagnose()),
     "/api/cost": lambda h: h._json(h._get_cost()),
     "/api/deps": lambda h: h._serve_deps(),
@@ -905,9 +904,9 @@ _POST_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/tokens": lambda h: h._post_token(),
     "/api/sse-ticket": lambda h: h._post_sse_ticket(),
     "/api/yield-master": lambda h: (
-    h._rconn().execute("DELETE FROM master_lease WHERE singleton=1"),
-    h._rconn().commit(),
-    h._json({"ok": True, "message": "master lease yielded"}),
+        h._rconn().execute("DELETE FROM master_lease WHERE singleton=1"),
+        h._rconn().commit(),
+        h._json({"ok": True, "message": "master lease yielded"}),
     ),
 }
 

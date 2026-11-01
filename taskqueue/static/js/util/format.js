@@ -45,7 +45,8 @@ export function dur(sec) {
   return `${s}s`;
 }
 
-export const LOG_CAP_CHARS = 256 * 1024;
+// F-176: tighter in-panel log cap (was 256 KiB) so chatty SSE stays bounded.
+export const LOG_CAP_CHARS = 192 * 1024;
 
 // Append a streamed line, keeping only the tail so a long-running log cannot grow without bound.
 export function appendLog(state, line) {

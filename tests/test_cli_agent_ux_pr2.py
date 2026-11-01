@@ -78,9 +78,7 @@ def test_sync_require_daemon_exit_3(tmp_path: Path, monkeypatch, capsys) -> None
     assert "require-daemon" in err
 
 
-def test_sync_refuses_sqlite_when_daemon_up_but_http_fails(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
+def test_sync_refuses_sqlite_when_daemon_up_but_http_fails(tmp_path: Path, monkeypatch, capsys) -> None:
     """Timeout / busy master must not fall back to offline dual-write."""
     home = tmp_path / "home"
     home.mkdir()

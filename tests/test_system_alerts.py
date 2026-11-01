@@ -57,14 +57,15 @@ def test_on_run_terminal_any_failure(tmp_path: Path):
     update_system_alert(db, "any_failure", {"windows_toast": 0})
     with patch("taskqueue.notify._send_toast") as toast:
         on_run_terminal(
-            db, tmp_path,
-            project="p", task_id="t1", status="failed",
+            db,
+            tmp_path,
+            project="p",
+            task_id="t1",
+            status="failed",
             last_error_code="tq.run.nonzero",
         )
         toast.assert_not_called()
-    row = db.execute(
-        "SELECT fire_count FROM system_alerts WHERE key='any_failure'"
-    ).fetchone()
+    row = db.execute("SELECT fire_count FROM system_alerts WHERE key='any_failure'").fetchone()
     assert int(row["fire_count"]) == 1
 
 
@@ -72,21 +73,26 @@ def test_on_run_terminal_tq_stopped_not_user(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     update_system_alert(db, "tq_stopped", {"windows_toast": 0})
     on_run_terminal(
-        db, tmp_path,
-        project="p", task_id="t1", status="stopped",
-        stopped_by="user", stop_reason="stop_requested",
+        db,
+        tmp_path,
+        project="p",
+        task_id="t1",
+        status="stopped",
+        stopped_by="user",
+        stop_reason="stop_requested",
     )
-    assert db.execute(
-        "SELECT fire_count FROM system_alerts WHERE key='tq_stopped'"
-    ).fetchone()["fire_count"] == 0
+    assert db.execute("SELECT fire_count FROM system_alerts WHERE key='tq_stopped'").fetchone()["fire_count"] == 0
     on_run_terminal(
-        db, tmp_path,
-        project="p", task_id="t1", status="stopped",
-        stopped_by="tq", stop_reason="ram_hard", last_error_code="tq.stop.ram",
+        db,
+        tmp_path,
+        project="p",
+        task_id="t1",
+        status="stopped",
+        stopped_by="tq",
+        stop_reason="ram_hard",
+        last_error_code="tq.stop.ram",
     )
-    assert db.execute(
-        "SELECT fire_count FROM system_alerts WHERE key='tq_stopped'"
-    ).fetchone()["fire_count"] == 1
+    assert db.execute("SELECT fire_count FROM system_alerts WHERE key='tq_stopped'").fetchone()["fire_count"] == 1
 
 
 def test_all_done_requires_idle_and_recent(tmp_path: Path):
@@ -101,8 +107,7 @@ def test_all_done_requires_idle_and_recent(tmp_path: Path):
         (_iso(now), _iso(now)),
     )
     db.execute(
-        "INSERT INTO runs (project, task_id, status, started_at, finished_at) "
-        "VALUES ('p','t1','completed',?,?)",
+        "INSERT INTO runs (project, task_id, status, started_at, finished_at) VALUES ('p','t1','completed',?,?)",
         (_iso(now - timedelta(minutes=5)), _iso(now - timedelta(minutes=1))),
     )
     db.commit()
@@ -148,9 +153,7 @@ def test_emit_appends_notify_jsonl_without_winotify(tmp_path: Path):
     with patch("taskqueue.notify._send_toast") as toast:
         assert maybe_emit_system_alert(db, tmp_path, "any_failure", "p/t failed") is True
         toast.assert_called_once()
-    row = db.execute(
-        "SELECT fire_count, last_fired_at FROM system_alerts WHERE key='any_failure'"
-    ).fetchone()
+    row = db.execute("SELECT fire_count, last_fired_at FROM system_alerts WHERE key='any_failure'").fetchone()
     assert int(row["fire_count"]) == 1
     assert row["last_fired_at"]
     path = notify_log_path(tmp_path)
@@ -205,13 +208,8 @@ class _FakeWfile:
         pass
 
 
-def _make_request(HandlerClass, method: str, path: str, body: bytes = b"",
-                  extra_headers: dict | None = None):
-    headers_raw = (
-        f"{method} {path} HTTP/1.1\r\n"
-        f"Host: localhost:8765\r\n"
-        f"Content-Length: {len(body)}\r\n"
-    )
+def _make_request(HandlerClass, method: str, path: str, body: bytes = b"", extra_headers: dict | None = None):
+    headers_raw = f"{method} {path} HTTP/1.1\r\nHost: localhost:8765\r\nContent-Length: {len(body)}\r\n"
     for k, v in (extra_headers or {}).items():
         headers_raw += f"{k}: {v}\r\n"
     headers_raw += "\r\n"
@@ -261,7 +259,9 @@ def test_api_system_alerts_get_patch(tmp_path: Path):
     assert keys == set(SYSTEM_ALERT_KEYS)
 
     code, data = _make_request(
-        HandlerClass, "PATCH", "/api/alerts/system/all_done",
+        HandlerClass,
+        "PATCH",
+        "/api/alerts/system/all_done",
         body=json.dumps({"enabled": 0, "windows_toast": 0}).encode(),
     )
     assert code == 200
@@ -270,7 +270,9 @@ def test_api_system_alerts_get_patch(tmp_path: Path):
     assert out["alert"]["enabled"] == 0
 
     code, data = _make_request(
-        HandlerClass, "PATCH", "/api/alerts/system/missing",
+        HandlerClass,
+        "PATCH",
+        "/api/alerts/system/missing",
         body=json.dumps({"enabled": 1}).encode(),
     )
     assert code == 404
@@ -298,8 +300,15 @@ def test_failure_alert_carries_detail_and_log_tail(tmp_path: Path, capsys):
     rid = db.execute("SELECT MAX(run_id) FROM runs").fetchone()[0]
     db.commit()
     on_run_terminal(
-        db, tmp_path, project="p", task_id="t1", status="failed", run_id=rid,
-        last_error_code="tq.run.nonzero", exit_code=2, elapsed_sec=75,
+        db,
+        tmp_path,
+        project="p",
+        task_id="t1",
+        status="failed",
+        run_id=rid,
+        last_error_code="tq.run.nonzero",
+        exit_code=2,
+        elapsed_sec=75,
     )
     ev = [e for e in _events(tmp_path) if e["status"] == "alert:any_failure"][-1]
     d = ev["detail"]

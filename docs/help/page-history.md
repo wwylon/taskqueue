@@ -10,7 +10,7 @@ guide_anchors:
 
 **History** lists recent execution attempts. Each row is **`#run_id`** for a project/task — use this id when discussing logs, metrics, or a specific failure.
 
-The list loads **20** runs at a time (Load more fetches the next 20). Click **History** on a row for that task’s prior runs plus duration stats (average / P50 / P95 from completed runs). **Metrics** opens the resource chart for that run. **Re-run** (after a confirm) queues the task again with the arguments that run used (subject to the task's `overridable_args`); `tq clone` makes a new task from one instead. Click a row to inspect duration, exit status, and link to log search. Filter by project from the header selector. Use the search box to match **task id**, **project**, **`#run_id`**, error category, or worker id (server-side; works with Load more). `/` focuses search while this page is active.
+The list pages **20** runs at a time (Prev / Next move a fixed offset — the DOM keeps one page, not a growing cumulative window). Log and per-task history expand rows mount only when opened. Click **History** on a row for that task’s prior runs plus duration stats (average / P50 / P95 from completed runs). **Metrics** opens the resource chart for that run. **Re-run** (after a confirm) queues the task again with the arguments that run used (subject to the task's `overridable_args`); `tq clone` makes a new task from one instead. Click a row to inspect duration, exit status, and link to log search. Filter by project from the header selector. Use the search box to match **task id**, **project**, **`#run_id`**, error category, or worker id (server-side; works across pages). `/` focuses search while this page is active.
 
 ## Comparing two runs
 

@@ -56,19 +56,21 @@ class QueueTask:
     transfer: tuple[dict, ...] = field(default_factory=tuple)  # W7.6: file transfer specs [{src, dst, direction}]
     requires_services: tuple[dict, ...] = field(default_factory=tuple)  # R1: [{name, health_url, timeout_sec}]
     overridable_args: tuple[str, ...] = field(default_factory=tuple)  # R2: flags the caller may override per-run
-    hung_task_k: int | None = None          # S8: per-task override for global hung_task_k
-    schedule: dict | None = None            # S3: {cron: "0 2 * * *"} recurring re-queue
-    rearm_on: str = ""                      # S4: "upstream_success" — re-queue when depends_on peer completes
-    teardown: dict | None = None            # S5: {command, args, best_effort, timeout_sec}
+    hung_task_k: int | None = None  # S8: per-task override for global hung_task_k
+    schedule: dict | None = None  # S3: {cron: "0 2 * * *"} recurring re-queue
+    rearm_on: str = ""  # S4: "upstream_success" — re-queue when depends_on peer completes
+    teardown: dict | None = None  # S5: {command, args, best_effort, timeout_sec}
     # Cap auto-retry (opt-in): re-queue checkpointable/idempotent tasks after wall_clock_cap.
     auto_retry_on_cap: bool = False
-    max_auto_retries: int = 20              # 0 = unlimited; default 20
-    data: dict | None = None               # D1: data.inputs / outputs / services block
-    on_dependency_failure: str = "block"    # T-206: block | cancel
-    negative_exit_codes: tuple[int, ...] = ()  # exit codes meaning "ran fine, answer is no" -> completed + tq.run.negative
-    on_dependency_negative: str = "run"     # run | cancel when a dependency ended negative
-    task_class: str = "normal"              # T-204: normal | scavenger (idle-capacity filler, preemptible)
-    min_trust: str = ""                     # C2: minimum worker trust tier: trusted | lab | spot | untrusted | ""
+    max_auto_retries: int = 20  # 0 = unlimited; default 20
+    data: dict | None = None  # D1: data.inputs / outputs / services block
+    on_dependency_failure: str = "block"  # T-206: block | cancel
+    negative_exit_codes: tuple[
+        int, ...
+    ] = ()  # exit codes meaning "ran fine, answer is no" -> completed + tq.run.negative
+    on_dependency_negative: str = "run"  # run | cancel when a dependency ended negative
+    task_class: str = "normal"  # T-204: normal | scavenger (idle-capacity filler, preemptible)
+    min_trust: str = ""  # C2: minimum worker trust tier: trusted | lab | spot | untrusted | ""
 
     def argv(self, *, use_resume: bool = False) -> list[str]:
         args = self.resume_args if use_resume and self.resume_args else self.args
@@ -111,5 +113,3 @@ EXIT_SUSPENDED = 75
 def task_key(project: str, task_id: str) -> str:
     """Display / CLI form of a task identity."""
     return f"{project}/{task_id}"
-
-

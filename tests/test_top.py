@@ -1,4 +1,5 @@
 """tq top: SSE frame parsing, rendering, and one live frame from a real web server."""
+
 from __future__ import annotations
 
 import io
@@ -9,15 +10,43 @@ from taskqueue.top import iter_sse, render, run_top
 
 
 def test_iter_sse_parses_named_and_default_events():
-    lines = ["retry: 5000", "", ": ka", "", "event: snapshot", 'data: {"running": []}', "",
-             'data: {"queued_count": 2}', "", "data: not-json", ""]
-    assert list(iter_sse(lines)) == [("snapshot", {"running": []}), ("message", {"queued_count": 2}), ("message", "not-json")]
+    lines = [
+        "retry: 5000",
+        "",
+        ": ka",
+        "",
+        "event: snapshot",
+        'data: {"running": []}',
+        "",
+        'data: {"queued_count": 2}',
+        "",
+        "data: not-json",
+        "",
+    ]
+    assert list(iter_sse(lines)) == [
+        ("snapshot", {"running": []}),
+        ("message", {"queued_count": 2}),
+        ("message", "not-json"),
+    ]
 
 
 def test_render_lists_running_tasks():
-    frame = render({"queued_count": 3, "running": [
-        {"project": "p", "task_id": "t", "progress_pct": 42.4, "elapsed_sec": 125, "current_ram_gib": 1.5,
-         "current_cpu_pct": 90, "last_log_line": "epoch 3"}]})
+    frame = render(
+        {
+            "queued_count": 3,
+            "running": [
+                {
+                    "project": "p",
+                    "task_id": "t",
+                    "progress_pct": 42.4,
+                    "elapsed_sec": 125,
+                    "current_ram_gib": 1.5,
+                    "current_cpu_pct": 90,
+                    "last_log_line": "epoch 3",
+                }
+            ],
+        }
+    )
     assert "queued 3" in frame and "p/t" in frame and "42%" in frame and "2m05s" in frame and "epoch 3" in frame
 
 

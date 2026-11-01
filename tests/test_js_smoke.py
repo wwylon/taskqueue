@@ -4,6 +4,7 @@ jsdom is not installable without npm (the repo has no node_modules and no build 
 DOM stub in tests/js_dom_stub.mjs. Events are dispatched on `document` with the element a user would hit as
 `target`, so everything goes through js/core/actions.js exactly as in the browser.
 """
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -69,21 +70,23 @@ debounce[0].fn(); await g.flush();
 const hist = g.fetches.map(urlOf).filter(u => u.includes('tab=history'));
 r.searchUrl = hist[hist.length - 1];
 r.searchingAfter = inp.classList.has('tq-searching');
-// paging: "load more" grows the window by one page and refetches
-S.history = [{}, {}, {}]; S.historyTotal = 500;
+// paging: Next advances offset by one page and refetches (fixed page size)
+S.history = [{}, {}, {}]; S.historyTotal = 500; S.historyOffset = 0;
 (await import(LOGPANEL.replace('components/logpanel.js', 'views/history.js')))._renderHistoryMore();
 const more = doc.getElementById('history-pagination').querySelector('button');
 r.hasMore = !!more;
-const before = S.historyLimit;
+const beforeOff = S.historyOffset || 0;
 g.fetches.length = 0;
 fire(doc, 'click', more); await g.flush();
-r.limitGrew = S.historyLimit - before === S.historyPageSize;
+r.offsetGrew = (S.historyOffset || 0) - beforeOff === (S.historyPageSize || 20);
+r.offsetAfter = S.historyOffset || 0;
 const h2 = g.fetches.map(urlOf).filter(u => u.includes('tab=history'));
 r.pageUrl = h2[h2.length - 1];
 r.pageSize = S.historyPageSize;
 // clear button empties the box and resets the window
 fire(doc, 'click', doc.getElementById('history-search-clear')); await g.flush();
 r.cleared = inp.value === '';
+r.offsetReset = (S.historyOffset || 0) === 0;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
@@ -91,9 +94,9 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["fetchedEarly"] == 0 and out["debounceTimers"] == 1
     assert "search=needle" in out["searchUrl"]
     assert out["searchingAfter"] is False
-    assert out["hasMore"] and out["limitGrew"]
-    assert f"limit={out['pageSize'] * 2}" in out["pageUrl"]
-    assert out["cleared"] is True
+    assert out["hasMore"] and out["offsetGrew"]
+    assert f"limit={out['pageSize']}" in out["pageUrl"] and f"offset={out['pageSize']}" in out["pageUrl"]
+    assert out["cleared"] is True and out["offsetReset"] is True
 
 
 def test_project_switch_resets_group_filter_unless_kept():

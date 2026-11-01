@@ -55,6 +55,7 @@ def redact_notify_url(url: str) -> str:
 NOTIFY_LOG_NAME = "notify.jsonl"
 NOTIFY_FAILED_LOG_NAME = "notify_failed.jsonl"
 from taskqueue.statuses import TERMINAL_STATUSES  # noqa: E402  # one definition, shared with tq wait
+
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})  # kept for importers; checks use is_loopback_host
 
 
@@ -66,10 +67,8 @@ def _make_no_redirect_opener(*, allow_remote: bool = False):
             host = (urlparse(newurl).hostname or "").lower()
             if not allow_remote and not is_loopback_host(host):
                 from urllib.error import URLError
-                raise URLError(
-                    f"redirect to non-loopback host {host!r} blocked "
-                    "(set notify_allow_remote=1 to permit)"
-                )
+
+                raise URLError(f"redirect to non-loopback host {host!r} blocked (set notify_allow_remote=1 to permit)")
             return super().redirect_request(req, fp, code, msg, headers, newurl)
 
     return _urlrequest.build_opener(_ValidatingRedirectHandler())
@@ -143,8 +142,7 @@ def validate_notify_url(url: str, *, allow_remote: bool = False) -> str:
         raise ValueError("notify_url missing host")
     if not allow_remote and not is_loopback_host(host):
         raise ValueError(
-            f"notify_url host {host!r} is not loopback; "
-            "set notify_allow_remote=1 to allow remote webhooks"
+            f"notify_url host {host!r} is not loopback; set notify_allow_remote=1 to allow remote webhooks"
         )
     return raw
 
@@ -237,10 +235,14 @@ def _lookup_provenance(home: Path, project: str, task_id: str) -> tuple[str | No
         if not path.is_file():
             return None, None
         try:
-            row = _provenance_conn(path).execute(
-                "SELECT submitted_by, submitted_via FROM tasks WHERE project = ? AND task_id = ?",
-                (project, task_id),
-            ).fetchone()
+            row = (
+                _provenance_conn(path)
+                .execute(
+                    "SELECT submitted_by, submitted_via FROM tasks WHERE project = ? AND task_id = ?",
+                    (project, task_id),
+                )
+                .fetchone()
+            )
         except Exception:
             # Stale cached handle (DB replaced/moved): drop it; the next event reconnects.
             getattr(_PROV_LOCAL, "conns", {}).pop(str(path), None)
@@ -318,14 +320,16 @@ def list_dead_letters(conn, *, limit: int = 100) -> list[dict[str, Any]]:
         if isinstance(payload, dict) and payload.get("notify_url"):
             payload = dict(payload)
             payload["notify_url"] = redact_notify_url(str(payload["notify_url"]))
-        out.append({
-            "id": r["id"],
-            "url": redact_notify_url(r["url"] or ""),
-            "error": r["error"],
-            "attempts": r["attempts"],
-            "failed_at": r["failed_at"],
-            "payload": payload,
-        })
+        out.append(
+            {
+                "id": r["id"],
+                "url": redact_notify_url(r["url"] or ""),
+                "error": r["error"],
+                "attempts": r["attempts"],
+                "failed_at": r["failed_at"],
+                "payload": payload,
+            }
+        )
     return out
 
 
@@ -338,8 +342,9 @@ def retry_dead_letter(conn, dead_id: int, *, allow_remote: bool = False) -> dict
         url = validate_notify_url(row["url"], allow_remote=allow_remote)
         _attempt_post(url, json.loads(row["payload"]), allow_remote=allow_remote)
     except Exception as exc:
-        conn.execute("UPDATE notify_dead SET error = ?, attempts = attempts + 1 WHERE id = ?",
-                     (str(exc)[:500], dead_id))
+        conn.execute(
+            "UPDATE notify_dead SET error = ?, attempts = attempts + 1 WHERE id = ?", (str(exc)[:500], dead_id)
+        )
         conn.commit()
         return {"ok": False, "error": str(exc), "status": 502}
     conn.execute("DELETE FROM notify_dead WHERE id = ?", (dead_id,))
@@ -377,6 +382,7 @@ def winotify_available() -> bool:
     """True if the optional winotify package can be imported."""
     try:
         import winotify  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -403,9 +409,9 @@ def level_icon_path(level: str) -> str | None:
         return str(path)
     size, r2 = 64, 15 * 15
     rows = b"".join(
-        b"\x00" + b"".join(
-            bytes((*rgb, 255)) if (x - 31.5) ** 2 + (y - 31.5) ** 2 <= r2 else b"\x00\x00\x00\x00"
-            for x in range(size)
+        b"\x00"
+        + b"".join(
+            bytes((*rgb, 255)) if (x - 31.5) ** 2 + (y - 31.5) ** 2 <= r2 else b"\x00\x00\x00\x00" for x in range(size)
         )
         for y in range(size)
     )
@@ -427,9 +433,7 @@ def level_icon_path(level: str) -> str | None:
     return str(path)
 
 
-def _send_toast(
-    title: str, message: str, icon_path: str | None = None, *, level: str | None = None
-) -> None:
+def _send_toast(title: str, message: str, icon_path: str | None = None, *, level: str | None = None) -> None:
     """Send a Windows toast notification. No-ops if winotify is absent or not on Windows.
 
     ``level`` (red / amber / green, see taskqueue.health) prefixes the title with the
@@ -571,11 +575,7 @@ def emit_task_notify(
             msg_parts.append(f"error={last_error_code}")
         if exit_code is not None and exit_code != 0:
             msg_parts.append(f"exit={exit_code}")
-        level = (
-            "red" if status in ("failed", "unknown")
-            else "green" if status == "completed"
-            else "amber"
-        )
+        level = "red" if status in ("failed", "unknown") else "green" if status == "completed" else "amber"
         _send_toast(f"tq: {task_id} {status}", ", ".join(msg_parts), level=level)
 
     return payload
@@ -638,7 +638,8 @@ def notify_task_started(
                 except queue.Full:
                     log.warning(
                         "notify queue full; dead-letter start-webhook for %s/%s",
-                        project, task_id,
+                        project,
+                        task_id,
                     )
                     record_dead_letter(home, validated_url, payload, "webhook queue full", 0)
 
@@ -655,7 +656,11 @@ def _notify_cursor_path(home: Path, operator: str | None) -> Path:
     return Path(home) / "notify_cursor.json"
 
 
+_CURSOR_LOCK = threading.Lock()
+
+
 def _read_notify_cursor(home: Path, operator: str | None) -> int:
+    """Read cursor; callers that also write must hold ``_CURSOR_LOCK`` (F-153)."""
     try:
         data = json.loads(_notify_cursor_path(home, operator).read_text(encoding="utf-8"))
         return int(data.get(operator or "_all", 0))
@@ -663,24 +668,27 @@ def _read_notify_cursor(home: Path, operator: str | None) -> int:
         return 0
 
 
-_CURSOR_LOCK = threading.Lock()
+def _write_notify_cursor_unlocked(home: Path, operator: str | None, offset: int) -> None:
+    """Write cursor assuming ``_CURSOR_LOCK`` is held. Never decreases an offset."""
+    p = _notify_cursor_path(home, operator)
+    key = operator or "_all"
+    try:
+        try:
+            existing = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            existing = {}
+        prev = int(existing.get(key, 0) or 0)
+        existing[key] = max(prev, int(offset))
+        tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(existing), encoding="utf-8")
+        tmp.replace(p)
+    except Exception:
+        pass
 
 
 def _write_notify_cursor(home: Path, operator: str | None, offset: int) -> None:
-    p = _notify_cursor_path(home, operator)
-    key = operator or "_all"
     with _CURSOR_LOCK:  # serialize the read-modify-write across handler/MCP threads
-        try:
-            try:
-                existing = json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                existing = {}
-            existing[key] = offset
-            tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-            tmp.write_text(json.dumps(existing), encoding="utf-8")
-            tmp.replace(p)
-        except Exception:
-            pass
+        _write_notify_cursor_unlocked(home, operator, offset)
 
 
 def drain_notifications(
@@ -706,9 +714,7 @@ def drain_notifications(
     """
     deadline = time.monotonic() + min(max(float(wait_sec or 0.0), 0.0), 100.0)
     while True:
-        out = _drain_once(
-            home, since=since, operator=operator, project=project, limit=limit, incremental=incremental
-        )
+        out = _drain_once(home, since=since, operator=operator, project=project, limit=limit, incremental=incremental)
         if out["count"] or time.monotonic() >= deadline:
             return out
         time.sleep(min(0.5, max(0.05, deadline - time.monotonic())))
@@ -811,7 +817,8 @@ def iter_notify_events(
         if nl != -1:
             data = data[nl + 1 :]
     matched = [
-        ev for ev in map(_parse_event_line, data.splitlines())
+        ev
+        for ev in map(_parse_event_line, data.splitlines())
         if ev is not None and _event_wanted(ev, since, operator, project)
     ]
     if len(matched) > limit:
@@ -834,41 +841,44 @@ def _iter_notify_events_incremental(
         size = path.stat().st_size
     except OSError:
         return []
-    if size <= 0:
-        _write_notify_cursor(home, operator, 0)
-        return []
+    # F-153: hold one lock across read→scan→write so concurrent drains cannot
+    # duplicate events or rewind the shared operator cursor.
+    with _CURSOR_LOCK:
+        if size <= 0:
+            _write_notify_cursor_unlocked(home, operator, 0)
+            return []
 
-    last_offset = _read_notify_cursor(home, operator)
-    if last_offset > size:
-        last_offset = 0
+        last_offset = _read_notify_cursor(home, operator)
+        if last_offset > size:
+            last_offset = 0
 
-    # Read from one byte early so we can tell whether the cursor sits on a line boundary
-    # (it normally does); only then is the first line after it complete and kept.
-    start = max(0, last_offset - 1)
-    with open(path, "rb") as fh:
-        fh.seek(start)
-        raw = fh.read()
-    base = start
-    if last_offset > 0:
-        if raw[:1] == b"\n":
-            skip = 1
-        else:  # cursor landed mid-line: drop the partial line
-            nl = raw.find(b"\n")
-            skip = nl + 1 if nl != -1 else len(raw)
-        raw = raw[skip:]
-        base += skip
-    # Consume complete lines only; a half-written trailing line waits for the next call.
-    last_nl = raw.rfind(b"\n")
-    data = raw[: last_nl + 1] if last_nl != -1 else b""
+        # Read from one byte early so we can tell whether the cursor sits on a line boundary
+        # (it normally does); only then is the first line after it complete and kept.
+        start = max(0, last_offset - 1)
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            raw = fh.read()
+        base = start
+        if last_offset > 0:
+            if raw[:1] == b"\n":
+                skip = 1
+            else:  # cursor landed mid-line: drop the partial line
+                nl = raw.find(b"\n")
+                skip = nl + 1 if nl != -1 else len(raw)
+            raw = raw[skip:]
+            base += skip
+        # Consume complete lines only; a half-written trailing line waits for the next call.
+        last_nl = raw.rfind(b"\n")
+        data = raw[: last_nl + 1] if last_nl != -1 else b""
 
-    matched: list[dict[str, Any]] = []
-    consumed = 0  # bytes of ``data`` covered by the events we return
-    for bline in data.splitlines(keepends=True):
-        if len(matched) >= limit:
-            break  # leave the rest for the next drain: the cursor stops here
-        consumed += len(bline)
-        ev = _parse_event_line(bline)
-        if ev is not None and _event_wanted(ev, since, operator, project):
-            matched.append(ev)
-    _write_notify_cursor(home, operator, base + consumed)
-    return matched
+        matched: list[dict[str, Any]] = []
+        consumed = 0  # bytes of ``data`` covered by the events we return
+        for bline in data.splitlines(keepends=True):
+            if len(matched) >= limit:
+                break  # leave the rest for the next drain: the cursor stops here
+            consumed += len(bline)
+            ev = _parse_event_line(bline)
+            if ev is not None and _event_wanted(ev, since, operator, project):
+                matched.append(ev)
+        _write_notify_cursor_unlocked(home, operator, base + consumed)
+        return matched

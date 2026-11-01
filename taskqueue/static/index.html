@@ -108,6 +108,9 @@
       <input type="text" id="prefs-operator" class="side-foot-btn" placeholder="operator" maxlength="64"
         data-i18n-title="prefs.operator" title="Operator name (same as TQ_OPERATOR) — enables Mine scope"
         data-change='[["tqSetOperator",{"$":"this"}]]' aria-label="Operator">
+      <input type="password" id="prefs-token" class="side-foot-btn" placeholder="API token" maxlength="256"
+        data-i18n-title="prefs.token" title="API bearer token (or open ?tq_token= once)"
+        data-change='[["tqSetApiToken",{"$":"this"}]]' aria-label="API token" autocomplete="off">
       <div class="seg" id="prefs-scope" role="group" data-i18n-title="prefs.scope" title="Queue scope">
         <button type="button" class="seg-opt" id="prefs-mine" data-click='[["tqSetMineScope",true]]' data-i18n="filter.mine" aria-pressed="false">Mine</button>
         <button type="button" class="seg-opt" id="prefs-view-all" data-click='[["tqSetMineScope",false]]' data-i18n="filter.viewAll" aria-pressed="false">View all</button>
@@ -247,6 +250,7 @@
     <div class="card-header" style="flex-wrap:wrap;gap:8px">
       <h2 id="queue-all-tasks-heading" data-i18n="queue.allTasks">All tasks</h2>
       <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","deps"]]' id="qth-deps" data-i18n="queue.sortDeps" title="Upstream dependencies first">Deps ↑</button>
+      <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","order"]]' id="qth-order" data-i18n="queue.sortOrder" title="Timeline forecast start order (advisory)">Start order</button>
       <div class="queue-search-wrap">
         <input type="text" id="queue-search" placeholder="search task ID or description…" data-i18n-placeholder="queue.searchPlaceholder" data-input='[["onQueueSearchInput"]]'
           aria-label="Search task ID or description">
@@ -845,6 +849,5 @@
 
 <script src="/static/i18n.js"></script>
 <script type="module" src="/static/js/main.js"></script>
-<script defer src="/static/app.js"></script>
 </body>
 </html>

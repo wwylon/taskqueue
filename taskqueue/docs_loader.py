@@ -17,6 +17,12 @@ if not (_DOCS_ROOT / "manifest.json").is_file():
     _DOCS_ROOT = Path(__file__).resolve().parent / "_docs"
 _MANIFEST_PATH = _DOCS_ROOT / "manifest.json"
 
+
+def _manifest_path(meta: Any) -> str:
+    """Return a manifest path while accepting legacy string entries."""
+    return meta.get("path", "") if isinstance(meta, dict) else str(meta)
+
+
 # T-058: ids whose auto-generated .title() capitalisation is wrong.
 _TITLE_OVERRIDES: dict[str, str] = {
     "mcp": "MCP",
@@ -27,9 +33,22 @@ _FRONTMATTER = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 _CODE_TABLE_ROW = re.compile(r"^\|\s*`(tq\.[^`]+)`\s*\|\s*([^|]+)\|")
 
 UI_TABS = (
-    "queue", "dashboard", "history", "workers", "groups",
-    "deps", "resources", "usage", "tasks", "timeline", "schedule",
-    "alerts", "audit", "api", "docs", "config",
+    "queue",
+    "dashboard",
+    "history",
+    "workers",
+    "groups",
+    "deps",
+    "resources",
+    "usage",
+    "tasks",
+    "timeline",
+    "schedule",
+    "alerts",
+    "audit",
+    "api",
+    "docs",
+    "config",
 )
 
 
@@ -116,12 +135,7 @@ def expand_topic_includes(text: str, lang: str = "en", manifest: dict[str, Any] 
         topic = load_topic(tid, lang, manifest)
         anchor = (topic.get("guide_anchors") or {}).get("web-ui") or tid
         title = html.escape(topic.get("title") or tid)
-        return (
-            f'<section id="{html.escape(anchor)}">\n'
-            f"<h2>{title}</h2>\n"
-            f'{topic["body_html"]}\n'
-            f"</section>"
-        )
+        return f'<section id="{html.escape(anchor)}">\n<h2>{title}</h2>\n{topic["body_html"]}\n</section>'
 
     return _TOPIC_INCLUDE.sub(repl, text)
 
@@ -269,6 +283,7 @@ def _rewrite_help_href(href: str, manifest: dict[str, Any] | None = None) -> str
         if rest in refs or rest.replace("_", "-") in refs:
             return f"/docs/{rest.replace('_', '-')}"
         for rid, rel in refs.items():
+            rel = _manifest_path(rel)
             if Path(rel).stem.replace("_", "-") == base or Path(rel).stem == rest:
                 return f"/docs/{rid}"
         return f"/docs/{rest.replace('_', '-')}"
@@ -278,6 +293,7 @@ def _rewrite_help_href(href: str, manifest: dict[str, Any] | None = None) -> str
         stem = base[:-3] if base.endswith(".md") else base
         man = manifest or load_manifest()
         for rid, rel in (man.get("references") or {}).items():
+            rel = _manifest_path(rel)
             if Path(rel).name == base or Path(rel).stem == stem:
                 return f"/docs/{rid}" + (f"#{frag}" if frag else "")
         return f"/docs/{stem.replace('_', '-')}" + (f"#{frag}" if frag else "")
@@ -340,7 +356,7 @@ def render_reference(ref_id: str, manifest: dict[str, Any] | None = None) -> dic
     refs = manifest.get("references", {})
     if ref_id not in refs:
         raise FileNotFoundError(f"reference not found: {ref_id}")
-    path = _DOCS_ROOT / refs[ref_id]
+    path = _DOCS_ROOT / _manifest_path(refs[ref_id])
     text = path.read_text(encoding="utf-8")
     _, body = split_frontmatter(text) if text.startswith("---") else ({}, text)
     return {
@@ -381,19 +397,27 @@ def build_help_payload(tab: str = "queue", lang: str = "en", manifest: dict[str,
             continue
 
     references = [
-        {"id": rid, "title": _TITLE_OVERRIDES.get(rid, rid.replace("-", " ").title()), "url": f"/docs/{rid}"}
-        for rid in manifest.get("references", {})
+        {
+            "id": rid,
+            "title": _TITLE_OVERRIDES.get(rid, rid.replace("-", " ").title()),
+            "url": f"/docs/{rid}",
+            "capability": (meta.get("capability") if isinstance(meta, dict) else None),
+        }
+        for rid, meta in manifest.get("references", {}).items()
     ]
 
     guides_meta = []
     for gid, g in manifest.get("guides", {}).items():
-        guides_meta.append({
-            "id": gid,
-            "title": _TITLE_OVERRIDES.get(gid, gid.replace("-", " ").title()),
-            "audience": g.get("audience", "human"),
-            "url": f"/docs/{gid}",
-            "ui_pages": g.get("ui_pages") or [],
-        })
+        guides_meta.append(
+            {
+                "id": gid,
+                "title": _TITLE_OVERRIDES.get(gid, gid.replace("-", " ").title()),
+                "audience": g.get("audience", "human"),
+                "url": f"/docs/{gid}",
+                "capability": g.get("capability"),
+                "ui_pages": g.get("ui_pages") or [],
+            }
+        )
 
     return {
         "tab": tab,
@@ -409,9 +433,21 @@ def build_help_bundle(lang: str = "en", manifest: dict[str, Any] | None = None) 
     """Offline snapshot: help payloads for all primary UI tabs."""
     manifest = manifest or load_manifest()
     tabs = [
-        "queue", "dashboard", "history", "workers", "groups", "deps",
-        "resources", "usage", "tasks", "timeline", "schedule", "alerts",
-        "audit", "api", "config",
+        "queue",
+        "dashboard",
+        "history",
+        "workers",
+        "groups",
+        "deps",
+        "resources",
+        "usage",
+        "tasks",
+        "timeline",
+        "schedule",
+        "alerts",
+        "audit",
+        "api",
+        "config",
     ]
     return {
         "lang": lang,
@@ -513,13 +549,26 @@ def validate_manifest(manifest: dict[str, Any] | None = None) -> list[str]:
         if not p.is_file():
             errors.append(f"guide {gid}: file missing {info['path']}")
     for rid, rel in manifest.get("references", {}).items():
+        rel = _manifest_path(rel)
         p = _DOCS_ROOT / rel
         if not p.is_file():
             errors.append(f"reference {rid}: file missing {rel}")
     ui_tabs = {
-        "queue", "dashboard", "history", "workers", "groups", "deps",
-        "resources", "usage", "tasks", "timeline", "schedule", "alerts",
-        "audit", "api", "config",
+        "queue",
+        "dashboard",
+        "history",
+        "workers",
+        "groups",
+        "deps",
+        "resources",
+        "usage",
+        "tasks",
+        "timeline",
+        "schedule",
+        "alerts",
+        "audit",
+        "api",
+        "config",
     }
     topics = manifest.get("topics", {})
     for tab in ui_tabs:

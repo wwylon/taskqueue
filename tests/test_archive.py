@@ -55,8 +55,13 @@ def test_dry_run_and_status_override(tmp_path: Path) -> None:
     conn, proj, qdir = _setup(tmp_path)
     home = tmp_path / "home"
     r = archive_tasks(
-        conn, {"p": proj}, home=home, older_than_days=30, statuses=("completed", "failed"),
-        dry_run=True, now="2026-10-24T00:00:00",
+        conn,
+        {"p": proj},
+        home=home,
+        older_than_days=30,
+        statuses=("completed", "failed"),
+        dry_run=True,
+        now="2026-10-24T00:00:00",
     )
     assert r["archived"] == 2 and r["dry_run"] is True
     assert conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 4

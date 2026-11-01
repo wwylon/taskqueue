@@ -1,4 +1,5 @@
 """api_usage: aggregated interaction counters (HTTP + MCP), retention, disable switch."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,8 +29,18 @@ def _rows(db):
 def test_schema_and_config_keys(tmp_path: Path) -> None:
     db = open_db(tmp_path / "q.db")
     cols = {r[1] for r in db.execute("PRAGMA table_info(api_usage)")}
-    assert {"bucket_ts", "channel", "client", "operator", "project", "op", "error_code",
-            "calls", "total_ms", "max_ms"} <= cols
+    assert {
+        "bucket_ts",
+        "channel",
+        "client",
+        "operator",
+        "project",
+        "op",
+        "error_code",
+        "calls",
+        "total_ms",
+        "max_ms",
+    } <= cols
     assert "usage_tracking" in tqconfig.VALID_CONFIG_KEYS
     assert "retention_usage_days" in tqconfig.VALID_CONFIG_KEYS
     db.close()
@@ -81,8 +92,12 @@ def test_route_template_and_project() -> None:
 
 def test_http_requests_are_counted_with_identity(tmp_path: Path) -> None:
     HandlerClass, db, _ = make_handler_env(tmp_path)
-    http_request(HandlerClass, "GET", "/api/status",
-                 extra_headers={"X-TQ-Via": "api", "X-TQ-Operator": "ada", "X-TQ-Client": "tq-cli/0.7"})
+    http_request(
+        HandlerClass,
+        "GET",
+        "/api/status",
+        extra_headers={"X-TQ-Via": "api", "X-TQ-Operator": "ada", "X-TQ-Client": "tq-cli/0.7"},
+    )
     http_request(HandlerClass, "GET", "/api/status", extra_headers={"X-TQ-Via": "mcp"})  # MCP counts itself
     http_request(HandlerClass, "GET", "/api/status", extra_headers={"X-TQ-Via": "cli"})  # so does the CLI
     http_request(HandlerClass, "GET", "/api/status", extra_headers={"Sec-Fetch-Site": "same-origin"})

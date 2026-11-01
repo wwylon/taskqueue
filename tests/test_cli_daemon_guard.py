@@ -1,4 +1,5 @@
 """Retry/add must not write SQLite behind a daemon that is running but silent."""
+
 from __future__ import annotations
 
 import pytest

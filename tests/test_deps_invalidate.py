@@ -41,8 +41,7 @@ def _insert(
 
 def _insert_running_run(conn: sqlite3.Connection, project: str, task_id: str) -> int:
     cur = conn.execute(
-        "INSERT INTO runs (project, task_id, status, started_at) "
-        "VALUES (?,?, 'running', datetime('now'))",
+        "INSERT INTO runs (project, task_id, status, started_at) VALUES (?,?, 'running', datetime('now'))",
         (project, task_id),
     )
     conn.commit()
@@ -70,8 +69,7 @@ def test_retry_upstream_stops_running_dependent(tmp_path: Path) -> None:
 
     c23 = conn.execute("SELECT status FROM tasks WHERE task_id='c23'").fetchone()
     c24 = conn.execute(
-        "SELECT status, stop_requested, last_error_code, block_reason FROM tasks "
-        "WHERE task_id='c24'"
+        "SELECT status, stop_requested, last_error_code, block_reason FROM tasks WHERE task_id='c24'"
     ).fetchone()
     run = conn.execute("SELECT stop_reason FROM runs WHERE run_id=?", (run_id,)).fetchone()
     assert c23["status"] == "queued"
@@ -100,9 +98,7 @@ def test_revalidate_running_dependencies(tmp_path: Path) -> None:
 
     hit = revalidate_running_dependencies(conn)
     assert hit == [("p", "down", "up [queued]")]
-    row = conn.execute(
-        "SELECT stop_requested, last_error_code FROM tasks WHERE task_id='down'"
-    ).fetchone()
+    row = conn.execute("SELECT stop_requested, last_error_code FROM tasks WHERE task_id='down'").fetchone()
     assert int(row["stop_requested"]) == 1
     assert row["last_error_code"] == tqerr.STOP_DEPS
 

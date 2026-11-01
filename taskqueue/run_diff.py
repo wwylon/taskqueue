@@ -1,4 +1,5 @@
 """Field-by-field comparison of two runs (``tq diff``)."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -9,8 +10,16 @@ from taskqueue._time import parse_iso
 
 # Compared columns, in display order. Identity / bookkeeping columns are left out.
 _FIELDS = (
-    "status", "exit_code", "last_error_code", "error_category", "stopped_by",
-    "progress_pct", "peak_ram_gib", "peak_vram_gib", "peak_cpu_pct", "worker_id",
+    "status",
+    "exit_code",
+    "last_error_code",
+    "error_category",
+    "stopped_by",
+    "progress_pct",
+    "peak_ram_gib",
+    "peak_vram_gib",
+    "peak_cpu_pct",
+    "worker_id",
 )
 
 
@@ -56,7 +65,9 @@ def diff_runs(conn: sqlite3.Connection, run_a: int, run_b: int) -> dict[str, Any
 
 def render_diff(d: dict[str, Any]) -> str:
     a, b = d["a"], d["b"]
-    lines = [f"run {a['run_id']} ({a['project']}/{a['task_id']})  vs  run {b['run_id']} ({b['project']}/{b['task_id']})"]
+    lines = [
+        f"run {a['run_id']} ({a['project']}/{a['task_id']})  vs  run {b['run_id']} ({b['project']}/{b['task_id']})"
+    ]
     if not d["changes"]:
         lines.append("(no differences)")
     for c in d["changes"]:

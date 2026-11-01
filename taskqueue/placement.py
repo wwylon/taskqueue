@@ -86,12 +86,7 @@ def claiming_worker_is_best_fit(
         if s > better_score + 1e-9:
             better_score = s
             better = peer
-        elif (
-            preferred
-            and abs(s - my_score) <= 1e-9
-            and peer.node_id == preferred
-            and claiming.node_id != preferred
-        ):
+        elif preferred and abs(s - my_score) <= 1e-9 and peer.node_id == preferred and claiming.node_id != preferred:
             better = peer
             better_score = s
     return (better is None, better)
@@ -198,9 +193,7 @@ def refresh_remote_reservation(
         n
         for n in nodes
         if eligible(top, n)
-        and filter_node_capacity(
-            n, FilterContext(force=False, skip_node_capacity=False), cpu=_cpu, ram=ram, gpu=gpu
-        ).ok
+        and filter_node_capacity(n, FilterContext(force=False, skip_node_capacity=False), cpu=_cpu, ram=ram, gpu=gpu).ok
     ]
     if fitting_free:
         with _remote_reservation_lock:
@@ -210,9 +203,7 @@ def refresh_remote_reservation(
     roomy = [
         n
         for n in nodes
-        if eligible(top, n)
-        and float(n.ram_gib) + 1e-9 >= ram
-        and (gpu <= 0 or float(n.gpu_vram_gib) + 1e-9 >= gpu)
+        if eligible(top, n) and float(n.ram_gib) + 1e-9 >= ram and (gpu <= 0 or float(n.gpu_vram_gib) + 1e-9 >= gpu)
     ]
     if not roomy:
         with _remote_reservation_lock:
@@ -239,13 +230,15 @@ def refresh_remote_reservation(
                 return existing
 
         bucket.clear()
-        bucket.update({
-            "key": top_key,
-            "worker_id": target.node_id,
-            "ram": float(ram),
-            "vram": float(gpu),
-            "since": now.isoformat(),
-        })
+        bucket.update(
+            {
+                "key": top_key,
+                "worker_id": target.node_id,
+                "ram": float(ram),
+                "vram": float(gpu),
+                "since": now.isoformat(),
+            }
+        )
         return dict(bucket)
 
 
@@ -300,9 +293,7 @@ def select_task_for_node(
         for peer in peers:
             if peer.node_id == node.node_id:
                 continue
-            pfr = filter_task(
-                row, peer, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts
-            )
+            pfr = filter_task(row, peer, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts)
             if pfr.ok:
                 eligible_peers.append(peer)
 
@@ -320,11 +311,9 @@ def select_task_for_node(
         if ok:
             return row
 
-        aged = task_wait_aged(
-            _row_get(row, "enqueued_at", None), age_sec=placement_age_sec, now=now
-        )
+        aged = task_wait_aged(_row_get(row, "enqueued_at", None), age_sec=placement_age_sec, now=now)
         msg = (
-            f"placement: skip {_row_get(row,'project','')}/{_row_get(row,'task_id','')} "
+            f"placement: skip {_row_get(row, 'project', '')}/{_row_get(row, 'task_id', '')} "
             f"on {node.node_id}; better peer {better.node_id if better else '?'}"
         )
         if placement_shadow:

@@ -19,15 +19,25 @@ from taskqueue.yaml_legacy import (
 )
 
 
-_KNOWN = frozenset({
-    "task_id", "command", "description", "resources", "wall_clock_cap_sec",
-    "metadata",
-})
+_KNOWN = frozenset(
+    {
+        "task_id",
+        "command",
+        "description",
+        "resources",
+        "wall_clock_cap_sec",
+        "metadata",
+    }
+)
 
 
 def test_legacy_hints_cover_five_keys() -> None:
     assert set(LEGACY_KEY_HINTS) == {
-        "ram_gib", "timeout_s", "hypothesis", "project", "name",
+        "ram_gib",
+        "timeout_s",
+        "hypothesis",
+        "project",
+        "name",
     }
     for uk, hint in LEGACY_KEY_HINTS.items():
         line = suggest_unknown_key(uk, _KNOWN)
@@ -112,14 +122,16 @@ def test_parse_task_yaml_legacy_hint_in_error(tmp_path: Path) -> None:
 def test_fix_legacy_yaml_file_roundtrip(tmp_path: Path) -> None:
     p = tmp_path / "job.yaml"
     p.write_text(
-        yaml.dump({
-            "task_id": "job",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "project": "demo",
-            "hypothesis": "probe",
-            "ram_gib": 2,
-        }),
+        yaml.dump(
+            {
+                "task_id": "job",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "project": "demo",
+                "hypothesis": "probe",
+                "ram_gib": 2,
+            }
+        ),
         encoding="utf-8",
     )
     changes = fix_legacy_yaml_file(p, project_name="demo")
@@ -140,15 +152,17 @@ def test_validate_fix_rewrites_then_ok(tmp_path: Path, monkeypatch) -> None:
     q = root / "experiments" / "operator_queue"
     q.mkdir(parents=True)
     (q / "legacy.yaml").write_text(
-        yaml.dump({
-            "task_id": "legacy",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "project": "demo",
-            "ram_gib": 3,
-            "timeout_s": 120,
-            "hypothesis": "x",
-        }),
+        yaml.dump(
+            {
+                "task_id": "legacy",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "project": "demo",
+                "ram_gib": 3,
+                "timeout_s": 120,
+                "hypothesis": "x",
+            }
+        ),
         encoding="utf-8",
     )
     (home / "projects.yaml").write_text(
@@ -175,11 +189,13 @@ def test_validate_file_fix_mismatched_project(tmp_path: Path, monkeypatch) -> No
     q.mkdir(parents=True)
     path = q / "bad.yaml"
     path.write_text(
-        yaml.dump({
-            "task_id": "bad",
-            "command": sys.executable,
-            "project": "wrong",
-        }),
+        yaml.dump(
+            {
+                "task_id": "bad",
+                "command": sys.executable,
+                "project": "wrong",
+            }
+        ),
         encoding="utf-8",
     )
     (home / "projects.yaml").write_text(
@@ -196,9 +212,7 @@ def test_multi_doc_yaml_parse_task_yaml_many(tmp_path: Path) -> None:
     """parse_task_yaml_many returns one task per --- document."""
     p = tmp_path / "multi.yaml"
     p.write_text(
-        "task_id: first\ncommand: echo\nargs: [a]\n"
-        "---\n"
-        "task_id: second\ncommand: echo\nargs: [b]\n",
+        "task_id: first\ncommand: echo\nargs: [a]\n---\ntask_id: second\ncommand: echo\nargs: [b]\n",
         encoding="utf-8",
     )
     proj = Project(name="demo", root=tmp_path, queue_dir=tmp_path)
@@ -212,9 +226,7 @@ def test_multi_doc_yaml_parse_task_yaml_raises(tmp_path: Path) -> None:
     """parse_task_yaml rejects multi-document files with a clear error."""
     p = tmp_path / "multi.yaml"
     p.write_text(
-        "task_id: first\ncommand: echo\n"
-        "---\n"
-        "task_id: second\ncommand: echo\n",
+        "task_id: first\ncommand: echo\n---\ntask_id: second\ncommand: echo\n",
         encoding="utf-8",
     )
     proj = Project(name="demo", root=tmp_path, queue_dir=tmp_path)
@@ -226,9 +238,7 @@ def test_multi_doc_legacy_fixer_raises(tmp_path: Path) -> None:
     """fix_legacy_yaml_file rejects multi-document files."""
     p = tmp_path / "multi.yaml"
     p.write_text(
-        "task_id: first\ncommand: echo\nproject: demo\n"
-        "---\n"
-        "task_id: second\ncommand: echo\n",
+        "task_id: first\ncommand: echo\nproject: demo\n---\ntask_id: second\ncommand: echo\n",
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="does not support multi-document"):

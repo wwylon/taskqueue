@@ -2,6 +2,7 @@
 
 Serves static/index.html and a JSON API. Runs in a daemon thread.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -59,11 +60,13 @@ def start_web_server(
 ) -> threading.Thread:
     if db_path is None:
         from taskqueue.config import state_home, db_path as _dbp
+
         db_path = _dbp(state_home())
 
     # W1.1: non-loopback bind requires a token — refuse to start if unconfigured.
     if not _is_loopback(bind_host):
         from taskqueue.db import get_config as _gcfg
+
         cfg = _gcfg(conn)
         if not (cfg.get("auth_token") or "").strip():
             raise RuntimeError(
@@ -75,6 +78,7 @@ def start_web_server(
     # Pre-warm psutil cpu_percent baseline so first /api/hardware is not all zeros.
     try:
         import psutil as _psutil
+
         _psutil.cpu_percent(interval=0.1)
     except Exception:
         pass
@@ -101,6 +105,7 @@ def start_standby_server(
     """
     if not _is_loopback(bind_host):
         from taskqueue.db import get_config as _gcfg
+
         cfg = _gcfg(conn)
         if not (cfg.get("auth_token") or "").strip():
             raise RuntimeError(

@@ -1,4 +1,5 @@
 """W7.5 worker self-upgrade: verify download hash, install, restart; abort on mismatch."""
+
 from __future__ import annotations
 
 import hashlib
@@ -19,9 +20,13 @@ class _Resp(io.BytesIO):
 
 def _setup(monkeypatch, payload: bytes, sha: str, installs: list, restarts: list) -> None:
     monkeypatch.setattr(worker, "_WORKER_VERSION", "1.0.0")
-    monkeypatch.setattr(worker, "_get", lambda url: {"version": "1.2.0", "upgrade_url": "/api/worker/wheel", "sha256": sha})
+    monkeypatch.setattr(
+        worker, "_get", lambda url: {"version": "1.2.0", "upgrade_url": "/api/worker/wheel", "sha256": sha}
+    )
     monkeypatch.setattr(worker.urllib.request, "urlopen", lambda req, timeout=0: _Resp(payload))
-    monkeypatch.setattr(worker.subprocess, "run", lambda cmd, **k: installs.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    monkeypatch.setattr(
+        worker.subprocess, "run", lambda cmd, **k: installs.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", "")
+    )
     monkeypatch.setattr(worker, "_restart_process", lambda: restarts.append(True))
 
 
@@ -50,10 +55,14 @@ def test_journal_recovery_queues_finalize_for_unfinished_runs(tmp_path: Path) ->
     from taskqueue.worker_journal import append_entry, journal_path
 
     append_entry(tmp_path, 5, {"t": "claim", "run_id": 5})
-    append_entry(tmp_path, 5, {"t": "exit", "code": 0})          # exited, finalize never sent
-    append_entry(tmp_path, 6, {"t": "claim", "run_id": 6})        # crashed mid-run
+    append_entry(tmp_path, 5, {"t": "exit", "code": 0})  # exited, finalize never sent
+    append_entry(tmp_path, 6, {"t": "claim", "run_id": 6})  # crashed mid-run
     worker._recover_journal(tmp_path, "w1")
-    pending = {int(p.stem): json.loads(p.read_text(encoding="utf-8")) for p in worker.pending_finalize_dir(tmp_path).glob("*.json")}
+    pending = {
+        int(p.stem): json.loads(p.read_text(encoding="utf-8"))
+        for p in worker.pending_finalize_dir(tmp_path).glob("*.json")
+    }
     assert pending[5]["status"] == "completed" and pending[5]["exit_code"] == 0
-    assert pending[6]["status"] == "unknown" and pending[6]["exit_code"] == -1
+    # F-194: mid-run crash finalizes as interrupted (master rejects status=unknown).
+    assert pending[6]["status"] == "interrupted" and pending[6]["exit_code"] == -1
     assert not journal_path(tmp_path, 5).exists()  # replayed journal is collected

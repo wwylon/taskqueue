@@ -65,10 +65,11 @@ export async function _renderHelpBody(body) {
       const hashIdx = rm.indexOf('#');
       const guideId = 'web-ui';
       const anchor = hashIdx >= 0 ? rm.slice(hashIdx + 1) : '';
-      const openArgs = anchor
-        ? `'${guideId}','${escHtml(anchor)}'`
-        : `'${guideId}'`;
-      html += `<p class="tq-help-more"><a href="#" data-click="${tqAct([['tqOpenGuide', openArgs]])}" data-click-prevent>${escHtml(i18n.t('help.readMore'))}</a></p>`;
+      // F-166: pass two tqAct args (guide id, optional section), not one packed string.
+      const openCall = anchor
+        ? ['tqOpenGuide', guideId, String(anchor)]
+        : ['tqOpenGuide', guideId];
+      html += `<p class="tq-help-more"><a href="#" data-click="${tqAct([openCall])}" data-click-prevent>${escHtml(i18n.t('help.readMore'))}</a></p>`;
     }
   }
   if (payload.general && payload.general.length) {
@@ -114,6 +115,27 @@ export function closeHelp() {
 
 let _docsManifest = null;
 
+function _capabilityTitle(id) {
+  const key = `docs.capability.${id}`;
+  const translated = i18n.t(key);
+  return translated !== key ? translated : String(id || 'other').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function _renderDocNav(host, items, fallbackLabel) {
+  if (!host) return;
+  const groups = new Map();
+  for (const item of items || []) {
+    const capability = item.capability || 'other';
+    if (!groups.has(capability)) groups.set(capability, []);
+    groups.get(capability).push(item);
+  }
+  host.innerHTML = [...groups.entries()].map(([capability, docs]) => `
+    <div class="docs-capability-group" data-capability="${escHtml(capability)}">
+      <div class="docs-sidebar-sub">${escHtml(_capabilityTitle(capability) || fallbackLabel)}</div>
+      ${docs.map(item => `<button type="button" class="docs-nav-item" data-doc-id="${escHtml(item.id)}" data-click="${tqAct([['loadDoc', String(item.id)]])}">${escHtml(item.title || String(item.id).replace(/-/g, ' '))}</button>`).join('')}
+    </div>`).join('');
+}
+
 export function tqOpenGuide(id, section) {
   closeHelp();
   tqCloseShortcuts();
@@ -131,16 +153,25 @@ export async function loadDocsPage() {
       if (r.ok) _docsManifest = await r.json();
     } catch (_) {}
   }
-  if (!_docsManifest) return;
   const gNav = document.getElementById('docs-nav-guides');
   const rNav = document.getElementById('docs-nav-refs');
   if (!gNav || !rNav) return;
-  gNav.innerHTML = Object.entries(_docsManifest.guides || {}).map(([id]) =>
-    `<button type="button" class="docs-nav-item" data-doc-id="${escHtml(id)}" data-click="${tqAct([['loadDoc', String(id)]])}">${escHtml(id.replace(/-/g, ' '))}</button>`
-  ).join('');
-  rNav.innerHTML = Object.entries(_docsManifest.references || {}).map(([id]) =>
-    `<button type="button" class="docs-nav-item" data-doc-id="${escHtml(id)}" data-click="${tqAct([['loadDoc', String(id)]])}">${escHtml(id.replace(/-/g, ' '))}</button>`
-  ).join('');
+  let guides = [], references = [];
+  if (_docsManifest) {
+    guides = Object.entries(_docsManifest.guides || {}).map(([id, meta]) => ({
+      id, title: id.replace(/-/g, ' '), capability: meta.capability,
+    }));
+    references = Object.entries(_docsManifest.references || {}).map(([id, meta]) => ({
+      id, title: id.replace(/-/g, ' '), capability: meta && meta.capability,
+    }));
+  } else {
+    // The generated English bundle keeps the Docs tab useful during daemon/offline mode.
+    const payload = await _fetchHelpPayload();
+    guides = payload && payload.guides || [];
+    references = payload && payload.references || [];
+  }
+  _renderDocNav(gNav, guides, i18n.t('docs.guides'));
+  _renderDocNav(rNav, references, i18n.t('docs.references'));
   let pick = S.docsCurrentId || 'web-ui';
   try {
     const saved = localStorage.getItem('tq_last_doc');

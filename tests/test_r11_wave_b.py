@@ -1,4 +1,5 @@
 """Round 11 Wave B: notify redact, dispatch busy, max_attempts retry, sleep tier."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,9 +12,7 @@ from tests.test_queue import _project, _yaml
 
 
 def test_f120_redact_notify_url() -> None:
-    assert redact_notify_url("https://user:pass@hooks.example/x?token=abc") == (
-        "https://***@hooks.example/x"
-    )
+    assert redact_notify_url("https://user:pass@hooks.example/x?token=abc") == ("https://***@hooks.example/x")
     assert "?token" not in redact_notify_url("http://127.0.0.1/hook?token=secret")
     assert redact_notify_url("") == ""
 
@@ -46,9 +45,7 @@ def test_f123_retry_resets_max_attempts_window(tmp_path: Path) -> None:
             proj,
         ),
     )
-    db.execute(
-        "UPDATE tasks SET status='failed', max_attempts=1 WHERE project='p' AND task_id='t'"
-    )
+    db.execute("UPDATE tasks SET status='failed', max_attempts=1 WHERE project='p' AND task_id='t'")
     db.execute(
         "INSERT INTO runs (project, task_id, status, started_at) "
         "VALUES ('p', 't', 'failed', '2020-01-01T00:00:00+00:00')"

@@ -84,7 +84,7 @@ def prune_logs(
             if mtime < cutoff and str(f.resolve()) not in protected:
                 if verbose:
                     age_days = (now_ts - mtime) / 86400
-                    print(f"  {'(dry) ' if dry_run else ''}prune log {f}  ({age_days:.0f}d, {size//1024}KB)")
+                    print(f"  {'(dry) ' if dry_run else ''}prune log {f}  ({age_days:.0f}d, {size // 1024}KB)")
                 if not dry_run:
                     try:
                         f.unlink()
@@ -113,9 +113,7 @@ def prune_runs(
     now_ts = time.time()
     total_rows = 0
 
-    projects_in_db = [
-        r[0] for r in conn.execute("SELECT DISTINCT project FROM runs").fetchall()
-    ]
+    projects_in_db = [r[0] for r in conn.execute("SELECT DISTINCT project FROM runs").fetchall()]
 
     for project in projects_in_db:
         _, run_days = _per_project_retention(config, project)
@@ -190,9 +188,7 @@ def _protected_logs(conn) -> set[str]:
 def _unfinished_logs(conn) -> set[str]:
     """Log paths still being written (finished_at IS NULL) — must not be capped."""
     out: set[str] = set()
-    rows = conn.execute(
-        "SELECT log_path FROM runs WHERE log_path IS NOT NULL AND finished_at IS NULL"
-    ).fetchall()
+    rows = conn.execute("SELECT log_path FROM runs WHERE log_path IS NOT NULL AND finished_at IS NULL").fetchall()
     for (lp,) in rows:
         try:
             out.add(str(Path(lp).resolve()))
@@ -260,8 +256,7 @@ def cap_finished_logs(
             reclaimed = st.st_size - max_bytes
             if verbose:
                 print(
-                    f"  {'(dry) ' if dry_run else ''}cap log {f}  "
-                    f"({st.st_size // 1024}KB -> <={max_bytes // 1024}KB)"
+                    f"  {'(dry) ' if dry_run else ''}cap log {f}  ({st.st_size // 1024}KB -> <={max_bytes // 1024}KB)"
                 )
             if not dry_run:
                 try:
@@ -326,9 +321,7 @@ def cmd_prune(home: Path, dry_run: bool = True, verbose: bool = False) -> int:
 
     # Age-delete first (mtime-based), then cap remaining finished logs (mtime preserved).
     log_result = prune_logs(home, config, dry_run=dry_run, verbose=verbose, protected=_protected_logs(conn))
-    cap_result = cap_finished_logs(
-        home, config, dry_run=dry_run, verbose=verbose, unfinished=_unfinished_logs(conn)
-    )
+    cap_result = cap_finished_logs(home, config, dry_run=dry_run, verbose=verbose, unfinished=_unfinished_logs(conn))
     run_result = prune_runs(home, conn, config, dry_run=dry_run, verbose=verbose)
     audit_result = prune_audit(conn, config, dry_run=dry_run)
     rotated = rotate_logs(home, dry_run=dry_run)
@@ -337,7 +330,7 @@ def cmd_prune(home: Path, dry_run: bool = True, verbose: bool = False) -> int:
     mb = log_result["logs_bytes"] / 1_048_576
     print(f"\nLogs: {log_result['logs_deleted']} file(s), {mb:.1f} MB")
     for proj, d in (log_result.get("per_project") or {}).items():
-        print(f"  {proj}: {d['files']} files  {d['bytes']//1024}KB  (>{d['log_days']}d)")
+        print(f"  {proj}: {d['files']} files  {d['bytes'] // 1024}KB  (>{d['log_days']}d)")
     cap_mb = cap_result["logs_bytes_reclaimed"] / 1_048_576
     print(f"Capped: {cap_result['logs_capped']} file(s), {cap_mb:.1f} MB reclaimed")
     print(f"Runs: {run_result['runs_deleted']} record(s)")

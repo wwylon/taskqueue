@@ -1,4 +1,5 @@
 """Behavior tests for components/filterbars.js (project/worker selects, project and tag chips, broken-deps banner)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -18,7 +19,8 @@ def _js(body: str) -> str:
 
 
 def test_project_select_resets_missing_project_and_worker_select_keeps_choice():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 $('project-select'); $('worker-select');
 g._syncProjSelect = () => { r.synced = true; };
 const urls = []; g._syncUrl = o => urls.push(o);
@@ -35,14 +37,16 @@ const wh = $('worker-select').innerHTML;
 r.workers = [wh.includes('value="master"'), wh.includes('value="w2" selected'), wh.includes('value="w1">')];
 g._populateWorkerSelect(null);
 r.noWorkers = !$('worker-select').innerHTML.includes('w1');
-"""))
+""")
+    )
     assert out["sel"] == ["all", "all", "all", [{"replace": True}], True, True]
     assert out["kept"] == ["c", 0] and out["synced"] is True
     assert out["workers"] == [True, True, True] and out["noWorkers"] is True
 
 
 def test_project_and_worker_change_handlers_dispatch():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const calls = [];
 g.setQueueActive = () => calls.push('active'); g.setProject = p => calls.push('p:' + p);
 g.renderQueue = () => calls.push('q'); g.renderHistory = () => calls.push('h'); g.renderDashboard = () => calls.push('d');
@@ -51,12 +55,14 @@ $('project-select').value = 'x'; g.onProjectChange();
 $('project-select').value = ''; g.onProjectChange();
 $('worker-select').value = 'w1'; g.onWorkerChange();
 r.calls = calls; r.worker = S.globalWorkerFilter;
-"""))
+""")
+    )
     assert out["calls"] == ["active", "p:x", "p:all", "q", "h", "d"] and out["worker"] == "w1"
 
 
 def test_project_chips_filter_by_tag_mark_active_and_frozen():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 $('queue-proj-bar'); $('history-proj-bar');
 S.selectedProject = 'b'; S.queueActiveOnly = false; S.cfg = { project_frozen_b: true };
 S.tagFilter = 'gpu'; S.allTagProjects = { gpu: ['b'] };
@@ -66,14 +72,16 @@ r.queue = [q.includes('data-project="a"'), q.includes('chip-frozen'), q.includes
 r.history = [h.includes('data-project="a"'), h.includes('chip-frozen'), h.includes('data-project="b"')];
 S.tagFilter = null; S.queueActiveOnly = true; g._populateProjectChips(['a', 'b']);
 r.activeOnly = [$('queue-proj-bar').innerHTML.includes('active" data-queue-view="active"'), $('queue-proj-bar').innerHTML.includes('data-project="a"')];
-"""))
+""")
+    )
     assert out["queue"] == [False, True, True, True]
     assert out["history"] == [True, False, True]
     assert out["activeOnly"] == [True, True]
 
 
 def test_tag_chips_toggle_and_filter_persist():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const bar = $('queue-tag-bar');
 S.allTags = [];
 g._updateTagChips(); r.hidden = bar.style.display;
@@ -90,7 +98,8 @@ g.toggleTagFilter('gpu');
 r.on = [S.tagFilter, S.queuePage, g.localStorage.getItem('tq_tag'), refreshed, urls.slice(), bar.innerHTML.includes('filter-chip active')];
 g.toggleTagFilter('gpu');
 r.off = [S.tagFilter, g.localStorage.getItem('tq_tag')];
-"""))
+""")
+    )
     assert out["hidden"] == "none" and out["collapsed"] == ["", False, True]
     assert out["expanded"] == ["1", True, True]
     assert out["on"] == ["gpu", 0, "gpu", 1, [{"replace": False}], True]
@@ -98,7 +107,8 @@ r.off = [S.tagFilter, g.localStorage.getItem('tq_tag')];
 
 
 def test_broken_deps_banner_lists_dismisses_and_toasts_once():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const el = $('broken-deps-banner');
 g.sessionStorage.removeItem('tq_broken_deps_toasted');
 S.brokenDeps = []; S.brokenDepsBannerDismissedCount = 3;
@@ -115,7 +125,8 @@ el.style.display = 'flex'; g._updateBrokenDepsBanner();
 r.stayHidden = el.style.display;
 S.brokenDeps.push({ project: 'p', task_id: 'new' }); g._updateBrokenDepsBanner();
 r.reshown = el.style.display;
-"""))
+""")
+    )
     assert out["none"] == ["none", None]
     assert out["shown"][:5] == ["flex", True, True, True, True] and out["shown"][5] == [["toast.brokenDeps", "err"]]
     assert out["once"] == 1

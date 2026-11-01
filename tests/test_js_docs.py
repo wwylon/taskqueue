@@ -1,4 +1,5 @@
 """Behavior tests for views/docs.js (built-in help drawer + Docs tab) under the Node DOM stub."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +9,12 @@ from tests.test_js_smoke import EV
 
 MANIFEST = {"guides": {"web-ui": {}, "task-standards": {}}, "references": {"cli": {}}}
 PAYLOAD = {
-    "page": {"id": "queue", "title": "Queue <page>", "html": "<p>about queue</p>", "read_more": "docs/web-ui#queue-tab"},
+    "page": {
+        "id": "queue",
+        "title": "Queue <page>",
+        "html": "<p>about queue</p>",
+        "read_more": "docs/web-ui#queue-tab",
+    },
     "general": [{"id": "force-run", "title": "Force run", "html": "<p>force it</p>"}],
 }
 

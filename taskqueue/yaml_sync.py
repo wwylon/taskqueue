@@ -21,9 +21,13 @@ from taskqueue.db import parse_task_yaml_many
 # Bump YAML_PARSER_GEN when parse_task_yaml_many's field set changes so a
 # deploy is not invisible until every file's mtime changes (F-077).
 YAML_PARSER_GEN = 1
-_yaml_mtime_cache: dict[str, tuple[int, int, object]] = {}
+_yaml_mtime_cache: dict[str, tuple[int, int, object, int]] = {}
 # O1: cap to prevent unbounded memory growth on large repos.
 _YAML_CACHE_MAX = 5000
+_YAML_CACHE_MAX_BYTES = 64 * 1024 * 1024
+_yaml_cache_hits = 0
+_yaml_cache_misses = 0
+_yaml_cache_bytes = 0
 
 
 def iter_queue_files(queue_dir: Path):
@@ -38,7 +42,23 @@ def iter_queue_files(queue_dir: Path):
 
 def clear_yaml_mtime_cache() -> None:
     """Test helper: drop process-local YAML parse cache."""
+    global _yaml_cache_bytes, _yaml_cache_hits, _yaml_cache_misses
     _yaml_mtime_cache.clear()
+    _yaml_cache_bytes = 0
+    _yaml_cache_hits = 0
+    _yaml_cache_misses = 0
+
+
+def yaml_cache_stats() -> dict[str, int]:
+    """Return process-local YAML parse-cache counters for ``tq doctor``."""
+    return {
+        "entries": len(_yaml_mtime_cache),
+        "bytes": _yaml_cache_bytes,
+        "max_entries": _YAML_CACHE_MAX,
+        "max_bytes": _YAML_CACHE_MAX_BYTES,
+        "hits": _yaml_cache_hits,
+        "misses": _yaml_cache_misses,
+    }
 
 
 def _in_queue_dir(key: str, qdir_str: str, qdir_resolved: Path) -> bool:
@@ -60,6 +80,7 @@ def _sync_project(
 
     Returns ``{"upserted": n, "deleted": m}`` for this call (F-119 metrics).
     """
+    global _yaml_cache_bytes, _yaml_cache_hits, _yaml_cache_misses
     empty = {"upserted": 0, "deleted": 0}
     if cache is None:
         cache = _yaml_mtime_cache
@@ -89,9 +110,7 @@ def _sync_project(
         (project.name,),
     ).fetchall()
     existing: dict[str, str] = {r["task_id"]: r["status"] for r in existing_rows}
-    admitted = sum(
-        1 for status in existing.values() if status not in ("disabled", "completed")
-    )
+    admitted = sum(1 for status in existing.values() if status not in ("disabled", "completed"))
 
     # F-079: materialize the listing first. Path.glob on a vanished dir returns []
     # (no OSError); if we then DELETE every missing task_id we wipe the project.
@@ -99,8 +118,7 @@ def _sync_project(
         yaml_paths = list(iter_queue_files(project.queue_dir))
     except OSError as exc:
         print(
-            f"[queue] {_ts()} warn: {project.name}: queue dir listing failed ({exc}) — "
-            "skipping sync cleanup",
+            f"[queue] {_ts()} warn: {project.name}: queue dir listing failed ({exc}) — skipping sync cleanup",
             file=sys.stderr,
         )
         return
@@ -153,14 +171,14 @@ def _sync_project(
                 and _cached[1] == YAML_PARSER_GEN
                 and _cached[2] is not None
             ):
+                _yaml_cache_hits += 1
                 # F-040: file unchanged — skip upsert to avoid constant WAL churn
                 for _ct in _cached[2]:
                     found_task_ids.add(_ct.task_id)
                 continue
+            _yaml_cache_misses += 1
             # R10: parse_task_yaml_many returns >=1 tasks (>1 for matrix: YAMLs)
-            task_list = parse_task_yaml_many(
-                yaml_path, project, allow_remote_notify=allow_remote
-            )
+            task_list = parse_task_yaml_many(yaml_path, project, allow_remote_notify=allow_remote)
             _file_skipped = False
             for task in task_list:
                 # F-060: mark present before cap logic so cleanup never deletes
@@ -169,12 +187,7 @@ def _sync_project(
                 genuinely_new = task.task_id not in existing
                 old_status = existing.get(task.task_id)
                 re_enabled = not genuinely_new and task.enabled and old_status in ("disabled", "completed")
-                if (
-                    _max_queued > 0
-                    and (genuinely_new or re_enabled)
-                    and task.enabled
-                    and admitted >= _max_queued
-                ):
+                if _max_queued > 0 and (genuinely_new or re_enabled) and task.enabled and admitted >= _max_queued:
                     print(
                         f"[queue] {_ts()} warn: {project.name}: task {task.task_id} skipped "
                         f"(max_queued_tasks_per_project={_max_queued} reached)",
@@ -194,7 +207,7 @@ def _sync_project(
             # Only remember the file once every task was upserted (and, below, the batch
             # committed); a failed/skipped upsert must be retried on the next sync.
             if mtime_ns is not None and not _file_skipped:
-                pending_cache[key] = (mtime_ns, YAML_PARSER_GEN, task_list)
+                pending_cache[key] = (mtime_ns, YAML_PARSER_GEN, task_list, int(yaml_size))
         except Exception as exc:
             print(
                 f"[queue] {_ts()} warn: {project.name}: failed to parse {yaml_path.name}: {exc}",
@@ -250,12 +263,28 @@ def _sync_project(
         try:
             conn.commit()
         except Exception as exc:
+            # F-158: roll back so the connection is not left holding a failed txn
+            # that blocks later HTTP writers on the same connection.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             pending_cache.clear()
             print(f"[queue] {_ts()} warn: {project.name}: batch upsert commit failed: {exc}", file=sys.stderr)
     for _k, _v in pending_cache.items():
+        old = cache.pop(_k, None)
+        if cache is _yaml_mtime_cache and old is not None:
+            _yaml_cache_bytes -= int(old[3]) if len(old) >= 4 else 0
         cache[_k] = _v
-        if len(cache) > _YAML_CACHE_MAX:
-            cache.pop(next(iter(cache)), None)
+        if cache is _yaml_mtime_cache:
+            _yaml_cache_bytes += int(_v[3])
+        while len(cache) > _YAML_CACHE_MAX or (
+            cache is _yaml_mtime_cache and _yaml_cache_bytes > _YAML_CACHE_MAX_BYTES
+        ):
+            evicted_key = next(iter(cache))
+            evicted = cache.pop(evicted_key)
+            if cache is _yaml_mtime_cache:
+                _yaml_cache_bytes -= int(evicted[3]) if len(evicted) >= 4 else 0
 
     # Clean up tasks in database that no longer have YAML files.
     # A transient SQLite lock here must never crash the daemon (it did:
@@ -280,16 +309,15 @@ def _sync_project(
         for k in list(cache):
             try:
                 if k not in live_keys and _in_queue_dir(k, qdir_str, qdir_resolved):
-                    cache.pop(k, None)
+                    old = cache.pop(k, None)
+                    if cache is _yaml_mtime_cache and old is not None:
+                        _yaml_cache_bytes -= int(old[3]) if len(old) >= 4 else 0
             except Exception:
                 continue
         return {"upserted": upserted, "deleted": 0}
     if enumerated_ok and project.queue_dir.is_dir():
         try:
-            db_tasks = conn.execute(
-                "SELECT task_id, status FROM tasks WHERE project = ?",
-                (project.name,)
-            ).fetchall()
+            db_tasks = conn.execute("SELECT task_id, status FROM tasks WHERE project = ?", (project.name,)).fetchall()
             deleted_any = False
             for row in db_tasks:
                 tid = row["task_id"]
@@ -327,7 +355,9 @@ def _sync_project(
             except Exception:
                 continue
         for k in stale:
-            cache.pop(k, None)
+            old = cache.pop(k, None)
+            if cache is _yaml_mtime_cache and old is not None:
+                _yaml_cache_bytes -= int(old[3]) if len(old) >= 4 else 0
     return {"upserted": upserted, "deleted": deleted}
 
 

@@ -1,4 +1,5 @@
 """Read-only CLI commands must not request a migrating DB open."""
+
 from __future__ import annotations
 
 from pathlib import Path

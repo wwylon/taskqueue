@@ -23,12 +23,10 @@ from taskqueue.web import make_handler
 # Test infrastructure
 # ---------------------------------------------------------------------------
 
+
 def _make_handler(tmp_path: Path, projects=None):
     db = open_db(tmp_path / "q.db")
-    return make_handler(
-        db, {}, {}, lambda: (projects or {}),
-        tmp_path / "q.db", "127.0.0.1"
-    ), db
+    return make_handler(db, {}, {}, lambda: projects or {}, tmp_path / "q.db", "127.0.0.1"), db
 
 
 class _FakeWfile:
@@ -42,14 +40,9 @@ class _FakeWfile:
         pass
 
 
-def _make_request(HandlerClass, method: str, path: str, body: bytes = b"",
-                  extra_headers: dict | None = None):
+def _make_request(HandlerClass, method: str, path: str, body: bytes = b"", extra_headers: dict | None = None):
     """Instantiate a Handler, fire handle_one_request, return (status_code, body_bytes)."""
-    headers_raw = (
-        f"{method} {path} HTTP/1.1\r\n"
-        f"Host: localhost:8765\r\n"
-        f"Content-Length: {len(body)}\r\n"
-    )
+    headers_raw = f"{method} {path} HTTP/1.1\r\nHost: localhost:8765\r\nContent-Length: {len(body)}\r\n"
     for k, v in (extra_headers or {}).items():
         headers_raw += f"{k}: {v}\r\n"
     headers_raw += "\r\n"
@@ -104,6 +97,7 @@ def _seed_task(db, project="proj", task_id="T1", status="queued"):
 # GET /api/status
 # ---------------------------------------------------------------------------
 
+
 def test_get_status_200(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
     code, body = _make_request(HandlerClass, "GET", "/api/status")
@@ -151,6 +145,7 @@ def test_get_status_running_and_queued_respect_project(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # GET /api/queue
 # ---------------------------------------------------------------------------
+
 
 def test_get_queue_empty(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
@@ -221,6 +216,7 @@ def test_get_locks_and_mutex_queue_fields(tmp_path: Path):
         (now, now, json.dumps({"locks": ["corpus"], "cpu_cores": 1, "ram_gib": 0.5})),
     )
     from taskqueue.db import set_project_limit
+
     set_project_limit(db, "proj", "max_tasks", 3.0)
     db.commit()
 
@@ -254,6 +250,7 @@ def test_get_locks_and_mutex_queue_fields(tmp_path: Path):
 # GET /api/history
 # ---------------------------------------------------------------------------
 
+
 def test_get_history_empty(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
     code, body = _make_request(HandlerClass, "GET", "/api/history")
@@ -283,8 +280,7 @@ def test_get_history_search(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
     now = datetime.now(UTC).isoformat()
     db.executemany(
-        "INSERT INTO runs (project, task_id, started_at, finished_at, status, log_path) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO runs (project, task_id, started_at, finished_at, status, log_path) VALUES (?,?,?,?,?,?)",
         [
             ("proj", "alpha_task", now, now, "completed", "a.log"),
             ("proj", "beta_task", now, now, "completed", "b.log"),
@@ -303,6 +299,7 @@ def test_get_history_search(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # GET /api/config
 # ---------------------------------------------------------------------------
+
 
 def test_get_config_200(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
@@ -331,11 +328,10 @@ def test_post_config_accepts_web_save_cfg_payload(tmp_path: Path):
         "max_ram_gib": 0,
         "gpu_vram_limit_gib": 0,
     }
-    code, body = _make_request(
-        HandlerClass, "POST", "/api/config", body=json.dumps(payload).encode()
-    )
+    code, body = _make_request(HandlerClass, "POST", "/api/config", body=json.dumps(payload).encode())
     assert code == 200, body
     from taskqueue.db import open_db as _open
+
     cfg = get_config(_open(tmp_path / "q.db"))
     assert cfg["cpu_limit_pct"] == 95
     assert cfg["limit_decrease_policy"] == "ignore"
@@ -349,6 +345,7 @@ def test_post_force_marks_queued_task(tmp_path: Path):
     data = json.loads(body)
     assert data.get("ok") is True
     from taskqueue.db import open_db as _open
+
     row = get_task(_open(tmp_path / "q.db"), "proj", "T1")
     assert row["force_run"] == 1
     assert row["status"] == "queued"
@@ -357,6 +354,7 @@ def test_post_force_marks_queued_task(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # GET /api/projects
 # ---------------------------------------------------------------------------
+
 
 def test_get_projects_empty(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
@@ -369,6 +367,7 @@ def test_get_projects_empty(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # POST /api/stop — always 200 (endpoint does not 404 on missing task)
 # ---------------------------------------------------------------------------
+
 
 def test_post_stop_missing_task_404(tmp_path: Path):
     # 8.1 #13: stopping a nonexistent task is a 404, not a silent ok
@@ -390,6 +389,7 @@ def test_post_stop_queued_task(tmp_path: Path):
 # POST /api/retry
 # ---------------------------------------------------------------------------
 
+
 def test_post_retry_missing_task_returns_false(tmp_path: Path):
     # retry returns {"ok": false} when task not found, not a 4xx
     HandlerClass, db = _make_handler(tmp_path)
@@ -408,6 +408,7 @@ def test_post_retry_failed_task(tmp_path: Path):
     assert data.get("ok") is True
     # Verify via same connection (handler uses its own rconn, so open fresh)
     from taskqueue.db import open_db as _open
+
     db2 = _open(tmp_path / "q.db")
     row = db2.execute("SELECT status FROM tasks WHERE task_id='T1'").fetchone()
     assert row["status"] == "queued"
@@ -416,6 +417,7 @@ def test_post_retry_failed_task(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # POST /api/enable — toggles; body is not used by this endpoint
 # ---------------------------------------------------------------------------
+
 
 def test_post_enable_task(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
@@ -436,6 +438,7 @@ def test_post_enable_missing_task_404(tmp_path: Path):
 # Unknown routes → 404
 # ---------------------------------------------------------------------------
 
+
 def test_unknown_get_route_404(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
     code, body = _make_request(HandlerClass, "GET", "/api/nonexistent_route_xyz")
@@ -445,6 +448,7 @@ def test_unknown_get_route_404(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # GET /api/hardware
 # ---------------------------------------------------------------------------
+
 
 def test_get_hardware_200(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
@@ -507,7 +511,13 @@ def test_dashboard_coalesces_concurrent_builds(tmp_path: Path):
             port = _s.getsockname()[1]
         db = open_db(tmp_path / "q.db")
         start_web_server(
-            db, {}, {}, lambda: {}, db_path=tmp_path / "q.db", port=port, bind_host="127.0.0.1",
+            db,
+            {},
+            {},
+            lambda: {},
+            db_path=tmp_path / "q.db",
+            port=port,
+            bind_host="127.0.0.1",
         )
         deadline = _time.monotonic() + 10
         while True:

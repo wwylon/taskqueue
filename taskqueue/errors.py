@@ -9,9 +9,9 @@ BLOCK_EXCLUSIVE = "tq.block.exclusive"
 BLOCK_EXCLUSIVE_PROJECT = "tq.block.exclusive_project"
 BLOCK_REQUIRES_PATHS = "tq.block.requires_paths"
 BLOCK_VRAM_EXCEEDS_SYSTEM = "tq.block.vram_exceeds_system"
-BLOCK_SERVICE = "tq.block.service_down"   # R1: requires_services health check failed
+BLOCK_SERVICE = "tq.block.service_down"  # R1: requires_services health check failed
 BLOCK_SERVICE_VRAM = "tq.block.service_vram"  # S1: service up but VRAM headroom insufficient
-BLOCK_MUTEX = "tq.block.mutex"            # S2: named resource lock held by another running task
+BLOCK_MUTEX = "tq.block.mutex"  # S2: named resource lock held by another running task
 BLOCK_SCAVENGER = "tq.block.scavenger"  # T-204: scavenger waits while other work contends
 BLOCK_MAX_ATTEMPTS = "tq.block.max_attempts"  # F-099: max_attempts exhausted
 
@@ -38,6 +38,7 @@ INFRA_CLOCK_JUMP_FLAP = "tq.infra.clock_jump_flap"
 INFRA_LEASE_EXPIRED_WORKER_ALIVE = "tq.infra.lease_expired_worker_alive"
 INFRA_HUNG = "tq.infra.hung"
 INFRA_ORPHAN = "tq.infra.orphan"
+INFRA_ORPHAN_ALIVE = "tq.infra.orphan_alive"
 
 _DESCRIPTIONS: dict[str, str] = {
     BLOCK_DEPS: "Dependency tasks not completed successfully",
@@ -69,9 +70,7 @@ _DESCRIPTIONS: dict[str, str] = {
     ),
     INFRA_WORKER_LOST: "Worker lease expired and the worker's own heartbeat is also stale/offline",
     INFRA_CLOCK_JUMP: "Host slept or clock jumped — task interrupted and re-queued",
-    INFRA_CLOCK_JUMP_FLAP: (
-        "Too many clock-jump interrupts in a short window — left interrupted; use tq retry"
-    ),
+    INFRA_CLOCK_JUMP_FLAP: ("Too many clock-jump interrupts in a short window — left interrupted; use tq retry"),
     INFRA_LEASE_EXPIRED_WORKER_ALIVE: (
         "Run's lease expired but the worker is still heartbeating (reachable, alive) -- "
         "likely a stuck task on an otherwise-healthy worker, not a dead worker"
@@ -80,8 +79,10 @@ _DESCRIPTIONS: dict[str, str] = {
         "Task shows no stdout progress for hung_task_k consecutive ticks while worker is online; "
         "re-queued because idempotent: true"
     ),
-    INFRA_ORPHAN: (
-        "Local run left running after daemon death / dirty restart — interrupted and re-queued"
+    INFRA_ORPHAN: ("Local run left running after daemon death / dirty restart — interrupted and re-queued"),
+    INFRA_ORPHAN_ALIVE: (
+        "Orphan OS process could not be killed (denied or PID reuse) — left interrupted; "
+        "do not re-queue until the process is cleared"
     ),
 }
 
@@ -118,6 +119,7 @@ _CODE_TO_CATEGORY: dict[str, str] = {
     INFRA_LEASE_EXPIRED_WORKER_ALIVE: _CATEGORY_INFRA,
     INFRA_HUNG: _CATEGORY_INFRA,
     INFRA_ORPHAN: _CATEGORY_INFRA,
+    INFRA_ORPHAN_ALIVE: _CATEGORY_INFRA,
     RUN_PREFLIGHT: _CATEGORY_INFRA,
 }
 

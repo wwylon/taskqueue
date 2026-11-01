@@ -2,13 +2,14 @@
 // Uses app.js globals at call time: tqAct, i18n, showToast, _showPageEmpty, _csvCell.
 import { S } from '../core/state.js';
 import { escHtml, fmt } from '../util/format.js';
-import { fetchJson } from '../core/api.js';
+import { fetchJson, latest } from '../core/api.js';
 import { projStyle } from '../util/projcolor.js';
 
 
 export async function loadAudit() {
+  const live = latest('audit');
   const data = await fetchJson('/api/audit?limit=200', 8000, true);
-  if (!data) return false;
+  if (!live() || !data) return false;
   S.auditRows = data.events || [];
   const tb = document.getElementById('audit-tbody');
   if (!tb) return;

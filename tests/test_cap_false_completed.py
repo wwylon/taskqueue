@@ -18,10 +18,18 @@ from taskqueue.runner import ActiveRun
 def _db_with_task(tmp_path: Path):
     root = tmp_path
     path = root / "t1.yaml"
-    path.write_text(yaml.dump({
-        "task_id": "t1", "command": sys.executable, "args": ["-c", "pass"],
-        "resources": {"cpu_cores": 1}, "wall_clock_cap_sec": 5,
-    }), encoding="utf-8")
+    path.write_text(
+        yaml.dump(
+            {
+                "task_id": "t1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "resources": {"cpu_cores": 1},
+                "wall_clock_cap_sec": 5,
+            }
+        ),
+        encoding="utf-8",
+    )
     proj = Project(name="p", root=root, queue_dir=root / "q")
     db = open_db(tmp_path / "queue.db")
     upsert_task(db, parse_task_yaml(path, proj))
@@ -31,8 +39,12 @@ def _db_with_task(tmp_path: Path):
 def _fake_run(code, stop_reason, crashed=False):
     finalized = {}
     run = types.SimpleNamespace(
-        _exit_code=code, stop_reason=stop_reason, run_id=None, reader_crashed=crashed,
-        poll=lambda: True, elapsed_sec=lambda: 1.0,
+        _exit_code=code,
+        stop_reason=stop_reason,
+        run_id=None,
+        reader_crashed=crashed,
+        poll=lambda: True,
+        elapsed_sec=lambda: 1.0,
         finalize=lambda status, **kw: finalized.update(status=status, **kw),
     )
     return run, finalized

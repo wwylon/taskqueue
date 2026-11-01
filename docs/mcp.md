@@ -1,10 +1,9 @@
 # MCP server (`tq mcp`)
 
 `tq mcp` runs a minimal stdio JSON-RPC 2.0 MCP server (no extra dependency —
-implemented directly in `taskqueue/mcp_server.py`) exposing read-oriented
-tools so an agent can answer "what are my tasks?" / "how much CPU/GPU is
-free?" / "why did this fail?" without scraping the web UI or shelling out
-to `tq` commands.
+implemented directly in `taskqueue/mcp_server.py`). It exposes observation
+tools and guarded task mutations so an agent can submit, wait, diagnose, and
+retry work without scraping the web UI or shelling out to `tq`.
 
 It talks to the **same home** the CLI would use (`TASKQUEUE_HOME` env var,
 default `~/.taskqueue`). **Mutations** (`enqueue_task` / `retry_task` / `patch_task` /
@@ -100,6 +99,20 @@ Most tools are read-only; the write tools (`submit_task`, `submit_matrix`,
 operations as the CLI equivalents. Call `tools/list` to get the live schema;
 the table below is a quick reference.
 
+## Tools by capability
+
+Use this map to choose a tool. Full schemas and examples follow below.
+
+- **Submit:** `submit_task`, `submit_matrix`, `list_projects`
+- **Admit:** `capacity`, `why_not_running`
+- **Run:** `enqueue_task`, `retry_task`, `retry_tasks`, `patch_task`, `stop_task`
+- **Wait / notify:** `wait_for_task`, `drain_notifications`
+- **Diagnose:** `diagnose`, `explain_error`, `task_result`, `report`
+- **Observe:** `my_tasks`, `attention_list`, `task_health`, `queue_status`,
+  `progress_snapshot`, `log_tail`, `agent_usage_summary`
+- **Workers, auth, admin:** use the CLI and HTTP guides; MCP does not expose
+  worker registration or configuration-admin tools.
+
 ### `my_tasks`
 
 All tasks for one operator (matches the `started_by` column set via
@@ -184,6 +197,18 @@ Deep bundle for one task: recent runs, log tail, worker/lease info, plus a
 `metrics` object from the shared builder — the MCP equivalent of
 `tq diagnose project/task_id`.
 
+### `explain_error`
+
+Read-only lookup in the stable `tq.*` error catalog. It does not require a
+queue database.
+
+| Arg | Required |
+|-----|----------|
+| `error_code` | **yes** |
+
+Returns `{ok, known, code, description, block_kind}`. The CLI equivalent is
+`tq explain <error_code>`.
+
 | Arg | Required |
 |-----|----------|
 | `project` | **yes** |
@@ -196,15 +221,23 @@ Deep bundle for one task: recent runs, log tail, worker/lease info, plus a
 ### `report`
 
 Aggregate runs/error-code report over recent days — the MCP equivalent of
-`tq report`.
+`tq report`. Pass `kind=hygiene` for churn rates, multi-use / flaky lists, and
+archive proposals (`agent_prompt` included). Hygiene never archives; proposals
+are dry-run commands only.
 
 | Arg | Required | Notes |
 |-----|----------|-------|
 | `project` | no | omit for all projects |
 | `days` | no | default `7` |
+| `kind` | no | `summary` (default) or `hygiene` |
+| `older_than_days` | no | hygiene archive age (default `30`) |
 
 ```json
 {"method": "tools/call", "params": {"name": "report", "arguments": {"days": 14}}}
+```
+
+```json
+{"method": "tools/call", "params": {"name": "report", "arguments": {"kind": "hygiene", "days": 7}}}
 ```
 
 ### `queue_status`
@@ -389,6 +422,15 @@ Wall-clock cap hits land as `interrupted` + `tq.run.cap`. Checkpointable tasks m
 | `task_id` | **yes** |
 
 → `{"ok": true/false, "status": "queued"}`.
+
+### `retry_tasks` — preview or retry a selected batch
+
+Select with `tasks`, `project`, `suite`, `group`, or `downstream_of`. Set
+`dry_run: true` (the default) to return per-task `retry`/`skip` actions without
+changing queue state. With `dry_run: false`, the selected tasks use the same
+daemon retry-batch/downstream operations as the CLI. `suite` includes completed
+members; project/group selection defaults to terminal retryable tasks other
+than completed.
 
 ### Pipelines: branch and batch (agent patterns)
 

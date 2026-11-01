@@ -40,9 +40,7 @@ def is_frozen(
     threshold_sec: float,
 ) -> bool:
     """Frozen when both stdout and active CPU have been idle past threshold."""
-    return is_output_frozen(idle_stdout_sec, threshold_sec) and is_active_frozen(
-        active_idle_sec, threshold_sec
-    )
+    return is_output_frozen(idle_stdout_sec, threshold_sec) and is_active_frozen(active_idle_sec, threshold_sec)
 
 
 def needs_frozen_attention(idle_sec: float, threshold_sec: float) -> bool:

@@ -2,7 +2,7 @@
 // i18n, showToast, refresh, tqAlertDetailHtml, _sendJson, _showPageEmpty.
 import { S } from '../core/state.js';
 import { escHtml, fmt } from '../util/format.js';
-import { fetchJson } from '../core/api.js';
+import { fetchJson, latest } from '../core/api.js';
 import { projStyle } from '../util/projcolor.js';
 
 export const SYSTEM_ALERT_ORDER = ['any_failure', 'all_done', 'task_frozen', 'tq_stopped', 'run_anomaly'];
@@ -29,11 +29,12 @@ export function tqRequestNotifPermission() {
 }
 
 export async function loadAlerts() {
+  const live = latest('alerts');
   const [data, histData] = await Promise.all([
     fetchJson('/api/alerts/system', 8000, true),
     fetchJson('/api/notifications?kind=alert&limit=100', 8000, true),
   ]);
-  if (!data) return false;
+  if (!live() || !data) return false;
   S.systemAlerts = data.alerts || [];
   const hist = ((histData && histData.events) || []).slice().reverse();   // newest first
   const lastByKey = {};

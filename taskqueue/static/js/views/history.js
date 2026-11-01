@@ -8,8 +8,14 @@ import { fetchJson } from '../core/api.js';
 
 export const HISTORY_COLS = 7;
 
-export function onHistorySearchInput() {
+function _resetHistoryPage() {
+  S.historyOffset = 0;
+  S.historyPage = 0;
   S.historyLimit = S.historyPageSize;
+}
+
+export function onHistorySearchInput() {
+  _resetHistoryPage();
   _syncHistorySearchClear();
   const inp = document.getElementById('history-search');
   if (inp) inp.classList.add('tq-searching');
@@ -42,16 +48,18 @@ export function clearHistorySearch() {
     S.historySearchDebounce = null;
   }
   inp.classList.remove('tq-searching');
-  S.historyLimit = S.historyPageSize;
+  _resetHistoryPage();
   refresh();
   inp.focus();
 }
 
 export function setHistoryFilter(status, btn) {
   S.historyStatusFilter = status;
+  _resetHistoryPage();
   document.querySelectorAll('#history-filter-bar .filter-chip').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderHistory();
+  if (btn) btn.classList.add('active');
+  // Server-side status filter (SQL before LIMIT); client filter in renderHistory is a safety net.
+  refresh();
 }
 
 export function sortHistory(field) {
@@ -61,27 +69,43 @@ export function sortHistory(field) {
   renderHistory();
 }
 
-// The server caps one history page at 1000 runs; past that, search narrows instead of paging.
+// Legacy alias — pages are fixed-size; deep browse uses offset, not a growing limit.
 export const HISTORY_MAX_LIMIT = 1000;
 
 export function loadMoreHistory() {
-  S.historyLimit = Math.min(HISTORY_MAX_LIMIT, S.historyLimit + S.historyPageSize);
+  const page = S.historyPageSize || 20;
+  if ((S.historyOffset || 0) + page >= (S.historyTotal || 0)) return;
+  S.historyOffset = (S.historyOffset || 0) + page;
+  S.historyPage = Math.floor(S.historyOffset / page);
+  refresh();
+}
+
+export function loadPrevHistory() {
+  const page = S.historyPageSize || 20;
+  S.historyOffset = Math.max(0, (S.historyOffset || 0) - page);
+  S.historyPage = Math.floor(S.historyOffset / page);
   refresh();
 }
 
 export function _renderHistoryMore() {
   const hpag = document.getElementById('history-pagination');
   if (!hpag) return;
-  const more = S.history.length < S.historyTotal;
-  if (!more) {
-    hpag.textContent = S.historyTotal ? `${S.historyTotal} run${S.historyTotal !== 1 ? 's' : ''}` : '';
+  const total = S.historyTotal || 0;
+  const page = S.historyPageSize || 20;
+  const off = S.historyOffset || 0;
+  if (!total) {
+    hpag.textContent = '';
     return;
   }
-  if (S.historyLimit >= HISTORY_MAX_LIMIT) {
-    hpag.innerHTML = `<span style="font-size:12px;color:var(--muted)">${S.history.length} / ${S.historyTotal} · ${escHtml(i18n.t('history.capHint'))}</span>`;
-    return;
-  }
-  hpag.innerHTML = `<span style="font-size:12px;color:var(--muted);margin-right:8px">${S.history.length} / ${S.historyTotal}</span><button type="button" class="action-btn" data-click="${tqAct([['loadMoreHistory']])}">${escHtml(i18n.t('history.loadMore'))}</button>`;
+  const start = off + 1;
+  const end = Math.min(off + (S.history.length || page), total);
+  const prev = off > 0
+    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadPrevHistory']])}">${escHtml(i18n.t('btn.prev') || 'Prev')}</button>`
+    : '';
+  const next = off + page < total
+    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadMoreHistory']])}">${escHtml(i18n.t('history.loadMore') || 'Next')}</button>`
+    : '';
+  hpag.innerHTML = `<span style="font-size:12px;color:var(--muted);margin-right:8px">${start}–${end} / ${total}</span>${prev} ${next}`;
 }
 
 export function _historyDuration(r) {
@@ -157,21 +181,18 @@ export function _buildHistoryCard(r) {
 
 export async function toggleHistoryPageHist(project, taskId, runId) {
   const key = `${project}/${taskId}`;
-  const row = document.getElementById(`h-hist-row-${domIdPart(project)}-${domIdPart(taskId)}-${runId}`);
-  const btn = document.getElementById(`h-histbtn-${domIdPart(project)}-${domIdPart(taskId)}`);
   if (S.expandedHistory[key]) {
     delete S.expandedHistory[key];
-    if (row) row.classList.remove('open');
-    if (btn) btn.textContent = i18n.t('btn.history');
+    renderHistory();
     return;
   }
-  if (row) row.classList.add('open');
-  if (btn) btn.textContent = i18n.t('btn.hideHistory');
   S.expandedHistory[key] = '<em>loading…</em>';
-  const content = document.getElementById(`h-hist-content-${domIdPart(project)}-${domIdPart(taskId)}`);
-  if (content) content.innerHTML = '<em>loading…</em>';
+  renderHistory();
   S.expandedHistory[key] = await _loadTaskRunHistoryHtml(project, taskId);
+  const content = document.getElementById(`h-hist-content-${domIdPart(project)}-${domIdPart(taskId)}`);
   if (content) content.innerHTML = S.expandedHistory[key];
+  const btn = document.getElementById(`h-histbtn-${domIdPart(project)}-${domIdPart(taskId)}`);
+  if (btn) btn.textContent = i18n.t('btn.hideHistory');
 }
 
 export async function toggleHistoryCardHist(project, taskId) {
@@ -240,7 +261,8 @@ export function renderHistory() {
     const rowId = `h-log-row-${r.run_id}`;
     // W3.2: panel-scoped key
     const expanded = !!S.expandedLogs[`h:${r.run_id}`];
-    const logRowHtml = `<tr class="inline-log-row${expanded?' open':''}" id="${rowId}">
+    // Only mount expand rows when open — keeps History DOM ~1 row per run.
+    const logRowHtml = expanded ? `<tr class="inline-log-row open" id="${rowId}">
       <td colspan="${HISTORY_COLS}" class="inline-log-wrap">
         <div class="inline-log-toolbar">
           <span>run #${r.run_id} · ${escHtml(r.project||'')}/${escHtml(r.task_id)}</span>
@@ -253,23 +275,23 @@ export function renderHistory() {
           <span id="log-search-count-h-log-pre-${r.run_id}" style="font-size:10px;color:var(--muted);min-width:60px"></span>
           <button class="action-btn" data-click="${tqAct([['toggleHistoryLog', r.run_id, String(rowId), r.status==='running']])}" style="margin-left:auto">×</button>
         </div>
-        <pre class="inline-pre" id="h-log-pre-${r.run_id}">${expanded ? _ansiToHtml(S.expandedLogs[`h:${r.run_id}`].content || 'loading…') : 'loading…'}</pre>
+        <pre class="inline-pre" id="h-log-pre-${r.run_id}">${_ansiToHtml(S.expandedLogs[`h:${r.run_id}`].content || 'loading…')}</pre>
       </td>
-    </tr>`;
+    </tr>` : '';
     const histKey = `${r.project}/${r.task_id}`;
     const histOpen = !!S.expandedHistory[histKey];
     const histRowId = `h-hist-row-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}-${r.run_id}`;
-    const histPageRowHtml = `<tr class="inline-log-row${histOpen ? ' open' : ''}" id="${histRowId}">
+    const histPageRowHtml = histOpen ? `<tr class="inline-log-row open" id="${histRowId}">
       <td colspan="${HISTORY_COLS}" class="inline-log-wrap">
         <div class="inline-log-toolbar">
           <span style="font-weight:600">Run history · ${escHtml(r.project || '')}/${escHtml(r.task_id)}</span>
           <button class="action-btn" data-click="${tqAct([['toggleHistoryPageHist', String(r.project || ''), String(r.task_id), r.run_id]])}" style="margin-left:auto">×</button>
         </div>
         <div id="h-hist-content-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" style="padding:6px;font-size:11px">
-          ${histOpen ? (S.expandedHistory[histKey] || '<em>loading…</em>') : '<em>loading…</em>'}
+          ${S.expandedHistory[histKey] || '<em>loading…</em>'}
         </div>
       </td>
-    </tr>`;
+    </tr>` : '';
 
     return `<tr>
       <td class="mob-hide mono">#${r.run_id}</td>
@@ -280,7 +302,7 @@ export function renderHistory() {
       </td>
       <td class="mob-hide">${fmt(r.started_at)}</td>
       <td class="mob-hide">${durStr}</td>
-      <td>${badge(r.status)}${r.stopped_by ? `<span style="font-size:10px;color:var(--muted);margin-left:4px" title="stopped by: ${escHtml(r.stopped_by)}">↳ ${escHtml(r.stopped_by)}</span>` : ''}${r.error_category ? `<div style="font-size:10px;color:#f59e0b">${escHtml(r.error_category)}</div>` : ''}</td>
+      <td>${badge(r.status)}${_anomalyBadge(r)}${r.stopped_by ? `<span style="font-size:10px;color:var(--muted);margin-left:4px" title="stopped by: ${escHtml(r.stopped_by)}">↳ ${escHtml(r.stopped_by)}</span>` : ''}${r.error_category ? `<div style="font-size:10px;color:#f59e0b">${escHtml(r.error_category)}</div>` : ''}</td>
       <td class="mob-hide">${r.exit_code != null ? r.exit_code : '—'}</td>
       <td>${(_isRestartStatus(r.status) || ['failed','completed'].includes(r.status)) ? `<button class="action-btn" data-click="${tqAct([['retryTaskNew', String(r.project||''), String(r.task_id), TQ_THIS]])}">${_requeueLabel(r.status)}</button> ` : ''}<button class="action-btn" id="h-histbtn-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" data-click="${tqAct([['toggleHistoryPageHist', String(r.project || ''), String(r.task_id), r.run_id]])}">${histOpen ? i18n.t('btn.hideHistory') : i18n.t('btn.history')}</button> ${r.run_id ? `<button class="action-btn" data-click="${tqAct([['showResourceModal', r.run_id]])}" title="${i18n.t('task.metricsTitle')}">📊 metrics</button> <button class="action-btn" data-click="${tqAct([['compareRun', r.run_id]])}" title="${i18n.t('task.compareTitle')}">⇄ ${i18n.t('btn.compare')}</button> <button class="action-btn" data-click="${tqAct([['tqRerunRun', r.run_id]])}" title="${escHtml(i18n.t('history.rerunTitle'))}">↻ ${i18n.t('history.rerun')}</button> ` : ''}<button class="action-btn blue" id="h-logbtn-${r.run_id}" data-click="${tqAct([['toggleHistoryLog', r.run_id, String(rowId), r.status==='running']])}">${expanded ? i18n.t('btn.hideLog') : i18n.t('btn.log')}</button></td>
     </tr>${logRowHtml}${histPageRowHtml}`;
@@ -318,7 +340,7 @@ export function openLogSearchRun(runId) {
   const inp = document.getElementById('history-search');
   if (inp) inp.value = '#' + runId;
   _syncHistorySearchClear();
-  S.historyLimit = S.historyPageSize;
+  _resetHistoryPage();
   refresh();
   return false;
 }

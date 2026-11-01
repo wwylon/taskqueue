@@ -12,6 +12,8 @@ The **Queue** page lists tasks with status chips, search, tags, and group chips.
 
 - Changing the header project clears the selected **group** filter (groups belong to a project's task set). The Groups page **View in queue** link selects the group's project as well.
 - Wait reasons under Status use color: muted for normal waits (resources, exclusive, healthy deps), warn for frozen/paused/service blocks, red when waiting on a dead dependency (`failed` / `interrupted` / `stopped` / missing).
+- Dependency lines show `Deps: met/total` plus up to **three unmet** dependency task ids (then `…`). Click a name to jump to that task. Full chips remain in the Details drawer.
+- **Start order** sorts by the Timeline forecast projected start (advisory — same caveats as Timeline; does not change fairshare admission). Prefer a project filter on large queues. **Deps ↑** ranks by how many incomplete peers depend on the task.
 - **Columns** hides optional table columns (priority, status, started, finished, resources, description); the choice is kept in this browser.
 - **Saved filters** remember status, search, and project. **Failed today** only hides rows on the loaded page whose finish time is today.
 - Selecting rows shows the bulk bar; **Select all N matching** extends the selection to every task matching the current filters (all pages, up to 5000). Bulk stop and retry send one request (`/api/tasks/bulk`, `/api/tasks/retry-batch`).

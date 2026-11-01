@@ -27,9 +27,7 @@ def _project(tmp_path: Path) -> Project:
 
 def _add(db, proj: Project, task_id: str, body: str = "") -> None:
     path = proj.queue_dir / f"{task_id}.yaml"
-    path.write_text(
-        f"task_id: {task_id}\ncommand: python\nargs: ['-c', 'pass']\n{body}", encoding="utf-8"
-    )
+    path.write_text(f"task_id: {task_id}\ncommand: python\nargs: ['-c', 'pass']\n{body}", encoding="utf-8")
     upsert_task(db, parse_task_yaml(path, proj))
 
 

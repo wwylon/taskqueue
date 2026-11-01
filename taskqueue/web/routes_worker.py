@@ -1,4 +1,5 @@
 """Handler mixin (extracted from make_handler)."""
+
 from __future__ import annotations
 
 # Broad shared namespace so method bodies keep working with minimal churn.
@@ -18,29 +19,45 @@ from taskqueue.rows import row_get
 
 import threading as _threading
 
-# Last accepted log-chunk ``seq`` per (db_path, run_id): a retried POST (same seq)
-# must not append the same text twice. F-146: key by DB so two homes cannot collide.
+# L1 cache of last accepted log-chunk seq (DB ``runs.last_log_seq`` is source of truth).
+# F-146: key by DB so two homes cannot collide. F-150: cache alone is not durable.
 _LOG_SEQ: "dict[tuple[str, int], int]" = {}
 _LOG_SEQ_LOCK = _threading.Lock()
 _LOG_SEQ_MAX = 4096
 
 
-def _log_seq_is_duplicate(db_key: str, run_id: int, seq: "int | None") -> bool:
-    if seq is None:
-        return False
+def _log_seq_cache_get(db_key: str, run_id: int) -> int:
     with _LOG_SEQ_LOCK:
-        return seq <= _LOG_SEQ.get((db_key, run_id), -1)
+        return int(_LOG_SEQ.get((db_key, run_id), -1))
 
 
-def _log_seq_record(db_key: str, run_id: int, seq: "int | None") -> None:
-    if seq is None:
-        return
+def _log_seq_cache_set(db_key: str, run_id: int, seq: int) -> None:
     key = (db_key, run_id)
     with _LOG_SEQ_LOCK:
         if key not in _LOG_SEQ and len(_LOG_SEQ) >= _LOG_SEQ_MAX:
             for k in list(_LOG_SEQ)[: _LOG_SEQ_MAX // 2]:
                 _LOG_SEQ.pop(k, None)
         _LOG_SEQ[key] = max(seq, _LOG_SEQ.get(key, -1))
+
+
+def _pending_log_path(log_path: Path, seq: int) -> Path:
+    return Path(str(log_path) + f".pending.{seq}")
+
+
+def _apply_pending_log_chunk(log_path: Path, seq: int) -> None:
+    """Append ``log_path.pending.{seq}`` into the main log if present (idempotent)."""
+    pending = _pending_log_path(log_path, seq)
+    if not pending.is_file():
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    data = pending.read_bytes()
+    with open(log_path, "ab") as f:
+        f.write(data)
+    try:
+        pending.unlink()
+    except OSError:
+        pass
+
 
 # Worker long-polls park a pool thread for up to ~30 s each; cap them so a large fleet
 # cannot starve the UI/API of HTTP workers (a refused long-poll degrades to a short poll).
@@ -67,12 +84,11 @@ class WorkerRoutes:
             return
         wdb = self._open_write_conn()
         try:
-            row = wdb.execute(
-                "SELECT credential_hash FROM workers WHERE worker_id = ?", (worker_id,)
-            ).fetchone()
+            row = wdb.execute("SELECT credential_hash FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
             stored = str((row["credential_hash"] if row else "") or "").strip()
             if stored:
                 import hmac as _hmac
+
                 given = str(data.get("credential_hash") or "").strip()
                 if not _hmac.compare_digest(stored.encode(), given.encode()):
                     self._json({"ok": False, "error": "credential_hash required and must match"}, 403)
@@ -101,13 +117,9 @@ class WorkerRoutes:
         except (TypeError, ValueError):
             return f"invalid protocol value: {client_proto!r}"
         if proto < MIN_SUPPORTED_PROTOCOL:
-            return (
-                f"worker protocol v{proto} too old, upgrade to at least v{MIN_SUPPORTED_PROTOCOL}"
-            )
+            return f"worker protocol v{proto} too old, upgrade to at least v{MIN_SUPPORTED_PROTOCOL}"
         if proto > MAX_SUPPORTED_PROTOCOL:
-            return (
-                f"worker protocol v{proto} too new, upgrade master (supports up to v{MAX_SUPPORTED_PROTOCOL})"
-            )
+            return f"worker protocol v{proto} too new, upgrade master (supports up to v{MAX_SUPPORTED_PROTOCOL})"
         return None
 
     # W1.4: safe worker_id characters and max length.
@@ -119,15 +131,13 @@ class WorkerRoutes:
         from taskqueue import __version__ as _mv
         from taskqueue.db import SCHEMA_VERSION
         from taskqueue.config import PROTOCOL_VERSION
+
         wheel_path = Path(self._db_path).parent / "worker.whl"
         upgrade_url: str | None = None
         sha256: str | None = None
         if wheel_path.is_file():
             mtime = wheel_path.stat().st_mtime
-            if (
-                _wheel_sha_cache["sha256"] is not None
-                and _wheel_sha_cache["mtime"] == mtime
-            ):
+            if _wheel_sha_cache["sha256"] is not None and _wheel_sha_cache["mtime"] == mtime:
                 sha256 = _wheel_sha_cache["sha256"]
             else:
                 h = hashlib.sha256()
@@ -138,18 +148,21 @@ class WorkerRoutes:
                 _wheel_sha_cache["mtime"] = mtime
                 _wheel_sha_cache["sha256"] = sha256
             upgrade_url = "/api/worker/wheel"
-        self._json({
-            "version": _mv,
-            "schema": SCHEMA_VERSION,
-            "protocol": PROTOCOL_VERSION,
-            "upgrade_url": upgrade_url,
-            "sha256": sha256,
-            "wheel_name": wheel_path.name if upgrade_url else None,
-        })
+        self._json(
+            {
+                "version": _mv,
+                "schema": SCHEMA_VERSION,
+                "protocol": PROTOCOL_VERSION,
+                "upgrade_url": upgrade_url,
+                "sha256": sha256,
+                "wheel_name": wheel_path.name if upgrade_url else None,
+            }
+        )
 
     def _serve_worker_wheel(self) -> None:
         """W7.5: Serve the pre-built worker wheel."""
         import shutil
+
         wheel_path = Path(self._db_path).parent / "worker.whl"
         if not wheel_path.is_file():
             self._send_error_json(404, "No worker wheel available. Run: tq worker build-wheel")
@@ -167,8 +180,9 @@ class WorkerRoutes:
         if not self._require_master_lease():
             return
         import re
+
         if self.__class__._WORKER_ID_RE is None:
-            self.__class__._WORKER_ID_RE = re.compile(r'^[A-Za-z0-9_.\-]{1,64}$')
+            self.__class__._WORKER_ID_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 
         data = self._read_json()
         if data is None:
@@ -185,7 +199,30 @@ class WorkerRoutes:
         if not self._WORKER_ID_RE.match(str(worker_id)):
             self._json({"ok": False, "error": "Invalid worker_id: use [A-Za-z0-9_.-]{1,64}"}, 400)
             return
-        _WIN_RESERVED = {"CON","PRN","AUX","NUL","COM1","COM2","COM3","COM4","COM5","COM6","COM7","COM8","COM9","LPT1","LPT2","LPT3","LPT4","LPT5","LPT6","LPT7","LPT8","LPT9"}
+        _WIN_RESERVED = {
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
+        }
         if str(worker_id).upper() in _WIN_RESERVED:
             self._json({"ok": False, "error": f"worker_id {worker_id!r} is a reserved device name"}, 400)
             return
@@ -210,6 +247,7 @@ class WorkerRoutes:
         gpus_json = json.dumps(gpus_in or [])
 
         from taskqueue.config import PROTOCOL_VERSION
+
         now = datetime.now(UTC).isoformat()
 
         w_version = str(data.get("version") or "") or None
@@ -233,9 +271,10 @@ class WorkerRoutes:
             existing = wdb.execute(
                 "SELECT status, registered_ip, session_id, worker_epoch, credential_hash, instance_id"
                 " FROM workers WHERE worker_id = ?",
-                (worker_id,)
+                (worker_id,),
             ).fetchone()
             import sys as _sys
+
             if existing and existing["status"] == "online":
                 stored_ip = existing["registered_ip"] or ""
                 if stored_ip and client_ip and stored_ip != client_ip:
@@ -254,6 +293,7 @@ class WorkerRoutes:
                     stored_cred_hash = None
             if stored_cred_hash:
                 import hmac as _hmac
+
                 if not _hmac.compare_digest(stored_cred_hash.encode(), (incoming_credential_hash or "").encode()):
                     print(
                         f"[web] C1: worker_id={worker_id!r} credential_hash mismatch — rejecting "
@@ -329,9 +369,25 @@ class WorkerRoutes:
                     credential_hash = COALESCE(excluded.credential_hash, workers.credential_hash),
                     instance_id = excluded.instance_id
                 """,
-                (worker_id, os_val, arch_val, ram_gib, cpu_cores, gpu_vram_gib, tags, projs, now,
-                 gpus_json, w_version, w_schema_int, client_ip, session_id, new_epoch,
-                 new_cred_hash, new_instance_id)
+                (
+                    worker_id,
+                    os_val,
+                    arch_val,
+                    ram_gib,
+                    cpu_cores,
+                    gpu_vram_gib,
+                    tags,
+                    projs,
+                    now,
+                    gpus_json,
+                    w_version,
+                    w_schema_int,
+                    client_ip,
+                    session_id,
+                    new_epoch,
+                    new_cred_hash,
+                    new_instance_id,
+                ),
             )
             wdb.commit()
         finally:
@@ -357,6 +413,7 @@ class WorkerRoutes:
         from taskqueue.config import LEASE_TTL_SEC
         from taskqueue.db import renew_run_lease_for_worker
         from taskqueue.fencing import session_id_mismatch
+
         now = datetime.now(UTC).isoformat()
         stop_requested = False
         stop_run_ids: list[int] = []
@@ -403,6 +460,7 @@ class WorkerRoutes:
                     stored_iid = row["instance_id"] or None
                     if stored_iid and stored_iid != hb_instance_id:
                         import sys as _sys2
+
                         print(
                             f"[web] C3 warn: worker_id={worker_id!r} heartbeat instance_id={hb_instance_id!r} "
                             f"!= stored {stored_iid!r} — possible stale worker",
@@ -490,9 +548,7 @@ class WorkerRoutes:
         if not worker_id:
             self._json({"ok": False, "error": "worker_id required"}, 400)
             return
-        row = self._rconn().execute(
-            "SELECT status FROM workers WHERE worker_id = ?", (worker_id,)
-        ).fetchone()
+        row = self._rconn().execute("SELECT status FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
         if not row:
             self._json({"ok": False, "error": f"Unknown worker: {worker_id}"}, 404)
             return
@@ -505,9 +561,7 @@ class WorkerRoutes:
         if not worker_id:
             self._json({"ok": False, "error": "worker_id required"}, 400)
             return
-        row = self._rconn().execute(
-            "SELECT status FROM workers WHERE worker_id = ?", (worker_id,)
-        ).fetchone()
+        row = self._rconn().execute("SELECT status FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
         if not row:
             self._json({"ok": False, "error": f"Unknown worker: {worker_id}"}, 404)
             return
@@ -533,9 +587,8 @@ class WorkerRoutes:
             self._json({"ok": False, "error": "Missing worker_id"}, 400)
             return
         from taskqueue.fencing import session_id_mismatch
-        worker = self._rconn().execute(
-            "SELECT session_id FROM workers WHERE worker_id = ?", (worker_id,)
-        ).fetchone()
+
+        worker = self._rconn().execute("SELECT session_id FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
         if not worker:
             self._json({"ok": False, "error": "Worker not registered"}, 404)
             return
@@ -596,6 +649,7 @@ class WorkerRoutes:
             self._json({"task": None, "error": "Worker is offline; re-register first"})
             return
         from taskqueue.fencing import session_id_mismatch
+
         stored_session = row_get(worker, "session_id")
         provided = qs.get("session_id", [None])[0]
         if session_id_mismatch(stored_session, provided):
@@ -603,6 +657,7 @@ class WorkerRoutes:
             return
         from taskqueue.config import WORK_LONGPOLL_MAX_SEC
         import time as _time
+
         wait_sec = 0.0
         try:
             wait_sec = float((qs.get("wait") or ["0"])[0] or 0)
@@ -622,25 +677,22 @@ class WorkerRoutes:
                 return
             # F-074: cheap read gate — do not BEGIN IMMEDIATE / service-probe
             # claim path every 0.4s while the queue is empty.
-            has_queued = self._rconn().execute(
-                "SELECT 1 FROM tasks WHERE status = 'queued' AND enabled = 1 LIMIT 1"
-            ).fetchone()
+            has_queued = (
+                self._rconn().execute("SELECT 1 FROM tasks WHERE status = 'queued' AND enabled = 1 LIMIT 1").fetchone()
+            )
             if has_queued:
                 import taskqueue.web as _web
+
                 if count <= 1:
                     # Patch target: taskqueue.web._claim_next_remote_task
-                    result = _web._claim_next_remote_task(
-                        Path(self._db_path), worker, self._projects_ref
-                    )
+                    result = _web._claim_next_remote_task(Path(self._db_path), worker, self._projects_ref)
                     if result.get("task") or result.get("error"):
                         self._send_claims(result, [result.get("run_id")])
                         return
                 else:
                     claimed: list[dict] = []
                     for _ in range(count):
-                        r = _web._claim_next_remote_task(
-                            Path(self._db_path), worker, self._projects_ref
-                        )
+                        r = _web._claim_next_remote_task(Path(self._db_path), worker, self._projects_ref)
                         if r.get("task"):
                             claimed.append(r)
                         else:
@@ -703,6 +755,7 @@ class WorkerRoutes:
         import base64
         from taskqueue.db import get_run_owned
         from taskqueue._db_runs import lease_expiry_iso
+
         try:
             chunk = base64.b64decode(chunk_b64).decode("utf-8", errors="replace")
         except Exception as e:
@@ -717,6 +770,7 @@ class WorkerRoutes:
             self._json({"ok": False, "error": "run not running (already finalized or reclaimed)"})
             return
         from taskqueue.fencing import session_id_mismatch
+
         run_session = row_get(run, "worker_session_id")
         if session_id_mismatch(run_session, data.get("session_id")):
             self._json({"ok": False, "error": "session_id mismatch"}, 403)
@@ -728,16 +782,20 @@ class WorkerRoutes:
         except (TypeError, ValueError):
             seq = None
         _db_key = str(getattr(self, "_db_path", "") or "")
-        if _log_seq_is_duplicate(_db_key, run_id, seq):
+        log_path = Path(run["log_path"])
+
+        # Fast L1 reject (DB remains authoritative inside the write txn).
+        if seq is not None and seq <= _log_seq_cache_get(_db_key, run_id):
+            _apply_pending_log_chunk(log_path, seq)
             self._json({"ok": True, "duplicate": True})
             return
-        log_path = Path(run["log_path"])
 
         lines = [ln for ln in chunk.splitlines() if ln.strip()]
         last_line = (lines[-1] if lines else (run["last_log_line"] or ""))[:2000]
 
         from taskqueue.runner import _parse_pct
         from taskqueue.log_issues import apply_log_lines_to_metrics_json, count_log_issues
+
         pct = None
         for ln in reversed(chunk.splitlines()):
             parsed = _parse_pct(ln)
@@ -747,23 +805,44 @@ class WorkerRoutes:
         log_hits = count_log_issues(chunk.splitlines())
         has_log_hits = sum(log_hits.values()) > 0
 
+        # F-150: write pending chunk *outside* the SQLite write lock, then commit
+        # last_log_seq durably; apply pending → main log after commit (retry-safe).
+        if seq is not None:
+            pending = _pending_log_path(log_path, seq)
+            pending.parent.mkdir(parents=True, exist_ok=True)
+            pending.write_text(chunk, encoding="utf-8", errors="replace")
+        else:
+            pending = None
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8", errors="replace") as f:
+                f.write(chunk)
+
         wdb = self._open_write_conn()  # W5.4
         try:
             try:
                 wdb.execute("BEGIN IMMEDIATE")
             except sqlite3.OperationalError:
-                # Nothing written yet (file append + seq record happen below), so the
-                # worker's retry of this same seq is safe and not seen as a duplicate.
                 self._json({"ok": False, "error": "database busy, retry"}, 503)
                 return
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_path, "a", encoding="utf-8", errors="replace") as f:
-                f.write(chunk)
-            _log_seq_record(_db_key, run_id, seq)
+            row_seq = wdb.execute(
+                "SELECT last_log_seq FROM runs WHERE run_id = ? AND status = 'running' AND worker_id = ?",
+                (run_id, worker_id),
+            ).fetchone()
+            if row_seq is None:
+                wdb.rollback()
+                self._json({"ok": False, "error": "run not owned"})
+                return
+            db_last = row_seq["last_log_seq"]
+            last_i = int(db_last) if db_last is not None else -1
+            if seq is not None and seq <= last_i:
+                wdb.commit()
+                _log_seq_cache_set(_db_key, run_id, last_i)
+                _apply_pending_log_chunk(log_path, seq)
+                self._json({"ok": True, "duplicate": True})
+                return
             # Lease renewal rides the same write txn (a locked DB used to 500 here).
             wdb.execute(
-                "UPDATE runs SET lease_expires_at = ? "
-                "WHERE run_id = ? AND status = 'running' AND worker_id = ?",
+                "UPDATE runs SET lease_expires_at = ? WHERE run_id = ? AND status = 'running' AND worker_id = ?",
                 (lease_expiry_iso(None), run_id, worker_id),
             )
             new_metrics = None
@@ -780,14 +859,27 @@ class WorkerRoutes:
                     row_m["progress_pct"] if row_m else None,
                     time.time(),
                 )
-            wdb.execute(
-                "UPDATE runs SET last_log_line = ?, "
-                "progress_pct = COALESCE(?, progress_pct), "
-                "metrics_json = COALESCE(?, metrics_json) "
-                "WHERE run_id = ?",
-                (last_line, pct, new_metrics, run_id),
-            )
+            if seq is not None:
+                wdb.execute(
+                    "UPDATE runs SET last_log_line = ?, "
+                    "progress_pct = COALESCE(?, progress_pct), "
+                    "metrics_json = COALESCE(?, metrics_json), "
+                    "last_log_seq = ? "
+                    "WHERE run_id = ?",
+                    (last_line, pct, new_metrics, seq, run_id),
+                )
+            else:
+                wdb.execute(
+                    "UPDATE runs SET last_log_line = ?, "
+                    "progress_pct = COALESCE(?, progress_pct), "
+                    "metrics_json = COALESCE(?, metrics_json) "
+                    "WHERE run_id = ?",
+                    (last_line, pct, new_metrics, run_id),
+                )
             wdb.commit()
+            if seq is not None:
+                _log_seq_cache_set(_db_key, run_id, seq)
+                _apply_pending_log_chunk(log_path, seq)
         except Exception:
             try:
                 wdb.rollback()
@@ -800,12 +892,16 @@ class WorkerRoutes:
         # T-200 / ds2 §1.7: piggyback stop on log-chunk (faster than heartbeat alone).
         resp: dict = {"ok": True}
         try:
-            row = self._rconn().execute(
-                "SELECT r.status, r.worker_id, t.stop_requested FROM runs r "
-                "JOIN tasks t ON t.project = r.project AND t.task_id = r.task_id "
-                "WHERE r.run_id = ?",
-                (int(run_id),),
-            ).fetchone()
+            row = (
+                self._rconn()
+                .execute(
+                    "SELECT r.status, r.worker_id, t.stop_requested FROM runs r "
+                    "JOIN tasks t ON t.project = r.project AND t.task_id = r.task_id "
+                    "WHERE r.run_id = ?",
+                    (int(run_id),),
+                )
+                .fetchone()
+            )
             if row is not None and row["worker_id"] == worker_id:
                 if bool(row["stop_requested"]) or row["status"] != "running":
                     resp["stop_run_ids"] = [int(run_id)]
@@ -844,6 +940,14 @@ class WorkerRoutes:
         stop_reason = data.get("stop_reason")
         if stop_reason is not None:
             stop_reason = str(stop_reason)
+        from taskqueue.statuses import FINALIZE_STATUSES
+
+        if str(status) not in FINALIZE_STATUSES:
+            self._json(
+                {"ok": False, "error": f"invalid finalize status {status!r}; allowed: {sorted(FINALIZE_STATUSES)}"},
+                400,
+            )
+            return
 
         notify_payload = None
         # F-009: open_db() runs full schema migration on every finalize (expensive).
@@ -859,6 +963,7 @@ class WorkerRoutes:
                 self._json({"ok": False, "error": "run not running (already finalized or reclaimed)"})
                 return
             from taskqueue.fencing import session_id_mismatch
+
             run_session = row_get(run, "worker_session_id")
             if session_id_mismatch(run_session, data.get("session_id")):
                 self._json({"ok": False, "error": "session_id mismatch"}, 403)
@@ -901,9 +1006,15 @@ class WorkerRoutes:
                 stop_reason=stop_reason,
                 stopped_by=(
                     "tq"
-                    if stop_reason in (
-                        "deps_invalidated", "wall_clock_cap",
-                        "ram_hard", "vram_hard", "frozen", "frozen_restart", "evicted",
+                    if stop_reason
+                    in (
+                        "deps_invalidated",
+                        "wall_clock_cap",
+                        "ram_hard",
+                        "vram_hard",
+                        "frozen",
+                        "frozen_restart",
+                        "evicted",
                     )
                     else None
                 ),
@@ -915,14 +1026,21 @@ class WorkerRoutes:
                 return
             _sys_stopped_by = (
                 "tq"
-                if stop_reason in (
-                    "deps_invalidated", "wall_clock_cap",
-                    "ram_hard", "vram_hard", "frozen", "frozen_restart", "evicted",
+                if stop_reason
+                in (
+                    "deps_invalidated",
+                    "wall_clock_cap",
+                    "ram_hard",
+                    "vram_hard",
+                    "frozen",
+                    "frozen_restart",
+                    "evicted",
                 )
                 else None
             )
             if err_code == tqerr.STOP_DEPS:
                 from taskqueue.db import set_task_error
+
                 prev = wdb.execute(
                     "SELECT block_reason FROM tasks WHERE project = ? AND task_id = ?",
                     (proj, tid),
@@ -937,8 +1055,7 @@ class WorkerRoutes:
                 if outcome == "queued":
                     status = "queued"
             task = wdb.execute(
-                "SELECT notify_url, started_by FROM tasks "
-                "WHERE project = ? AND task_id = ?",
+                "SELECT notify_url, started_by FROM tasks WHERE project = ? AND task_id = ?",
                 (proj, tid),
             ).fetchone()
             allow_remote = bool(get_config(wdb).get("notify_allow_remote"))
@@ -962,9 +1079,7 @@ class WorkerRoutes:
             try:
                 from taskqueue.finalize_hooks import apply_finalize_wake_hooks
 
-                apply_finalize_wake_hooks(
-                    wdb, proj, tid, status, run_teardown=True
-                )
+                apply_finalize_wake_hooks(wdb, proj, tid, status, run_teardown=True)
             except Exception:
                 pass
             try:
@@ -1017,18 +1132,16 @@ class WorkerRoutes:
             return
         wdb = self._open_write_conn()
         try:
-            row = wdb.execute(
-                "SELECT credential_hash FROM workers WHERE worker_id = ?", (worker_id,)
-            ).fetchone()
+            row = wdb.execute("SELECT credential_hash FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
             if row is None:
                 self._json({"ok": False, "error": "Worker not found"}, 404)
                 return
             stored_hash = str(row["credential_hash"] or "").strip() or None
             import hmac as _hmac
-            if stored_hash and not (
-                old_hash and _hmac.compare_digest(stored_hash.encode(), old_hash.encode())
-            ):
+
+            if stored_hash and not (old_hash and _hmac.compare_digest(stored_hash.encode(), old_hash.encode())):
                 import sys as _sys3
+
                 print(
                     f"[web] C1 warn: rotate-credential for {worker_id!r} — "
                     "old_credential_hash missing or mismatched; rejecting",

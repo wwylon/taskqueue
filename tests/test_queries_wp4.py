@@ -29,12 +29,8 @@ def test_list_attention_and_operator_tasks(tmp_path: Path) -> None:
     _seed(db, "p", "bad", status="failed", started_by="alice")
     _seed(db, "p", "other", status="failed", started_by="bob")
     _seed(db, "p", "leak", status="queued", started_by="bob")
-    db.execute(
-        "UPDATE tasks SET last_error_code = 'E_TEST' WHERE project='p' AND task_id='bad'"
-    )
-    db.execute(
-        "UPDATE tasks SET last_error_code = 'E_LEAK' WHERE project='p' AND task_id='leak'"
-    )
+    db.execute("UPDATE tasks SET last_error_code = 'E_TEST' WHERE project='p' AND task_id='bad'")
+    db.execute("UPDATE tasks SET last_error_code = 'E_LEAK' WHERE project='p' AND task_id='leak'")
     db.commit()
 
     attn = list_attention(db, operator="alice")
@@ -56,9 +52,7 @@ def test_request_stop_with_control(tmp_path: Path) -> None:
     path = request_stop_with_control(db, home, "p", "t1")
     assert path.is_file()
     assert json.loads(path.read_text(encoding="utf-8"))["action"] == "suspend"
-    row = db.execute(
-        "SELECT stop_requested FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT stop_requested FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     assert row["stop_requested"] == 1
     db.close()
 

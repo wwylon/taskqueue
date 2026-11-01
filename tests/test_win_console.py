@@ -30,10 +30,7 @@ def test_apply_hide_console_sets_flags() -> None:
 def test_sitecustomize_patches_subprocess() -> None:
     """Fresh interpreter with injected PYTHONPATH should wrap subprocess.Popen."""
     env = inject_python_hide_console(os.environ.copy())
-    code = (
-        "import subprocess\n"
-        "print(getattr(subprocess.Popen, '__name__', type(subprocess.Popen).__name__))\n"
-    )
+    code = "import subprocess\nprint(getattr(subprocess.Popen, '__name__', type(subprocess.Popen).__name__))\n"
     proc = subprocess.run(
         [sys.executable, "-c", code],
         env=env,

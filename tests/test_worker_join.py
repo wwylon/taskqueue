@@ -1,4 +1,5 @@
 """Join-file bootstrap: config-master + setup --from."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -40,9 +41,7 @@ def test_build_join_payload_includes_git_url(tmp_path: Path) -> None:
     conn = open_db(home / "queue.db")
     set_config(conn, "auth_token", "secret-token")
     conn.close()
-    payload = build_join_payload(
-        home, master_url="http://100.64.0.1:8765", auth_token="secret-token"
-    )
+    payload = build_join_payload(home, master_url="http://100.64.0.1:8765", auth_token="secret-token")
     assert payload["master_url"] == "http://100.64.0.1:8765"
     assert payload["auth_token"] == "secret-token"
     assert payload["projects"]["myproj"]["git_url"] == "git@example.com:org/myproj.git"
@@ -98,7 +97,7 @@ def test_remote_project_omitted_dispatch_defaults_any(tmp_path: Path) -> None:
     q.mkdir(parents=True)
     yaml_path = q / "fleet.yaml"
     yaml_path.write_text(
-        "task_id: fleet\ncommand: python\nargs: [\"-c\", \"print(1)\"]\n"
+        'task_id: fleet\ncommand: python\nargs: ["-c", "print(1)"]\n'
         "wall_clock_cap_sec: 60\nresources: {cpu_cores: 1, ram_gib: 1}\n",
         encoding="utf-8",
     )
@@ -107,7 +106,7 @@ def test_remote_project_omitted_dispatch_defaults_any(tmp_path: Path) -> None:
     assert task.dispatch == "any"
 
     yaml_path.write_text(
-        "task_id: pinned\ncommand: python\nargs: [\"-c\", \"print(1)\"]\n"
+        'task_id: pinned\ncommand: python\nargs: ["-c", "print(1)"]\n'
         "dispatch: local\nwall_clock_cap_sec: 60\n"
         "resources: {cpu_cores: 1, ram_gib: 1}\n",
         encoding="utf-8",

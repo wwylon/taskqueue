@@ -34,13 +34,15 @@ def test_reclaim_expired_lease(tmp_path: Path) -> None:
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "remote1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "remote1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))
@@ -75,14 +77,16 @@ def test_reclaim_idempotent_lease_requeues(tmp_path: Path) -> None:
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "remote1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-            "idempotent": True,
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "remote1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+                "idempotent": True,
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))
@@ -124,13 +128,15 @@ def test_reclaim_distinguishes_worker_alive_vs_lost(tmp_path: Path) -> None:
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "remote1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "remote1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))

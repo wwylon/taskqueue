@@ -1,4 +1,5 @@
 """Aggregation over ``api_usage`` (interaction counters) and task provenance + outcomes."""
+
 from __future__ import annotations
 
 import json
@@ -161,8 +162,7 @@ def agent_usage(
         pass
     return {
         "days": int(days),
-        "usage": usage_by(conn, days=days, by=by, project=project, channel=channel,
-                          operator=operator, limit=limit),
+        "usage": usage_by(conn, days=days, by=by, project=project, channel=channel, operator=operator, limit=limit),
         "tasks": tasks_by(conn, days=days, by=task_by, project=project, limit=limit),
         "tracking_enabled": _tracking_enabled(conn),
     }

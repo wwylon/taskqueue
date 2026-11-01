@@ -13,6 +13,7 @@ On restart:
 - no exit + claim → crashed mid-run; queue as unknown
 - finalize present → GC
 """
+
 from __future__ import annotations
 
 import json
@@ -75,7 +76,7 @@ def scan_unfinished(home: Path) -> list[tuple[int, str]]:
 
     state: 'replay_finalize' (exit but no finalize) or 'unknown' (no exit).
     """
-    results = []
+    results: list[tuple[int, str]] = []
     runs_dir = Path(home) / "runs"
     if not runs_dir.is_dir():
         return results

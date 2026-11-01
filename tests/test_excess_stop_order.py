@@ -56,9 +56,9 @@ def test_uses_latest_running_run_per_task_and_ignores_finished_runs(tmp_path: Pa
     db = open_db(tmp_path / "q.db")
     _task(db, "p", "a")
     _task(db, "p", "b")
-    _run(db, "p", "a")                         # run 1 (running)
-    _run(db, "p", "b")                         # run 2 (running)
-    _run(db, "p", "a", status="completed")     # run 3 finished: must not make "a" look newer
+    _run(db, "p", "a")  # run 1 (running)
+    _run(db, "p", "b")  # run 2 (running)
+    _run(db, "p", "a", status="completed")  # run 3 finished: must not make "a" look newer
     db.commit()
     ordered = [r["task_id"] for r in _most_recent_first(db, get_running_tasks(db))]
     assert ordered == ["b", "a"]

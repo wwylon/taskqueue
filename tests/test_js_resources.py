@@ -1,13 +1,23 @@
 """Behavior tests for views/resources.js (Resources tab) under the Node DOM stub."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
 
 CAP = {"cpu_cores_total": 16, "cpu_cores_limit": 8, "ram_gib_limit": 32, "gpu_vram_gib_limit": 0}
 HW = {
-    "os": "Windows 11", "arch": "AMD64", "cpu_model": "Test CPU", "cpu_physical_cores": 8, "cpu_logical_cores": 16,
-    "cpu_util_pct": 95.0, "cpu_temp_c": 90, "cpu_per_core_pct": [10, 95],
-    "ram_total_gib": 64.0, "ram_used_gib": 16.0, "ram_available_gib": 48.0, "ram_pct": 25.0,
+    "os": "Windows 11",
+    "arch": "AMD64",
+    "cpu_model": "Test CPU",
+    "cpu_physical_cores": 8,
+    "cpu_logical_cores": 16,
+    "cpu_util_pct": 95.0,
+    "cpu_temp_c": 90,
+    "cpu_per_core_pct": [10, 95],
+    "ram_total_gib": 64.0,
+    "ram_used_gib": 16.0,
+    "ram_available_gib": 48.0,
+    "ram_pct": 25.0,
     "gpu": [{"name": "RTX <b>9000</b>", "load_pct": 50, "mem_total_gib": 24, "mem_used_gib": 12}],
 }
 STATUS = {
@@ -40,7 +50,7 @@ console.log('RESULT:' + JSON.stringify(r));
     # 600% of 8 cores (800%) -> 75% bar; 16/32 GiB RAM; no VRAM row without a limit or usage
     assert "600%" in out["cluster"] and "width:75.0%" in out["cluster"] and "16.0 GiB / 32.0 GiB" in out["cluster"]
     assert "VRAM" not in out["cluster"]
-    assert "6 / 8" in out["bars"] and "2 / 3" in out["bars"]          # cpu cores used/limit, running/max tasks
+    assert "6 / 8" in out["bars"] and "2 / 3" in out["bars"]  # cpu cores used/limit, running/max tasks
     assert out["inputs"] == ["40", "70", "3"]
     assert "Windows 11 · AMD64" in out["hw"] and "8P / 16L" in out["hw"] and "temp-hot" in out["hw"]
     assert "RTX &lt;b&gt;9000&lt;/b&gt;" in out["hw"] and "<b>9000</b>" not in out["hw"]
@@ -81,7 +91,7 @@ def test_save_res_limits_posts_config_then_refreshes_or_alerts():
 const posts = [];
 const { g, doc } = await setup({ app: true, routes: { '/api/config': (url, opts) => { posts.push(JSON.parse(opts.body)); return posts.length === 1 ? { ok: true } : { __status: 400, body: { error: 'bad limit' } }; } } });
 await g.flush();
-g.evalApp("S.status = { running: [], system: {} }");
+g.tqState.status = { running: [], system: {} };
 g.renderResourceBars(null, {});
 const r = { alerts: [], order: [] };
 g.openAlert = m => r.alerts.push(m);

@@ -1,11 +1,12 @@
 """Project-level CLI commands — extracted from cli.py."""
+
 from __future__ import annotations
 import os
 import sys
 
 from taskqueue._cli_helpers import EXIT_UNREACHABLE
 from pathlib import Path
-from taskqueue._cli_helpers import _db, _daemon_running
+from taskqueue._cli_helpers import _db, _daemon_running, offline_sqlite_write_blocked
 from taskqueue.waiting import print_wait_hint
 
 
@@ -33,10 +34,11 @@ def cmd_sync(
         body["projects"] = list(projects)
     if force:
         body["force"] = True
-    resp = via_master(
-        home, "POST", "/api/cli/sync", body=body or None, timeout=CLI_SYNC_TIMEOUT_SEC
-    )
+    resp = via_master(home, "POST", "/api/cli/sync", body=body or None, timeout=CLI_SYNC_TIMEOUT_SEC)
     if resp is not None:
+        if resp.get("unreachable"):
+            print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)
+            return EXIT_UNREACHABLE
         if not resp.get("ok"):
             print(f"sync failed: {resp.get('error', resp)}")
             return 1
@@ -59,12 +61,19 @@ def cmd_sync(
             file=sys.stderr,
         )
         return EXIT_UNREACHABLE
+    from taskqueue._cli_helpers import offline_sqlite_write_blocked
+
+    block = offline_sqlite_write_blocked(home)
+    if block:
+        print(f"[ERROR] {block}", file=sys.stderr)
+        return EXIT_UNREACHABLE
     print("[OFFLINE] daemon unreachable; writing SQLite directly (offline repair)", file=sys.stderr)
     if require_daemon:
         print("[OFFLINE] --require-daemon: refusing SQLite write", file=sys.stderr)
         return EXIT_UNREACHABLE
     from taskqueue.config import load_projects
     from taskqueue.yaml_sync import _sync_project
+
     registered = load_projects(home)
     if not registered:
         print("No projects registered. Add entries to ~/.taskqueue/projects.yaml")
@@ -96,7 +105,6 @@ def cmd_sync(
     return 2
 
 
-
 def cmd_add(home: Path, yaml_path: str, project_name: str) -> None:
     from taskqueue.master_client import via_master
 
@@ -124,6 +132,7 @@ def cmd_add(home: Path, yaml_path: str, project_name: str) -> None:
     print("[tq] daemon unreachable; writing SQLite directly (offline repair)", file=sys.stderr)
     from taskqueue.config import load_projects
     from taskqueue.db import get_config, open_db, parse_task_yaml_many, upsert_task
+
     projects = load_projects(home)
     project = projects.get(project_name)
     if project is None:
@@ -133,11 +142,16 @@ def cmd_add(home: Path, yaml_path: str, project_name: str) -> None:
     allow_remote = bool(get_config(db).get("notify_allow_remote"))
     tasks = parse_task_yaml_many(path, project, allow_remote_notify=allow_remote)
     from taskqueue.db import stamp_provenance
+
     for task in tasks:
         upsert_task(db, task)
         stamp_provenance(
-            db, project_name, [task.task_id], "cli",
-            os.environ.get("TQ_OPERATOR"), "tq-cli (offline)",
+            db,
+            project_name,
+            [task.task_id],
+            "cli",
+            os.environ.get("TQ_OPERATOR"),
+            "tq-cli (offline)",
         )
         print(f"Added: {project_name}/{task.task_id} (priority={task.priority})")
     db.close()
@@ -145,9 +159,9 @@ def cmd_add(home: Path, yaml_path: str, project_name: str) -> None:
         print_wait_hint([f"{project_name}/{t.task_id}" for t in tasks], project=project_name)
 
 
-
 def _project_exists(home: Path, project: str) -> bool:
     from taskqueue.config import load_projects
+
     if project in load_projects(home):
         return True
     print(f"Unknown project '{project}'.", file=sys.stderr)
@@ -169,6 +183,7 @@ def cmd_pause(home: Path, project: str) -> int:
             return 1
     else:
         from taskqueue.db import open_db, set_project_paused
+
         db = open_db(_db(home))
         set_project_paused(db, project, True)
         db.close()
@@ -191,6 +206,7 @@ def cmd_resume_project(home: Path, project: str) -> int:
             return 1
     else:
         from taskqueue.db import open_db, set_project_paused
+
         db = open_db(_db(home))
         set_project_paused(db, project, False)
         db.close()
@@ -213,6 +229,7 @@ def cmd_freeze(home: Path, project: str) -> int:
             return 1
     else:
         from taskqueue.db import open_db, set_project_frozen
+
         db = open_db(_db(home))
         set_project_frozen(db, project, True)
         db.close()
@@ -235,6 +252,7 @@ def cmd_unfreeze(home: Path, project: str) -> int:
             return 1
     else:
         from taskqueue.db import open_db, set_project_frozen
+
         db = open_db(_db(home))
         set_project_frozen(db, project, False)
         db.close()
@@ -265,6 +283,10 @@ def cmd_retry_project(
     body = {"project": project, "status": sorted(statuses)}
     resp = via_master(home, "POST", "/api/tasks/retry-batch", body=body)
     if resp is not None:
+        # F-197: via_master returns {"unreachable": true} (not None) on timeout.
+        if resp.get("unreachable"):
+            print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)
+            return EXIT_UNREACHABLE
         n = len(resp.get("requeued") or [])
         print(f"Re-queued {n} task(s) in {project}.")
         for sk in resp.get("skipped") or []:
@@ -276,11 +298,7 @@ def cmd_retry_project(
     if _daemon_silent(home):
         return EXIT_UNREACHABLE
     db = open_db(_db(home))
-    keys = [
-        (row["project"], row["task_id"])
-        for row in get_all_tasks(db, project=project)
-        if row["status"] in statuses
-    ]
+    keys = [(row["project"], row["task_id"]) for row in get_all_tasks(db, project=project) if row["status"] in statuses]
     result = retry_tasks_batch(db, keys)
     db.close()
     print(f"Re-queued {len(result['requeued'])} task(s) in {project}.")
@@ -307,6 +325,10 @@ def cmd_retry_keys(home: Path, keys: list[str]) -> int:
     body = {"task_ids": [f"{p}/{t}" for p, t in parsed]}
     resp = via_master(home, "POST", "/api/tasks/retry-batch", body=body)
     if resp is not None:
+        # F-197: do not treat unreachable JSON as a successful empty retry.
+        if resp.get("unreachable"):
+            print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)
+            return EXIT_UNREACHABLE
         n = len(resp.get("requeued") or [])
         print(f"Re-queued {n} task(s).")
         for sk in resp.get("skipped") or []:
@@ -329,7 +351,6 @@ def cmd_retry_keys(home: Path, keys: list[str]) -> int:
     return 0 if n else (1 if result["skipped"] else 0)
 
 
-
 def cmd_validate(
     home: Path,
     path: "str | None" = None,
@@ -342,6 +363,7 @@ def cmd_validate(
     """
     if path:
         from taskqueue.validate import validate_file
+
         p = Path(path)
         if not p.exists():
             print(f"tq validate: file not found: {path}")
@@ -349,13 +371,13 @@ def cmd_validate(
         report = validate_file(p, home, fix=fix)
     else:
         from taskqueue.validate import validate_home
+
         report = validate_home(home, fix=fix)
     warnings = report.get("warnings") or []
     fixed = report.get("fixed") or []
     print(
         f"projects={report['projects']} ok_yaml={report['ok']} "
-        f"errors={len(report['errors'])} warnings={len(warnings)}"
-        + (f" fixed={len(fixed)}" if fix or fixed else "")
+        f"errors={len(report['errors'])} warnings={len(warnings)}" + (f" fixed={len(fixed)}" if fix or fixed else "")
     )
     for item in fixed:
         print(f"  FIX {item['project']}: {item['path']}")
@@ -368,10 +390,10 @@ def cmd_validate(
     return 0 if report["valid"] else 1
 
 
-
 def cmd_projects(home: Path, validate: bool = False) -> int:
     from taskqueue.config import load_projects
     from taskqueue.db import is_project_frozen, is_project_paused, open_db
+
     projects = load_projects(home)
     if not projects:
         print("No projects registered. Create ~/.taskqueue/projects.yaml")
@@ -404,7 +426,6 @@ def cmd_projects(home: Path, validate: bool = False) -> int:
     return 0
 
 
-
 def cmd_bundle(home: Path, project_name: str) -> int:
     from taskqueue.bundle import create_project_bundle
     from taskqueue.config import load_projects
@@ -417,9 +438,7 @@ def cmd_bundle(home: Path, project_name: str) -> int:
 
     print(f"[bundle] Packaging project '{project_name}' at {project.root}...")
     try:
-        bundle_hash, dest, files_added = create_project_bundle(
-            home, project, project_name=project_name
-        )
+        bundle_hash, dest, files_added = create_project_bundle(home, project, project_name=project_name)
     except ValueError as exc:
         print(f"[bundle] Error: {exc}")
         return 1
@@ -427,7 +446,6 @@ def cmd_bundle(home: Path, project_name: str) -> int:
     print(f"[bundle] Hash: {bundle_hash}")
     print(f"[bundle] Saved to: {dest}")
     return 0
-
 
 
 def _suite_set_enabled(home: Path, conn, suite_name: str, value: bool) -> int:
@@ -441,9 +459,7 @@ def _suite_set_enabled(home: Path, conn, suite_name: str, value: bool) -> int:
 
     projects = load_projects(home)
     allow_remote = bool(get_config(conn).get("notify_allow_remote"))
-    rows = conn.execute(
-        "SELECT project, task_id, yaml_source FROM tasks WHERE suite=?", (suite_name,)
-    ).fetchall()
+    rows = conn.execute("SELECT project, task_id, yaml_source FROM tasks WHERE suite=?", (suite_name,)).fetchall()
     n = 0
     for row in rows:
         proj = projects.get(row["project"])
@@ -473,6 +489,11 @@ def cmd_suite(home: Path, action: str, suite_name: str) -> int:
     if not db.exists():
         print("No queue DB.")
         return 1
+    if action in ("enable", "disable", "retry"):
+        block = offline_sqlite_write_blocked(home)
+        if block:
+            print(f"[ERROR] {block}", file=sys.stderr)
+            return EXIT_UNREACHABLE
     conn = open_db(db)
     if action in ("enable", "disable"):
         n = _suite_set_enabled(home, conn, suite_name, action == "enable")
@@ -528,9 +549,7 @@ def cmd_resync(
         if worker_id:
             worker_ids = [worker_id]
         elif all_workers:
-            rows = conn.execute(
-                "SELECT worker_id FROM workers WHERE status = 'online'"
-            ).fetchall()
+            rows = conn.execute("SELECT worker_id FROM workers WHERE status = 'online'").fetchall()
             worker_ids = [str(r["worker_id"]) for r in rows]
     finally:
         conn.close()
@@ -564,6 +583,7 @@ def cmd_archive(
     older_than_days: float = 30.0,
     statuses: list[str] | None = None,
     dry_run: bool = False,
+    max_completed_runs: int | None = None,
 ) -> int:
     """Archive old finished tasks (JSONL export + YAML moved aside + DB rows dropped)."""
     from taskqueue.master_client import via_master
@@ -573,6 +593,8 @@ def cmd_archive(
         body["projects"] = list(projects)
     if statuses:
         body["statuses"] = list(statuses)
+    if max_completed_runs is not None:
+        body["max_completed_runs"] = int(max_completed_runs)
     resp = via_master(home, "POST", "/api/cli/archive", body=body, timeout=120.0)
     if resp is None:
         if _daemon_running(home) is not None:
@@ -592,8 +614,14 @@ def cmd_archive(
             resp = {
                 "ok": True,
                 **archive_tasks(
-                    db, registered, home=home, older_than_days=older_than_days,
-                    statuses=tuple(statuses or ("completed",)), only_projects=projects or None, dry_run=dry_run,
+                    db,
+                    registered,
+                    home=home,
+                    older_than_days=older_than_days,
+                    statuses=tuple(statuses or ("completed",)),
+                    only_projects=projects or None,
+                    dry_run=dry_run,
+                    max_completed_runs=max_completed_runs,
                 ),
             }
         finally:
@@ -609,4 +637,3 @@ def cmd_archive(
         print(f"  ... and {extra} more")
     print(f"{verb} {resp.get('archived', 0)} task(s).")
     return 0
-

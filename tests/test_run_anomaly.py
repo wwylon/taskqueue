@@ -1,4 +1,5 @@
 """run_detail carries an `anomaly` block comparing a run to the task's history."""
+
 from __future__ import annotations
 
 from taskqueue.db import open_db

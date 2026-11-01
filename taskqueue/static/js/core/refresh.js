@@ -38,9 +38,21 @@ export function _dataVersionChanged(dv) {
 export function _queueStructuralKey(q, tasks) {
   const parts = (tasks || []).map(t =>
     [t.project, t.task_id, t.status, t.priority, t.run_id || '', t.enabled === false ? 0 : 1,
-     t.last_error_code || '', t.block_reason || '', (t.missing_deps && t.missing_deps.length) || 0].join(':')
+     t.last_error_code || '', t.block_reason || '', (t.missing_deps && t.missing_deps.length) || 0,
+     // F-184: unmet dep fingerprint so name/status flips refresh the dep line.
+     (t.depends_on || []).join(',') + '|' + Object.entries(t.dep_status || {}).map(([k, v]) => k + '=' + v).join(',')].join(':')
   );
   return String(q && q.total != null ? q.total : parts.length) + '#' + parts.join('|');
+}
+
+/** Structural history identity — avoids JSON.stringify of full run payloads. */
+export function _historyStructuralKey(h) {
+  const runs = Array.isArray(h) ? h : ((h && h.runs) || []);
+  const head = [h && h.total, h && h.offset, h && h.limit].join('|');
+  const body = runs.map(r =>
+    [r.run_id, r.status, r.exit_code != null ? r.exit_code : '', r.worker_id || ''].join(':')
+  ).join(',');
+  return head + '#' + body;
 }
 
 /** Merge SSE running[] into S.queue + patch progress DOM without a full table rebuild. */
@@ -58,17 +70,33 @@ export function _patchQueueLiveFromRunning(running) {
     if (live.last_log_line != null) t.last_log_line = live.last_log_line;
     if (live.run_id != null) t.run_id = live.run_id;
     if (live.progress_health) t.progress_health = live.progress_health;
+    // Desktop table row and/or mobile card (F-165).
     const row = typeof qrowId === 'function' ? document.getElementById(qrowId(t.project, t.task_id)) : null;
-    if (!row) continue;
-    const pbar = row.querySelector('[data-q-pbar]');
-    if (pbar && live.progress_pct != null) pbar.style.width = Math.min(100, live.progress_pct) + '%';
-    const eta = row.querySelector('[data-q-eta]');
-    if (eta && live.progress_pct != null) {
-      const rem = (typeof _etaRemainingSec === 'function')
-        ? _etaRemainingSec(t, live.elapsed_sec, live.progress_pct) : null;
-      eta.textContent = rem != null
-        ? (live.progress_pct.toFixed(0) + '% · ETA ' + dur(rem))
-        : (live.progress_pct.toFixed(0) + '%');
+    const cardKey = String(t.project) + '/' + String(t.task_id);
+    const card = document.querySelector('[data-q-card]')
+      ? Array.from(document.querySelectorAll('[data-q-card]')).find(el => el.getAttribute('data-q-card') === cardKey)
+      : null;
+    const roots = [row, card].filter(Boolean);
+    if (!roots.length) continue;
+    for (const root of roots) {
+      const pbar = root.querySelector('[data-q-pbar]');
+      if (pbar && live.progress_pct != null) pbar.style.width = Math.min(100, live.progress_pct) + '%';
+      const eta = root.querySelector('[data-q-eta]');
+      if (eta && live.progress_pct != null) {
+        const rem = (typeof _etaRemainingSec === 'function')
+          ? _etaRemainingSec(t, live.elapsed_sec, live.progress_pct) : null;
+        eta.textContent = rem != null
+          ? (live.progress_pct.toFixed(0) + '% · ETA ' + dur(rem))
+          : (live.progress_pct.toFixed(0) + '%');
+      }
+      const elapsedEl = root.querySelector('[data-q-elapsed]');
+      if (elapsedEl && live.elapsed_sec != null && typeof dur === 'function') {
+        elapsedEl.textContent = dur(live.elapsed_sec);
+      }
+      const logEl = root.querySelector('[data-q-log]');
+      if (logEl && live.last_log_line != null) {
+        logEl.textContent = live.last_log_line || (typeof i18n !== 'undefined' ? i18n.t('log.noOutput') : '');
+      }
     }
   }
 }
@@ -273,7 +301,13 @@ export async function refresh() {
     if (dashTab === 'history') {
       const _hSearch = (document.getElementById('history-search') || {}).value || '';
       if (_hSearch.trim()) parts.push(`search=${encodeURIComponent(_hSearch.trim())}`);
-      parts.push(`limit=${S.historyLimit}`);
+      if (S.historyStatusFilter && S.historyStatusFilter !== 'all') {
+        parts.push(`status=${encodeURIComponent(S.historyStatusFilter)}`);
+      }
+      // Offset paging (fixed page size) — avoid cumulative re-fetch up to 1000.
+      const _hLim = S.historyPageSize || 20;
+      parts.push(`limit=${_hLim}`);
+      parts.push(`offset=${S.historyOffset || 0}`);
     } else {
       const _qSearch = (document.getElementById('queue-search') || {}).value || '';
       if (_qSearch.trim()) parts.push(`search=${encodeURIComponent(_qSearch.trim())}`);
@@ -355,7 +389,7 @@ export async function refresh() {
     const hasHistory = resp.history != null;
     // Cheap structural key (not full JSON.stringify) — live elapsed/progress ignored.
     const queueStr = hasQueue ? _queueStructuralKey(q, tasks) : S.prevQueueStr;
-    const historyStr = hasHistory ? JSON.stringify(h) : S.prevHistoryStr;
+    const historyStr = hasHistory ? _historyStructuralKey(h) : S.prevHistoryStr;
     const workersStr = w != null ? JSON.stringify(w) : S.prevWorkersStr;
 
     const runningIdentity = _runningIdentity(s.running, s.config || S.cfg);
@@ -372,6 +406,15 @@ export async function refresh() {
       S.queue = Array.isArray(q) ? q : (q.tasks || []); S.queueTotal = q.total || S.queue.length;
       S.brokenDeps = Array.isArray(q) ? [] : (q.broken_deps || []);
       _updateBrokenDepsBanner();
+      if (!Array.isArray(q) && q.error === 'project_required_for_sort') {
+        try {
+          if (typeof window.showToast === 'function') {
+            window.showToast(q.message || 'Pick a project for this sort on large queues.', 'warn');
+          }
+        } catch (_) {}
+        // Fall back to status sort so the next refresh is usable.
+        S.queueSort = { field: 'status', dir: 1 };
+      }
     }
     if (hasHistory) { S.history = Array.isArray(h) ? h : (h.runs || []); S.historyTotal = h.total || S.history.length; }
     if (w != null) S.workers = w;
@@ -381,7 +424,14 @@ export async function refresh() {
     S.prevRunningStr = runningIdentity;
     S.prevGaugeStructStr = gaugeStruct;
     _lastQueueFullRefresh = Date.now();
-    _populateGroupChips();
+    // F-174: refresh group chips only when the project scope changes (not every refresh).
+    const chipScope = S.selectedProject || 'all';
+    if (chipScope !== S._groupChipScope) {
+      S._groupChipScope = chipScope;
+      _populateGroupChips();
+    } else {
+      _updateGroupChips();
+    }
     if (workersChanged) {
       _populateWorkerSelect(S.workers);
     }
@@ -443,19 +493,24 @@ export async function refresh() {
     // A render threw after the change-detection keys were stored: reset them so the next refresh re-renders instead of freezing.
     S.prevQueueStr = S.prevHistoryStr = S.prevWorkersStr = S.prevRunningStr = S.prevGaugeStructStr = '';
     S.dashboardEtag = '';  // a 304 next time would skip the re-render and freeze the UI
-    _refreshFailStreak += 1;
-    // Do not reset the status pill on a slow/failed queue fetch — SSE keeps it accurate.
-    if (_refreshFailStreak >= 3) {
-      _setOffline(true);
-      const pill = document.getElementById('daemon-pill');
-      if (pill) {
-        pill.className = 'status-pill pill-fail';
-        pill.textContent = i18n.t('status.connecting');
+    // F-207: render bugs must not flip the UI to offline (that is for network/auth).
+    const msg = String((e && e.message) || e || '');
+    if (msg.startsWith('renderQueue:') || msg.startsWith('renderDashboard:') || msg.startsWith('renderHistory:') || msg.startsWith('renderWorkers:')) {
+      _refreshFailStreak = 0;
+    } else {
+      _refreshFailStreak += 1;
+      if (_refreshFailStreak >= 3) {
+        _setOffline(true);
+        const pill = document.getElementById('daemon-pill');
+        if (pill) {
+          pill.className = 'status-pill pill-fail';
+          pill.textContent = i18n.t('status.connecting');
+        }
+        const dot = document.getElementById('live-dot');
+        if (dot) dot.classList.remove('live');
+        S.sseState = 'error';
+        _updateSseIndicator();
       }
-      const dot = document.getElementById('live-dot');
-      if (dot) dot.classList.remove('live');
-      S.sseState = 'error';
-      _updateSseIndicator();
     }
   } finally {
     _refreshInFlight = false;
@@ -576,6 +631,10 @@ export function startLiveUpdates() {
       // Named transition events → immediate structural queue refresh (task started/stopped).
       es.addEventListener('transition', function() {
         _scheduleQueueRefresh(400, true);
+        // F-175: refresh notification badge/toasts from the live stream.
+        if (typeof window.tqNotifOnLiveEvent === 'function') {
+          try { window.tqNotifOnLiveEvent(); } catch (_) {}
+        }
       });
       es.onerror = function() {
         if (_sse !== es) return;

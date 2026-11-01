@@ -100,9 +100,7 @@ def test_parse_depends_on_any(tmp_path: Path) -> None:
     assert task.depends_on_any == ("a", "b")
     db = open_db(tmp_path / "q.db")
     upsert_task(db, task)
-    row = db.execute(
-        "SELECT depends_on, depends_on_any FROM tasks WHERE task_id='fan'"
-    ).fetchone()
+    row = db.execute("SELECT depends_on, depends_on_any FROM tasks WHERE task_id='fan'").fetchone()
     assert json.loads(row["depends_on"]) == ["gate"]
     assert json.loads(row["depends_on_any"]) == ["a", "b"]
     db.close()
@@ -209,9 +207,7 @@ def test_on_complete_sets_spawned_by(tmp_path: Path) -> None:
         )
     db.commit()
     apply_finalize_wake_hooks(db, "p", "parent", "completed", run_teardown=False)
-    row = db.execute(
-        "SELECT status, spawned_by FROM tasks WHERE task_id='child'"
-    ).fetchone()
+    row = db.execute("SELECT status, spawned_by FROM tasks WHERE task_id='child'").fetchone()
     assert row["status"] == "queued"
     assert row["spawned_by"] == "p/parent"
     db.close()

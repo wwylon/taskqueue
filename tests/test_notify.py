@@ -57,9 +57,7 @@ def test_validate_notify_url_loopback() -> None:
     assert validate_notify_url("http://localhost/x") == "http://localhost/x"
     with pytest.raises(ValueError, match="loopback"):
         validate_notify_url("http://example.com/hook")
-    assert validate_notify_url(
-        "http://example.com/hook", allow_remote=True
-    ) == "http://example.com/hook"
+    assert validate_notify_url("http://example.com/hook", allow_remote=True) == "http://example.com/hook"
     with pytest.raises(ValueError, match="http"):
         validate_notify_url("ftp://127.0.0.1/x")
 
@@ -84,9 +82,7 @@ def test_upsert_persists_notify_url(tmp_path: Path) -> None:
     _write_yaml(path, notify_url="http://127.0.0.1/n")
     db = open_db(tmp_path / "q.db")
     upsert_task(db, parse_task_yaml(path, proj))
-    row = db.execute(
-        "SELECT notify_url FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT notify_url FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     assert row["notify_url"] == "http://127.0.0.1/n"
     assert get_config(db).get("notify_allow_remote") in (0, False)
     db.close()
@@ -95,19 +91,22 @@ def test_upsert_persists_notify_url(tmp_path: Path) -> None:
 def test_emit_jsonl_and_skip_without_url_when_default_off(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    assert emit_task_notify(
-        home,
-        project="p",
-        task_id="t",
-        status=STATUS_COMPLETED,
-        run_id=1,
-        exit_code=0,
-        last_error_code=None,
-        notify_url=None,
-        started_by="alice",
-        post=False,
-        cfg={"notify_default": 0, "toast_notifications": False},
-    ) is None
+    assert (
+        emit_task_notify(
+            home,
+            project="p",
+            task_id="t",
+            status=STATUS_COMPLETED,
+            run_id=1,
+            exit_code=0,
+            last_error_code=None,
+            notify_url=None,
+            started_by="alice",
+            post=False,
+            cfg={"notify_default": 0, "toast_notifications": False},
+        )
+        is None
+    )
     assert not notify_log_path(home).exists()
 
     payload = emit_task_notify(
@@ -129,35 +128,50 @@ def test_emit_jsonl_and_skip_without_url_when_default_off(tmp_path: Path) -> Non
     assert ev["task_id"] == "t" and ev["status"] == "completed"
 
     # non-terminal
-    assert emit_task_notify(
-        home,
-        project="p",
-        task_id="t",
-        status="queued",
-        run_id=2,
-        exit_code=None,
-        last_error_code=None,
-        notify_url="http://127.0.0.1/n",
-        started_by="alice",
-        post=False,
-    ) is None
+    assert (
+        emit_task_notify(
+            home,
+            project="p",
+            task_id="t",
+            status="queued",
+            run_id=2,
+            exit_code=None,
+            last_error_code=None,
+            notify_url="http://127.0.0.1/n",
+            started_by="alice",
+            post=False,
+        )
+        is None
+    )
 
 
 def test_drain_notifications_since_and_operator(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     emit_task_notify(
-        home, project="p", task_id="a", status="completed", run_id=1,
-        exit_code=0, last_error_code=None, notify_url="http://127.0.0.1/n",
-        started_by="alice", post=False,
+        home,
+        project="p",
+        task_id="a",
+        status="completed",
+        run_id=1,
+        exit_code=0,
+        last_error_code=None,
+        notify_url="http://127.0.0.1/n",
+        started_by="alice",
+        post=False,
     )
-    first_ts = json.loads(
-        notify_log_path(home).read_text(encoding="utf-8").splitlines()[0]
-    )["ts"]
+    first_ts = json.loads(notify_log_path(home).read_text(encoding="utf-8").splitlines()[0])["ts"]
     emit_task_notify(
-        home, project="p", task_id="b", status="failed", run_id=2,
-        exit_code=1, last_error_code="tq.run.nonzero",
-        notify_url="http://127.0.0.1/n", started_by="bob", post=False,
+        home,
+        project="p",
+        task_id="b",
+        status="failed",
+        run_id=2,
+        exit_code=1,
+        last_error_code="tq.run.nonzero",
+        notify_url="http://127.0.0.1/n",
+        started_by="bob",
+        post=False,
     )
     all_ev = drain_notifications(home)
     assert all_ev["count"] == 2
@@ -220,14 +234,9 @@ def test_finalize_emits_notify(tmp_path: Path) -> None:
     yml = proj.queue_dir / "t1.yaml"
     _write_yaml(yml, notify_url="http://127.0.0.1/n")
     upsert_task(db, parse_task_yaml(yml, proj))
-    db.execute(
-        "UPDATE tasks SET status='running', started_by='alice' "
-        "WHERE project='p' AND task_id='t1'"
-    )
+    db.execute("UPDATE tasks SET status='running', started_by='alice' WHERE project='p' AND task_id='t1'")
     db.commit()
-    row = db.execute(
-        "SELECT * FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT * FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     run = ActiveRun(db, row, log_dir=home / "logs", cwd=proj.root, db_path=db_path)
     run.run_id = db.execute(
         "INSERT INTO runs (project, task_id, started_at, status) "
@@ -252,9 +261,7 @@ def test_worker_finalize_emits_once(tmp_path: Path) -> None:
     yml = proj.queue_dir / "t1.yaml"
     _write_yaml(yml, notify_url="http://127.0.0.1/n")
     upsert_task(db, parse_task_yaml(yml, proj))
-    db.execute(
-        "UPDATE tasks SET status='running', started_by='bob' WHERE project='p' AND task_id='t1'"
-    )
+    db.execute("UPDATE tasks SET status='running', started_by='bob' WHERE project='p' AND task_id='t1'")
     run_id = db.execute(
         "INSERT INTO runs (project, task_id, started_at, status, worker_id) "
         "VALUES ('p','t1','2026-01-01T00:00:00+00:00','running','w1')"
@@ -284,9 +291,16 @@ def test_mcp_drain_notifications(tmp_path: Path) -> None:
     home.mkdir()
     open_db(home / "queue.db").close()
     emit_task_notify(
-        home, project="p", task_id="t", status="completed", run_id=1,
-        exit_code=0, last_error_code=None, notify_url="http://127.0.0.1/n",
-        started_by="alice", post=False,
+        home,
+        project="p",
+        task_id="t",
+        status="completed",
+        run_id=1,
+        exit_code=0,
+        last_error_code=None,
+        notify_url="http://127.0.0.1/n",
+        started_by="alice",
+        post=False,
     )
     names = {t["name"] for t in TOOLS}
     assert "drain_notifications" in names

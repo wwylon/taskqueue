@@ -1,4 +1,5 @@
 """8.1 HIGH: no-arg commands reject stray args (exit 2) instead of acting; failures return non-zero."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -117,6 +118,8 @@ def test_uninstall_service_reports_schtasks_failure(tmp_path, monkeypatch, capsy
     from taskqueue import worker
 
     monkeypatch.setattr(_sys, "platform", "win32")
-    monkeypatch.setattr(worker.subprocess, "run", lambda *a, **k: _sp.CompletedProcess(a, 1, "", "ERROR: Access is denied."))
+    monkeypatch.setattr(
+        worker.subprocess, "run", lambda *a, **k: _sp.CompletedProcess(a, 1, "", "ERROR: Access is denied.")
+    )
     assert worker.uninstall_worker_service(tmp_path, "w1") == 1
     assert "Access is denied" in capsys.readouterr().err

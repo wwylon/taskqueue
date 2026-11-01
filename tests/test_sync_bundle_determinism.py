@@ -22,7 +22,11 @@ def test_allowlist_matches_dot_directories(tmp_path):
 
 
 def _project(root):
-    return Project(name="p", root=root, queue_dir=root / "q") if "queue_dir" in Project.__dataclass_fields__ else Project(name="p", root=root)
+    return (
+        Project(name="p", root=root, queue_dir=root / "q")
+        if "queue_dir" in Project.__dataclass_fields__
+        else Project(name="p", root=root)
+    )
 
 
 def test_bundle_hash_is_reproducible(tmp_path):

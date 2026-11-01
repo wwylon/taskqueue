@@ -145,4 +145,3 @@ def test_requeue_orphaned_running(tmp_path: Path) -> None:
         ("p", "ghost"),
     ).fetchone()
     assert last["status"] == "interrupted"
-

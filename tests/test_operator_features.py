@@ -43,11 +43,7 @@ class _FakeWfile:
 
 
 def _make_request(HandlerClass, method: str, path: str, body: bytes = b"", extra_headers: dict | None = None):
-    headers_raw = (
-        f"{method} {path} HTTP/1.1\r\n"
-        f"Host: localhost:8766\r\n"
-        f"Content-Length: {len(body)}\r\n"
-    )
+    headers_raw = f"{method} {path} HTTP/1.1\r\nHost: localhost:8766\r\nContent-Length: {len(body)}\r\n"
     for k, v in (extra_headers or {}).items():
         headers_raw += f"{k}: {v}\r\n"
     headers_raw += "\r\n"
@@ -133,7 +129,9 @@ def test_task_stats_percentiles(tmp_path: Path):
     for i, seconds in enumerate((10, 20, 30, 40)):
         start = base + timedelta(hours=i)
         _insert_run(
-            db, "proj", "train",
+            db,
+            "proj",
+            "train",
             start.isoformat(),
             (start + timedelta(seconds=seconds)).isoformat(),
             "completed" if i < 3 else "failed",
@@ -153,7 +151,9 @@ def test_task_stats_null_when_no_completed(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     base = datetime(2026, 9, 1, tzinfo=timezone.utc)
     _insert_run(
-        db, "proj", "fail_only",
+        db,
+        "proj",
+        "fail_only",
         base.isoformat(),
         (base + timedelta(seconds=15)).isoformat(),
         "failed",
@@ -252,7 +252,9 @@ def test_timeline_cron_arrival(tmp_path: Path):
     base = now - timedelta(days=1)
     _insert_run(db, "proj", "nightly", base.isoformat(), (base + timedelta(seconds=30)).isoformat())
     _mk_task(
-        db, "proj", "nightly",
+        db,
+        "proj",
+        "nightly",
         status="completed",
         schedule={"cron": "0 0 * * *"},
     )
@@ -273,18 +275,23 @@ def test_alert_cooldown_skips_second_fire(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
     _insert_run(
-        db, "proj", "job",
+        db,
+        "proj",
+        "job",
         (now - timedelta(minutes=5)).isoformat(),
         now.isoformat(),
         "failed",
     )
-    create_alert(db, {
-        "name": "fails",
-        "kind": "failed_count",
-        "threshold": 0,
-        "window_sec": 3600,
-        "action": "notify",
-    })
+    create_alert(
+        db,
+        {
+            "name": "fails",
+            "kind": "failed_count",
+            "threshold": 0,
+            "window_sec": 3600,
+            "action": "notify",
+        },
+    )
     cfg = {"toast_notifications": False}
     first = evaluate_alerts(db, tmp_path, None, cfg, now=now)
     second = evaluate_alerts(db, tmp_path, None, cfg, now=now + timedelta(minutes=1))
@@ -310,7 +317,9 @@ def test_stop_writes_audit_row(tmp_path: Path):
     )
     db.commit()
     code, _ = _make_request(
-        HandlerClass, "POST", "/api/stop/proj/T1",
+        HandlerClass,
+        "POST",
+        "/api/stop/proj/T1",
         extra_headers={"X-TQ-Operator": "ada"},
     )
     assert code == 200
@@ -327,7 +336,9 @@ def test_token_hash_revoke_and_scope(tmp_path: Path):
     HandlerClass, db = _make_handler(tmp_path)
     set_config(db, "auth_token", "legacy-secret")
     code, body = _make_request(
-        HandlerClass, "POST", "/api/tokens",
+        HandlerClass,
+        "POST",
+        "/api/tokens",
         body=json.dumps({"name": "reader", "scope": "read"}).encode(),
         extra_headers={"Authorization": "Bearer legacy-secret"},
     )
@@ -338,30 +349,36 @@ def test_token_hash_revoke_and_scope(tmp_path: Path):
     stored = db.execute("SELECT token_hash, prefix FROM api_tokens WHERE id = ?", (created["id"],)).fetchone()
     assert stored["token_hash"] == hashlib.sha256(secret.encode()).hexdigest()
     assert stored["token_hash"] != secret
-    audit = db.execute(
-        "SELECT detail FROM operator_audit WHERE action = 'token_create'"
-    ).fetchone()
+    audit = db.execute("SELECT detail FROM operator_audit WHERE action = 'token_create'").fetchone()
     assert secret not in (audit["detail"] or "")
 
     code, _ = _make_request(
-        HandlerClass, "GET", "/api/task-stats",
+        HandlerClass,
+        "GET",
+        "/api/task-stats",
         extra_headers={"Authorization": f"Bearer {secret}"},
     )
     assert code == 200
     code, body = _make_request(
-        HandlerClass, "POST", "/api/stop/proj/missing",
+        HandlerClass,
+        "POST",
+        "/api/stop/proj/missing",
         extra_headers={"Authorization": f"Bearer {secret}"},
     )
     assert code == 403
     assert b"scope" in body
 
     code, _ = _make_request(
-        HandlerClass, "DELETE", f"/api/tokens/{created['id']}",
+        HandlerClass,
+        "DELETE",
+        f"/api/tokens/{created['id']}",
         extra_headers={"Authorization": "Bearer legacy-secret"},
     )
     assert code == 200
     code, _ = _make_request(
-        HandlerClass, "GET", "/api/task-stats",
+        HandlerClass,
+        "GET",
+        "/api/task-stats",
         extra_headers={"Authorization": f"Bearer {secret}"},
     )
     assert code == 401

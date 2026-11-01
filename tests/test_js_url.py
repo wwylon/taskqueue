@@ -1,4 +1,5 @@
 """Behavior tests for core/url.js (UI URL state, tab activation, project selection)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -30,13 +31,31 @@ r.url = g._mergedUiState();
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["defaults"] == {"tab": "queue", "project": "all", "status": "all", "active": False, "q": "",
-                               "group": None, "tag": None, "doc": None, "section": None}
+    assert out["defaults"] == {
+        "tab": "queue",
+        "project": "all",
+        "status": "all",
+        "active": False,
+        "q": "",
+        "group": None,
+        "tag": None,
+        "doc": None,
+        "section": None,
+    }
     assert out["stored"]["tab"] == "audit" and out["stored"]["project"] == "pp" and out["stored"]["status"] == "failed"
     assert out["stored"]["active"] is True and out["stored"]["tag"] == "gpu" and out["stored"]["doc"] == "cli"
     assert out["badTab"] == ["queue", "all"]
-    assert out["url"] == {"tab": "usage", "project": "px", "status": "running", "active": True, "q": "hi",
-                          "group": "g1", "tag": "t1", "doc": "d", "section": "s"}
+    assert out["url"] == {
+        "tab": "usage",
+        "project": "px",
+        "status": "running",
+        "active": True,
+        "q": "hi",
+        "group": "g1",
+        "tag": "t1",
+        "doc": "d",
+        "section": "s",
+    }
 
 
 def test_build_params_drop_token_and_docs_state_only_on_docs_tab():
@@ -105,7 +124,11 @@ console.log('RESULT:' + JSON.stringify(r));
 """
     )
     assert out["state"] == ["px", "px", "failed", "g1", "t1", "d", "s", False]
-    assert out["search"] == "zz" and out["stored"] == ["px", "failed", "t1", "d"] and not any(u.startswith("/api/status") for u in out["fetched"])
+    assert (
+        out["search"] == "zz"
+        and out["stored"] == ["px", "failed", "t1", "d"]
+        and not any(u.startswith("/api/status") for u in out["fetched"])
+    )
     assert out["all"] == ["all", True, None, "all"]
 
 

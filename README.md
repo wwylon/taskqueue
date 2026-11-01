@@ -1,6 +1,26 @@
 # taskqueue
 
-Local resource-aware task queue: a single daemon plus `tq` CLI, web UI, and MCP server that schedule YAML tasks across one or more project folders (CPU / RAM / GPU VRAM admission, checkpoints, remote workers).
+**taskqueue** helps you run long jobs on your own computers without melting
+them. You describe each job in a small YAML file. A background program (the
+**daemon**) starts jobs only when there is enough CPU, RAM, and GPU memory. You
+watch progress in a **web page**, from the **command line** (`tq`), or from an
+**AI coding agent** (MCP). Jobs can run on this machine or on other machines
+that join as **workers**.
+
+It is for experiment batches, shared GPU/RAM, and agents that submit and wait.
+It is not a cloud SaaS, Kubernetes scheduler, or general CI system.
+
+```mermaid
+flowchart LR
+  YAML[YAML jobs] --> D[tq daemon]
+  D --> PC[This PC]
+  D --> RW[Remote workers]
+  D --> UI[Web UI / CLI / MCP]
+```
+
+Local resource-aware task queue: one daemon plus `tq`, a web UI, and an MCP
+server that schedule YAML tasks across project folders (CPU / RAM / GPU VRAM
+admission, checkpoints, and remote workers).
 
 Web UI: `http://127.0.0.1:8765` (live SSE via `/api/events`). Terminal: `tq watch`. Tour: **[docs/operators/web-ui.md](docs/operators/web-ui.md)**.
 
@@ -14,6 +34,7 @@ Web UI: `http://127.0.0.1:8765` (live SSE via `/api/events`). Terminal: `tq watc
 * [Task Standards](docs/task_standards.md) — progress contract, checkpoint/`resume_args`, resources, YAML field reference, dispatch/workers
 * [Scheduler](docs/scheduler.md) — admission estimates, fast handoff on local exit, additive RAM gate, staggering, and victim selection under pressure
 * [MCP server](docs/mcp.md) — configure Cursor/Claude for `tq mcp`; tool reference
+* [Capabilities](docs/capabilities.md) — submit, admit, run, wait, diagnose, workers, auth, observe, and admin
 * [examples/](examples/) — minimal sample project; dogfood fixtures in `fixtures/tqdemo/`
 * [Error codes](docs/errors.md) — stable `tq.*` codes (`last_error_code` / attention)
 * [Task clients](clients/README.md) — cooperative suspend helpers (`tq_client`)
@@ -169,7 +190,8 @@ cd path\to\taskqueue
 uv run pytest tests/ -q
 ```
 
-297 tests. Takes ~3–4 minutes (mostly I/O bound). Run after any code change.
+The suite size changes as coverage grows; run the command above for the current
+count. It is mostly I/O bound.
 
 ```powershell
 # Run a specific file fast:
@@ -231,6 +253,30 @@ uv run tq patch tqdemo/stress-cleanup enabled=true && uv run tq sync --project t
 ```
 
 ## CLI
+
+Start with the capability you need:
+
+- **Submit:** `tq add`, `tq submit`, `tq clone`, `tq validate`, `tq sync`
+- **Admit:** `tq plan`, `tq why`, `tq force`, `tq priority`, `tq locks`,
+  `tq fair-share`, `tq pause`, `tq resume`, `tq freeze`, `tq unfreeze`
+- **Run:** `tq start`, `tq stop-daemon`, `tq restart`, `tq retry`, `tq stop`,
+  `tq suspend`, `tq patch`, `tq reverify`, `tq remove`, `tq group`, `tq suite`,
+  `tq tag`
+- **Wait / notify:** `tq wait`, `tq watch`, `tq tail`, `tq result`, `tq logs`
+- **Diagnose:** `tq diagnose`, `tq explain`, `tq metrics`, `tq report`,
+  `tq diff`, `tq health`
+- **Workers:** `tq worker`, `tq projects`, `tq resync`, `tq bundle`,
+  `tq master-status`, `tq master-migrate`
+- **Auth:** `tq token`, `tq config`, `tq mcp`
+- **Observe:** `tq status`, `tq list`, `tq describe`, `tq top`, `tq capacity`,
+  `tq my-tasks`, `tq agents`, `tq doctor`, `tq log`, `tq detect`, `tq usage`
+- **Admin:** `tq archive`, `tq prune`, `tq export`, `tq import`, `tq migrate`,
+  `tq completion`, `tq sleep`, `tq wake`
+
+See the [capability guide](docs/capabilities.md) for the MCP equivalent and
+the full ownership map.
+
+### Detailed CLI reference
 
 Exit codes: `0` ok, `1` error, `2` usage (unknown flags or extra args are rejected, nothing is executed), `3` master unreachable.
 

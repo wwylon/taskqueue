@@ -171,7 +171,9 @@ def note_progress(timing: dict | None, prev_pct: float | None, pct: float, now: 
     return t
 
 
-def progress_health(timing: dict | None, pct: float | None, now: float, *, k: float = 3.0, floor_sec: float = 120.0) -> dict:
+def progress_health(
+    timing: dict | None, pct: float | None, now: float, *, k: float = 3.0, floor_sec: float = 120.0
+) -> dict:
     """``{age_sec, stalled, eta_sec}`` from :func:`note_progress` data. ``stalled`` when the last % change is
     older than ``k`` x the usual interval (and at least ``floor_sec``); ETA uses the recent rate."""
     if not timing or timing.get("at") is None:
@@ -187,8 +189,9 @@ def progress_health(timing: dict | None, pct: float | None, now: float, *, k: fl
     return out
 
 
-def merge_metrics_payload(task_metrics: dict[str, Any] | None, log_counts: Any, series: dict | None = None,
-                          progress: dict | None = None) -> dict[str, Any]:
+def merge_metrics_payload(
+    task_metrics: dict[str, Any] | None, log_counts: Any, series: dict | None = None, progress: dict | None = None
+) -> dict[str, Any]:
     """TQ_METRIC fields plus reserved ``log``, ``_series`` and ``_progress``; a task cannot overwrite them."""
     payload = dict(task_metrics or {})
     payload.pop("log", None)

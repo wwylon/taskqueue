@@ -1,4 +1,5 @@
 """MCP error shapes: tool failures are isError results; bad JSON gets -32700."""
+
 import io
 import json
 
@@ -20,10 +21,16 @@ def test_parse_error_and_invalid_request(monkeypatch, tmp_path):
 
 def test_unknown_tool_and_missing_args(monkeypatch, tmp_path):
     req = next(t for t in mcp_server.TOOLS if (t.get("inputSchema") or {}).get("required"))
-    out = _run(monkeypatch, tmp_path, [
-        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "nope"}}),
-        json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": req["name"], "arguments": {}}}),
-    ])
+    out = _run(
+        monkeypatch,
+        tmp_path,
+        [
+            json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "nope"}}),
+            json.dumps(
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": req["name"], "arguments": {}}}
+            ),
+        ],
+    )
     assert out[0]["error"]["code"] == -32602
     assert out[1]["result"]["isError"] is True and "missing required" in out[1]["result"]["content"][0]["text"]
 

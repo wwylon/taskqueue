@@ -1,4 +1,5 @@
 """Small network helpers shared by the web layer, scheduler probes and notify."""
+
 from __future__ import annotations
 
 

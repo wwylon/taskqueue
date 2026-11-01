@@ -42,6 +42,7 @@ def _yaml(tmp_path: Path, project_name: str, task_id: str, **kwargs) -> Path:
     }
     defaults.update(kwargs)
     import yaml
+
     content = yaml.dump({"task_id": task_id, **defaults})
     p = tmp_path / f"{project_name}_{task_id}.yaml"
     p.write_text(content, encoding="utf-8")
@@ -51,6 +52,7 @@ def _yaml(tmp_path: Path, project_name: str, task_id: str, **kwargs) -> Path:
 # ---------------------------------------------------------------------------
 # parse_task_yaml
 # ---------------------------------------------------------------------------
+
 
 def test_parse_task_yaml_basic(tmp_path: Path) -> None:
     proj = _project("pokerbot", tmp_path)
@@ -64,14 +66,14 @@ def test_parse_task_yaml_basic(tmp_path: Path) -> None:
 
 def test_parse_task_yaml_resume_args(tmp_path: Path) -> None:
     proj = _project("pimc", tmp_path)
-    path = _yaml(tmp_path, "pimc", "bench_01",
-                 resume_args=["-c", "pass", "--resume"])
+    path = _yaml(tmp_path, "pimc", "bench_01", resume_args=["-c", "pass", "--resume"])
     task = parse_task_yaml(path, proj)
     assert task.resume_args == ("-c", "pass", "--resume")
 
 
 def test_parse_task_yaml_rejects_slash_in_task_id(tmp_path: Path) -> None:
     import yaml
+
     proj = _project("x", tmp_path)
     p = tmp_path / "bad.yaml"
     p.write_text(yaml.dump({"task_id": "foo/bar", "command": sys.executable}))
@@ -81,6 +83,7 @@ def test_parse_task_yaml_rejects_slash_in_task_id(tmp_path: Path) -> None:
 
 def test_parse_task_yaml_requires_task_id(tmp_path: Path) -> None:
     import yaml
+
     proj = _project("x", tmp_path)
     p = tmp_path / "bad.yaml"
     p.write_text(yaml.dump({"command": sys.executable}))
@@ -91,6 +94,7 @@ def test_parse_task_yaml_requires_task_id(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # DB — two projects, composite key
 # ---------------------------------------------------------------------------
+
 
 def test_two_projects_independent(tmp_path: Path) -> None:
     """Tasks with the same task_id in different projects are independent."""
@@ -159,6 +163,7 @@ def test_filter_by_project(tmp_path: Path) -> None:
 # Runner — end-to-end subprocess
 # ---------------------------------------------------------------------------
 
+
 def test_run_success(tmp_path: Path) -> None:
     from taskqueue.db import get_run, get_runs_for_task, insert_run
     from taskqueue.runner import ActiveRun
@@ -167,10 +172,15 @@ def test_run_success(tmp_path: Path) -> None:
     proj = _project("p", tmp_path)
     script = tmp_path / "ok.py"
     script.write_text("print('(50.0%) halfway'); print('done')")
-    path = _yaml(tmp_path, "p", "run_ok", **{
-        "command": sys.executable,
-        "args": [str(script)],
-    })
+    path = _yaml(
+        tmp_path,
+        "p",
+        "run_ok",
+        **{
+            "command": sys.executable,
+            "args": [str(script)],
+        },
+    )
     task = parse_task_yaml(path, proj)
     upsert_task(db, task)
     row = get_task(db, "p", "run_ok")
@@ -207,10 +217,15 @@ def test_utf8_stdout_does_not_crash_reader_thread(tmp_path: Path) -> None:
         "print('done')\n",
         encoding="utf-8",
     )
-    path = _yaml(tmp_path, "p", "run_arabic", **{
-        "command": sys.executable,
-        "args": [str(script)],
-    })
+    path = _yaml(
+        tmp_path,
+        "p",
+        "run_arabic",
+        **{
+            "command": sys.executable,
+            "args": [str(script)],
+        },
+    )
     task = parse_task_yaml(path, proj)
     upsert_task(db, task)
     row = get_task(db, "p", "run_arabic")
@@ -241,10 +256,15 @@ def test_stream_output_recovers_from_reader_crash(tmp_path: Path, monkeypatch) -
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
-    path = _yaml(tmp_path, "p", "crash_test", **{
-        "command": sys.executable,
-        "args": ["-c", "print('hi')"],
-    })
+    path = _yaml(
+        tmp_path,
+        "p",
+        "crash_test",
+        **{
+            "command": sys.executable,
+            "args": ["-c", "print('hi')"],
+        },
+    )
     task = parse_task_yaml(path, proj)
     upsert_task(db, task)
     row = get_task(db, "p", "crash_test")
@@ -305,10 +325,15 @@ def test_stop_recovers_when_reader_thread_is_wedged(tmp_path: Path) -> None:
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
-    path = _yaml(tmp_path, "p", "wedge_test", **{
-        "command": sys.executable,
-        "args": ["-c", "print('hi')"],
-    })
+    path = _yaml(
+        tmp_path,
+        "p",
+        "wedge_test",
+        **{
+            "command": sys.executable,
+            "args": ["-c", "print('hi')"],
+        },
+    )
     task = parse_task_yaml(path, proj)
     upsert_task(db, task)
     row = get_task(db, "p", "wedge_test")
@@ -358,9 +383,15 @@ def test_suspend_grace_window(tmp_path: Path, monkeypatch) -> None:
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
-    path = _yaml(tmp_path, "p", "grace_test", **{
-        "command": sys.executable, "args": ["-c", "print('hi')"],
-    })
+    path = _yaml(
+        tmp_path,
+        "p",
+        "grace_test",
+        **{
+            "command": sys.executable,
+            "args": ["-c", "print('hi')"],
+        },
+    )
     task = parse_task_yaml(path, proj)
     upsert_task(db, task)
     row = get_task(db, "p", "grace_test")
@@ -421,6 +452,7 @@ def test_sync_project_survives_locked_db_on_cleanup(tmp_path: Path) -> None:
         def execute(self, sql, *args, **kwargs):
             if sql.strip().upper().startswith("DELETE FROM TASKS"):
                 import sqlite3
+
                 raise sqlite3.OperationalError("database is locked")
             return self._real.execute(sql, *args, **kwargs)
 
@@ -438,12 +470,14 @@ def test_sync_project_survives_locked_db_on_cleanup(tmp_path: Path) -> None:
 
 def test_preflight_missing_command(tmp_path: Path) -> None:
     from taskqueue.runner import preflight
+
     err = preflight(Path("no_such_command_xyz"), ())
     assert err is not None and "not found" in err
 
 
 def test_preflight_missing_path(tmp_path: Path) -> None:
     from taskqueue.runner import preflight
+
     err = preflight(Path(sys.executable), (tmp_path / "missing_file.txt",))
     assert err is not None and "missing" in err
 
@@ -452,8 +486,10 @@ def test_preflight_missing_path(tmp_path: Path) -> None:
 # Config
 # ---------------------------------------------------------------------------
 
+
 def test_config_roundtrip(tmp_path: Path) -> None:
     from taskqueue.db import get_config, set_config
+
     db = open_db(tmp_path / "queue.db")
     set_config(db, "cpu_limit_pct", 75)
     cfg = get_config(db)
@@ -464,16 +500,22 @@ def test_config_roundtrip(tmp_path: Path) -> None:
 # projects.yaml loading
 # ---------------------------------------------------------------------------
 
+
 def test_load_projects_basic(tmp_path: Path) -> None:
     import yaml
     from taskqueue.config import load_projects
+
     reg = tmp_path / "projects.yaml"
-    reg.write_text(yaml.dump({
-        "projects": {
-            "pokerbot": {"root": str(tmp_path / "pokerbot")},
-            "pimc":     {"root": str(tmp_path / "pimc"), "queue_dir": "queue"},
-        }
-    }))
+    reg.write_text(
+        yaml.dump(
+            {
+                "projects": {
+                    "pokerbot": {"root": str(tmp_path / "pokerbot")},
+                    "pimc": {"root": str(tmp_path / "pimc"), "queue_dir": "queue"},
+                }
+            }
+        )
+    )
     projects = load_projects(tmp_path)
     assert set(projects) == {"pokerbot", "pimc"}
     assert projects["pokerbot"].queue_dir == tmp_path / "pokerbot" / "experiments" / "operator_queue"
@@ -482,4 +524,5 @@ def test_load_projects_basic(tmp_path: Path) -> None:
 
 def test_load_projects_missing_file(tmp_path: Path) -> None:
     from taskqueue.config import load_projects
+
     assert load_projects(tmp_path) == {}

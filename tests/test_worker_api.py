@@ -17,9 +17,21 @@ from taskqueue.worker_api import claim_next_remote_task
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _insert_task(db, project="proj", task_id="T1", status="queued", dispatch="remote",
-                 priority=50, resources=None, depends_on=None, exclusive=False,
-                 exclusive_project=False, max_attempts=0, enabled=1):
+
+def _insert_task(
+    db,
+    project="proj",
+    task_id="T1",
+    status="queued",
+    dispatch="remote",
+    priority=50,
+    resources=None,
+    depends_on=None,
+    exclusive=False,
+    exclusive_project=False,
+    max_attempts=0,
+    enabled=1,
+):
     now = datetime.now(UTC).isoformat()
     res = json.dumps(resources or {"cpu_cores": 1, "ram_gib": 0.0, "gpu_vram_gib": 0.0})
     deps = json.dumps(depends_on or [])
@@ -28,26 +40,37 @@ def _insert_task(db, project="proj", task_id="T1", status="queued", dispatch="re
         "resources, depends_on, exclusive, exclusive_project, max_attempts, enabled, "
         "enqueued_at, updated_at) "
         "VALUES (?, ?, ?, 'true', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (project, task_id, status, dispatch, priority, res, deps,
-         int(exclusive), int(exclusive_project), max_attempts, enabled, now, now),
+        (
+            project,
+            task_id,
+            status,
+            dispatch,
+            priority,
+            res,
+            deps,
+            int(exclusive),
+            int(exclusive_project),
+            max_attempts,
+            enabled,
+            now,
+            now,
+        ),
     )
     db.commit()
 
 
-def _insert_worker(db, worker_id="w1", projects=None, ram_gib=16.0,
-                   cpu_cores=8, gpu_vram_gib=0.0, os="windows", arch="x86_64"):
+def _insert_worker(
+    db, worker_id="w1", projects=None, ram_gib=16.0, cpu_cores=8, gpu_vram_gib=0.0, os="windows", arch="x86_64"
+):
     now = datetime.now(UTC).isoformat()
     db.execute(
         "INSERT INTO workers (worker_id, os, arch, ram_gib, cpu_cores, gpu_vram_gib, "
         "tags, projects, status, last_seen) "
         "VALUES (?, ?, ?, ?, ?, ?, '[]', ?, 'online', ?)",
-        (worker_id, os, arch, ram_gib, cpu_cores, gpu_vram_gib,
-         json.dumps(projects or ["proj"]), now),
+        (worker_id, os, arch, ram_gib, cpu_cores, gpu_vram_gib, json.dumps(projects or ["proj"]), now),
     )
     db.commit()
-    return db.execute(
-        "SELECT * FROM workers WHERE worker_id = ?", (worker_id,)
-    ).fetchone()
+    return db.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
 
 
 def _claim(db_path, worker_row, projects=None):
@@ -58,6 +81,7 @@ def _claim(db_path, worker_row, projects=None):
 # ---------------------------------------------------------------------------
 # Basic claim
 # ---------------------------------------------------------------------------
+
 
 def test_claim_returns_task(tmp_path: Path):
     db_path = tmp_path / "q.db"
@@ -111,6 +135,7 @@ def test_claim_skips_wrong_project(tmp_path: Path):
 # Resource / limit gates
 # ---------------------------------------------------------------------------
 
+
 def test_claim_respects_global_max_running(tmp_path: Path):
     db_path = tmp_path / "q.db"
     db = open_db(db_path)
@@ -137,6 +162,7 @@ def test_claim_honours_ram_requirement(tmp_path: Path):
 # Dependency gate
 # ---------------------------------------------------------------------------
 
+
 def test_claim_blocks_on_unmet_dep(tmp_path: Path):
     db_path = tmp_path / "q.db"
     db = open_db(db_path)
@@ -162,6 +188,7 @@ def test_claim_allows_met_dep(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # Exclusive lock
 # ---------------------------------------------------------------------------
+
 
 def test_claim_blocks_exclusive_when_running(tmp_path: Path):
     db_path = tmp_path / "q.db"
@@ -218,6 +245,7 @@ def test_claim_allows_other_project_when_exclusive_project_running(tmp_path: Pat
 # ---------------------------------------------------------------------------
 # use_resume flag
 # ---------------------------------------------------------------------------
+
 
 def test_claim_sets_use_resume_for_interrupted(tmp_path: Path):
     db_path = tmp_path / "q.db"

@@ -1,4 +1,5 @@
 """Behavior tests for the ES modules under static/js/ (run through Node; skipped when Node is absent)."""
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,9 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 
 
 def _run(code: str):
-    r = subprocess.run([NODE, "--input-type=module", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30)
+    r = subprocess.run(
+        [NODE, "--input-type=module", "-e", code], capture_output=True, text=True, encoding="utf-8", timeout=30
+    )
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
@@ -24,8 +27,11 @@ def _fmt_import(names: str) -> str:
 
 
 def test_esc_and_jsq_are_attribute_safe():
-    out = _run(_fmt_import("escHtml, jsq, taskKey") + """
-    console.log(JSON.stringify({ e: escHtml('<a href="x">&'), j: jsq("a'b\\"c"), k: taskKey('p', 't') }));""")
+    out = _run(
+        _fmt_import("escHtml, jsq, taskKey")
+        + """
+    console.log(JSON.stringify({ e: escHtml('<a href="x">&'), j: jsq("a'b\\"c"), k: taskKey('p', 't') }));"""
+    )
     assert out["e"] == "&lt;a href=&quot;x&quot;&gt;&amp;"
     assert out["k"] == "p/t"
     # jsq output sits inside a double-quoted attribute: no raw quote may survive, and it decodes to the input
@@ -34,17 +40,23 @@ def test_esc_and_jsq_are_attribute_safe():
 
 
 def test_dur_and_fmt():
-    out = _run(_fmt_import("dur, fmt") + """
-    console.log(JSON.stringify([dur(null), dur(-1), dur(5), dur(65), dur(3725), fmt(''), fmt('not a date')]));""")
+    out = _run(
+        _fmt_import("dur, fmt")
+        + """
+    console.log(JSON.stringify([dur(null), dur(-1), dur(5), dur(65), dur(3725), fmt(''), fmt('not a date')]));"""
+    )
     assert out == ["—", "—", "5s", "1m05s", "1h02m", "—", "not a date"]
 
 
 def test_append_log_keeps_bounded_tail():
-    out = _run(_fmt_import("appendLog, LOG_CAP_CHARS") + """
+    out = _run(
+        _fmt_import("appendLog, LOG_CAP_CHARS")
+        + """
     const st = { content: '' };
     for (let i = 0; i < 20000; i++) appendLog(st, 'line-' + i + ' ' + 'x'.repeat(40));
     console.log(JSON.stringify({ len: st.content.length, cap: LOG_CAP_CHARS,
-      first: st.content.split('\\n')[0].startsWith('line-'), last: st.content.trimEnd().split('\\n').pop() }));""")
+      first: st.content.split('\\n')[0].startsWith('line-'), last: st.content.trimEnd().split('\\n').pop() }));"""
+    )
     assert out["len"] <= out["cap"]
     assert out["first"] and out["last"].startswith("line-19999 ")
 
@@ -72,28 +84,135 @@ def test_fetch_json_returns_null_on_failure_and_adds_auth():
     assert all(auth == "Bearer tok" for _, auth in out["seen"])
 
 
-SHIMS = ("escHtml", "jsq", "taskKey", "qrowId", "domIdPart", "fmt", "dur", "_appendLog", "_LOG_CAP_CHARS",
-         "tqEventSource", "_fetchJson", "_fetchJsonEtag", "tqLogLineHtml", "trackLogSse", "LOG_SSE_MAX",
-         "_applyLogSearch", "searchLog", "logSearchNav", "openLogStream", "logTailText", "tqAct", "TQ_THIS", "TQ_EVENT",
-         "loadAudit", "tqRollbackConfig", "tqExportAudit", "loadApiTokens", "tqCreateToken", "tqRevokeToken",
-         "loadSchedules", "tqSelectSchedule", "tqNewSchedule", "tqSchedRun", "tqSchedPause",
-         "loadAlerts", "tqPatchSystemAlert", "tqRequestNotifPermission",
-         "loadUsage", "setUsageRange", "setUsageType", "tqToggleUsageSeries",
-         "toggleHistoryLog", "toggleHistoryCardLog", "tailHistoryCardLog", "tailHistoryLog", "onHistorySearchInput",
-         "clearHistorySearch", "setHistoryFilter", "sortHistory", "loadMoreHistory", "renderHistory",
-         "toggleHistoryPageHist", "toggleHistoryCardHist",
-         "toggleQueueLog", "tailQueueLog", "onQueueSearchInput", "clearQueueSearch", "setQueueFilter", "setQueueProject",
-         "sortQueue", "renderQueue", "goQueuePage", "gotoQueueDep", "gotoQueueProject", "_flashQueueRow",
-         "toggleDashLog", "refreshDashLog", "tailDashLog", "toggleDashHist", "renderDashboard", "renderWorkers",
-         "loadDeps", "renderDag", "showDagTip", "hideDagTip", "dagNodeClick", "hideDagCtxMenu", "showDagCtxMenu", "dagCtxStop",
-         "dagCtxRetry", "dagCtxForce", "dagCtxMarkProcessed", "dagCtxEnable", "tqDagZoomBy", "tqDagScaleFrom", "_dagResetView",
-         "loadGroups", "groupStop", "groupRetry", "_populateGroupChips", "_updateGroupChips", "_toggleGroupBar", "setGroupFilter",
-         "viewGroupInQueue",
-         "loadResources", "loadHardware", "renderClusterUsage", "renderResourceBars", "renderHardware", "saveResLimits",
-         "toggleResPanel",
-         "_closeGenModal", "openModal", "openAlert", "openConfirm", "openYamlModal", "closeYamlModal", "yamlModalToggleEdit", "yamlModalSave", "getResourceModalRunId", "_resourceModalBodyHtml", "showResourceModal", "compareRun", "closeResourceModal", "yamlModalCopy", "showToast", "showAnchorToast",
-         "toggleNotifPanel", "_notifMarkRead", "tqAlertDetailHtml", "tqToggleAlertDetail", "_openAlertsTab", "_fetchNotifications", "_renderNotifPanel",
-         "tqSetNotifTypeFilter", "tqSetNotifProjectFilter", "tqRenderFilterSummary")
+SHIMS = (
+    "escHtml",
+    "jsq",
+    "taskKey",
+    "qrowId",
+    "domIdPart",
+    "fmt",
+    "dur",
+    "_appendLog",
+    "_LOG_CAP_CHARS",
+    "tqEventSource",
+    "_fetchJson",
+    "_fetchJsonEtag",
+    "tqLogLineHtml",
+    "trackLogSse",
+    "LOG_SSE_MAX",
+    "_applyLogSearch",
+    "searchLog",
+    "logSearchNav",
+    "openLogStream",
+    "logTailText",
+    "tqAct",
+    "TQ_THIS",
+    "TQ_EVENT",
+    "loadAudit",
+    "tqRollbackConfig",
+    "tqExportAudit",
+    "loadApiTokens",
+    "tqCreateToken",
+    "tqRevokeToken",
+    "loadSchedules",
+    "tqSelectSchedule",
+    "tqNewSchedule",
+    "tqSchedRun",
+    "tqSchedPause",
+    "loadAlerts",
+    "tqPatchSystemAlert",
+    "tqRequestNotifPermission",
+    "loadUsage",
+    "setUsageRange",
+    "setUsageType",
+    "tqToggleUsageSeries",
+    "toggleHistoryLog",
+    "toggleHistoryCardLog",
+    "tailHistoryCardLog",
+    "tailHistoryLog",
+    "onHistorySearchInput",
+    "clearHistorySearch",
+    "setHistoryFilter",
+    "sortHistory",
+    "loadMoreHistory",
+    "renderHistory",
+    "toggleHistoryPageHist",
+    "toggleHistoryCardHist",
+    "toggleQueueLog",
+    "tailQueueLog",
+    "onQueueSearchInput",
+    "clearQueueSearch",
+    "setQueueFilter",
+    "setQueueProject",
+    "sortQueue",
+    "renderQueue",
+    "goQueuePage",
+    "gotoQueueDep",
+    "gotoQueueProject",
+    "_flashQueueRow",
+    "toggleDashLog",
+    "refreshDashLog",
+    "tailDashLog",
+    "toggleDashHist",
+    "renderDashboard",
+    "renderWorkers",
+    "loadDeps",
+    "renderDag",
+    "showDagTip",
+    "hideDagTip",
+    "dagNodeClick",
+    "hideDagCtxMenu",
+    "showDagCtxMenu",
+    "dagCtxStop",
+    "dagCtxRetry",
+    "dagCtxForce",
+    "dagCtxMarkProcessed",
+    "dagCtxEnable",
+    "tqDagZoomBy",
+    "tqDagScaleFrom",
+    "_dagResetView",
+    "loadGroups",
+    "groupStop",
+    "groupRetry",
+    "_populateGroupChips",
+    "_updateGroupChips",
+    "_toggleGroupBar",
+    "setGroupFilter",
+    "viewGroupInQueue",
+    "loadResources",
+    "loadHardware",
+    "renderClusterUsage",
+    "renderResourceBars",
+    "renderHardware",
+    "saveResLimits",
+    "toggleResPanel",
+    "_closeGenModal",
+    "openModal",
+    "openAlert",
+    "openConfirm",
+    "openYamlModal",
+    "closeYamlModal",
+    "yamlModalToggleEdit",
+    "yamlModalSave",
+    "getResourceModalRunId",
+    "_resourceModalBodyHtml",
+    "showResourceModal",
+    "compareRun",
+    "closeResourceModal",
+    "yamlModalCopy",
+    "showToast",
+    "showAnchorToast",
+    "toggleNotifPanel",
+    "_notifMarkRead",
+    "tqAlertDetailHtml",
+    "tqToggleAlertDetail",
+    "_openAlertsTab",
+    "_fetchNotifications",
+    "_renderNotifPanel",
+    "tqSetNotifTypeFilter",
+    "tqSetNotifProjectFilter",
+    "tqRenderFilterSummary",
+)
 
 
 def test_views_avoid_window_shim_lookups():
@@ -136,12 +255,12 @@ def test_main_exposes_every_shim_on_window():
     assert not missing, missing
 
 
-def test_app_js_does_not_redefine_module_helpers():
-    import re
-
+def test_app_js_is_deprecated_shim():
+    """F-207: classic app.js boot moved to main.js; leftover file must stay a no-op shim."""
     app = (JS.parent / "app.js").read_text(encoding="utf-8")
-    for name in SHIMS:
-        assert not re.search(rf"^(?:async )?function {name}\b|^(?:const|let|var) {name}\b", app, re.M), name
+    assert "tqBootApp" not in app or app.strip().startswith("//")
+    assert "function " not in app
+    assert "const S" not in app
 
 
 def _logview_import(names: str) -> str:
@@ -149,15 +268,20 @@ def _logview_import(names: str) -> str:
 
 
 def test_log_line_html_strips_ansi_escapes_and_classes_level():
-    out = _run(_logview_import("logLineHtml") + r"""
-    console.log(JSON.stringify([logLineHtml('[31m[ERROR] <b>boom</b>[0m'), logLineHtml('plain'), logLineHtml('[WARN] x')]));""")
+    out = _run(
+        _logview_import("logLineHtml")
+        + r"""
+    console.log(JSON.stringify([logLineHtml('[31m[ERROR] <b>boom</b>[0m'), logLineHtml('plain'), logLineHtml('[WARN] x')]));"""
+    )
     assert out[0] == '<div class="tq-log-line log-error">[ERROR] &lt;b&gt;boom&lt;/b&gt;</div>'
     assert out[1] == '<div class="tq-log-line">plain</div>'
     assert "log-warn" in out[2]
 
 
 def test_track_log_sse_replaces_same_run_and_evicts_oldest_across_maps():
-    out = _run(_logview_import("trackLogSse, LOG_SSE_MAX") + r"""
+    out = _run(
+        _logview_import("trackLogSse, LOG_SSE_MAX")
+        + r"""
     const closed = [];
     const mk = id => ({ close() { closed.push(id); } });
     const a = {}, b = {};
@@ -166,7 +290,8 @@ def test_track_log_sse_replaces_same_run_and_evicts_oldest_across_maps():
     trackLogSse([a, b], b, 2, mk('b2'));
     trackLogSse([a, b], a, 3, mk('a3'));
     trackLogSse([a, b], b, 4, mk('b4'));        // over cap: oldest (run 1) evicted
-    console.log(JSON.stringify({ closed, a: Object.keys(a), b: Object.keys(b), max: LOG_SSE_MAX }));""")
+    console.log(JSON.stringify({ closed, a: Object.keys(a), b: Object.keys(b), max: LOG_SSE_MAX }));"""
+    )
     assert out["max"] == 3
     assert out["closed"] == ["a1", "a1b"]
     assert sorted(out["a"] + out["b"]) == ["2", "3", "4"]
@@ -282,9 +407,9 @@ def test_actions_dispatch_runs_calls_with_markers_flags_and_stops():
     globalThis.window = globalThis;
     globalThis.localStorage = {{ getItem: () => null }};
     const log = [];
-    window.rec = (...a) => {{ log.push(a.map(x => x && x.id ? '#' + x.id : x && x.type ? 'ev:' + x.type : x)); }};
-    window.ret = () => false;
-    window.boom = () => {{ throw new Error('x'); }};
+    const rec = (...a) => {{ log.push(a.map(x => x && x.id ? '#' + x.id : x && x.type ? 'ev:' + x.type : x)); }};
+    const ret = () => false;
+    const boom = () => {{ throw new Error('x'); }};
     const mk = (id, attrs, parent) => {{
       const el = {{ id, attrs, parentElement: parent || null,
         hasAttribute(n) {{ return n in attrs; }}, getAttribute(n) {{ return attrs[n] ?? null; }},
@@ -292,6 +417,8 @@ def test_actions_dispatch_runs_calls_with_markers_flags_and_stops():
       return el;
     }};
     const m = await import({json.dumps(act)});
+    // F-207: registry only — no window[fn] fallback.
+    m.registerActions({{ rec, ret, boom }});
     const ev = (type, target, extra = {{}}) => ({{ type, target, defaultPrevented: false, stopped: false,
       preventDefault() {{ this.defaultPrevented = true; }}, stopImmediatePropagation() {{ this.stopped = true; }}, ...extra }});
     const outer = mk('o', {{ 'data-click': JSON.stringify([['rec', 'outer']]) }});
@@ -315,8 +442,11 @@ def test_actions_dispatch_runs_calls_with_markers_flags_and_stops():
 
 
 def test_esc_html_escapes_single_quote_and_fmt_escapes_invalid():
-    out = _run(_fmt_import("escHtml, fmt") + """
-    console.log(JSON.stringify({ e: escHtml("a'b"), f: fmt('<img src=x>') }));""")
+    out = _run(
+        _fmt_import("escHtml, fmt")
+        + """
+    console.log(JSON.stringify({ e: escHtml("a'b"), f: fmt('<img src=x>') }));"""
+    )
     assert out["e"] == "a&#39;b"
     assert out["f"] == "&lt;img src=x&gt;"
 
@@ -324,11 +454,13 @@ def test_esc_html_escapes_single_quote_and_fmt_escapes_invalid():
 def test_latest_drops_stale_responses():
     # api.js installs a fetch wrapper at import time; give Node the globals it touches.
     api = json.dumps((JS / "core" / "api.js").as_uri())
-    out = _run("globalThis.window = globalThis; globalThis.localStorage = { getItem() { return null; } };"
-               "globalThis.fetch = () => {}; globalThis.Headers = Map;"
-               f"const {{ latest }} = await import({api});"
-               "const a = latest('k'); const b = latest('k'); const c = latest('other');"
-               "console.log(JSON.stringify([a(), b(), c()]));")
+    out = _run(
+        "globalThis.window = globalThis; globalThis.localStorage = { getItem() { return null; } };"
+        "globalThis.fetch = () => {}; globalThis.Headers = Map;"
+        f"const {{ latest }} = await import({api});"
+        "const a = latest('k'); const b = latest('k'); const c = latest('other');"
+        "console.log(JSON.stringify([a(), b(), c()]));"
+    )
     assert out == [False, True, True]
 
 
@@ -355,8 +487,11 @@ def test_proj_color_reads_status_map_with_grey_fallback():
 
 
 def test_ansi_to_html_colours_keywords_per_line():
-    out = _run(_logview_import("ansiToHtml") + r"""
-    console.log(JSON.stringify(ansiToHtml('ok line\nERROR bad\nfine')));""")
+    out = _run(
+        _logview_import("ansiToHtml")
+        + r"""
+    console.log(JSON.stringify(ansiToHtml('ok line\nERROR bad\nfine')));"""
+    )
     assert out == 'ok line\n<span style="color:#e74c3c">ERROR bad</span>\nfine'
 
 
@@ -373,14 +508,17 @@ def test_i18n_t_does_not_expand_replacement_patterns():
 
 
 def test_a11y_annotates_dialogs_chips_and_sort_headers():
-    out = _run("""
+    out = _run(
+        """
     import { annotateDialogs, syncStateAttrs } from %s;
     const mk = (cls, attrs = {}) => { const a = {}; const set = new Set(cls);
       return { classList: { contains: c => set.has(c) }, getAttribute: k => a[k] ?? null, setAttribute: (k, v) => { a[k] = v; }, a, querySelector: () => ({ id: 'ttl' }) }; };
     const modal = mk(['modal']), on = mk(['filter-chip', 'active']), off = mk(['filter-chip']), asc = mk(['sortable', 'sort-asc']), none = mk(['sortable']);
     const root = { querySelectorAll: sel => sel.startsWith('.modal-bg') ? [modal] : sel === '.filter-chip' ? [on, off] : [asc, none] };
     annotateDialogs(root); syncStateAttrs(root);
-    console.log(JSON.stringify([modal.a, on.a, off.a, asc.a, none.a]));""" % json.dumps((JS / "util" / "a11y.js").as_uri()))
+    console.log(JSON.stringify([modal.a, on.a, off.a, asc.a, none.a]));"""
+        % json.dumps((JS / "util" / "a11y.js").as_uri())
+    )
     assert out[0] == {"role": "dialog", "aria-modal": "true", "aria-labelledby": "ttl"}
     assert out[1]["aria-pressed"] == "true" and out[2]["aria-pressed"] == "false"
     assert out[3]["aria-sort"] == "ascending" and out[4]["aria-sort"] == "none"
@@ -388,7 +526,8 @@ def test_a11y_annotates_dialogs_chips_and_sort_headers():
 
 def test_event_source_never_puts_long_lived_token_in_url():
     api = json.dumps((JS / "core" / "api.js").as_uri())
-    out = _run("""
+    out = _run(
+        """
     const urls = [];
     globalThis.window = globalThis;
     globalThis.localStorage = { getItem: () => 'SECRET' };
@@ -398,8 +537,12 @@ def test_event_source_never_puts_long_lived_token_in_url():
     let errs = 0;
     const h = tqEventSource('/api/stream'); h.onerror = () => { errs++; };
     await new Promise(r => setTimeout(r, 50));
-    console.log(JSON.stringify({ urls, errs, rs: h.readyState }));""" % api)
-    assert out["urls"] == [] and out["errs"] == 1 and out["rs"] == 2
+    // Ticket mint failed: no EventSource URL (token never in query). close() stops reconnect timers.
+    h.close();
+    console.log(JSON.stringify({ urls, errs, rs: h.readyState }));"""
+        % api
+    )
+    assert out["urls"] == [] and out["errs"] >= 1 and out["rs"] == 2
 
 
 def test_registered_actions_win_over_window_and_main_registers_exports():

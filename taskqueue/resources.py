@@ -165,15 +165,11 @@ def probe_gpus(*, timeout: float = 5.0) -> GpuProbeResult:
         except (IndexError, ValueError):
             pass
         try:
-            entry["power_draw_w"] = (
-                float(parts[7]) if parts[7] not in ("[N/A]", "N/A", "") else None
-            )
+            entry["power_draw_w"] = float(parts[7]) if parts[7] not in ("[N/A]", "N/A", "") else None
         except (IndexError, ValueError):
             pass
         try:
-            entry["power_limit_w"] = (
-                float(parts[8]) if parts[8] not in ("[N/A]", "N/A", "") else None
-            )
+            entry["power_limit_w"] = float(parts[8]) if parts[8] not in ("[N/A]", "N/A", "") else None
         except (IndexError, ValueError):
             pass
         gpus.append(entry)
@@ -291,10 +287,7 @@ def attributed_gpu_pids(
             continue
         if pid in seen:
             continue
-        hay = " ".join(
-            str(proc.get(k) or "").lower()
-            for k in ("name", "cmdline_short", "smi_name")
-        )
+        hay = " ".join(str(proc.get(k) or "").lower() for k in ("name", "cmdline_short", "smi_name"))
         if pid in tree or any(h in hay for h in hints_l):
             seen.add(pid)
             out.append(proc)
@@ -447,14 +440,16 @@ def probe_gpu_compute_apps(*, timeout: float = 5.0) -> GpuProcessProbe:
         meta = _gpu_proc_meta(pid)
         base = smi_name.replace("/", "\\").rsplit("\\", 1)[-1] if smi_name else ""
         name = meta["name"] or base or smi_name or f"pid:{pid}"
-        rows.append({
-            "pid": pid,
-            "name": name,
-            "smi_name": smi_name,
-            "cmdline_short": meta["cmdline_short"] or smi_name or name,
-            "vram_gib": round(used_mib / 1024.0, 3) if not vram_unknown else 0.0,
-            "vram_unknown": vram_unknown,
-        })
+        rows.append(
+            {
+                "pid": pid,
+                "name": name,
+                "smi_name": smi_name,
+                "cmdline_short": meta["cmdline_short"] or smi_name or name,
+                "vram_gib": round(used_mib / 1024.0, 3) if not vram_unknown else 0.0,
+                "vram_unknown": vram_unknown,
+            }
+        )
     rows.sort(key=lambda r: r["vram_gib"], reverse=True)
     return GpuProcessProbe(processes=rows, ok=True)
 
@@ -529,9 +524,7 @@ def apply_gpu_last_good(
     if last_good and last_good.get("gpus"):
         age = now - float(last_good.get("seen_at") or now)
         if age < empty_grace_sec:
-            live["gpu_probe_error"] = live.get("gpu_probe_error") or (
-                "nvidia-smi reported 0 devices"
-            )
+            live["gpu_probe_error"] = live.get("gpu_probe_error") or ("nvidia-smi reported 0 devices")
             _overlay(last_good)
             return live, last_good, True
         live["gpu_probe_stale"] = False
@@ -597,8 +590,8 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
     cpu_count = psutil.cpu_count(logical=True) or 1
     cpu_phys = psutil.cpu_count(logical=False) or cpu_count
     vm = psutil.virtual_memory()
-    ram_total_gib = vm.total / (1024 ** 3)
-    ram_used_gib = vm.used / (1024 ** 3)
+    ram_total_gib = vm.total / (1024**3)
+    ram_used_gib = vm.used / (1024**3)
     probe = probe_gpus()
     gpus = probe.gpus
     total_vram = round(sum(g.get("vram_gib", 0.0) for g in gpus), 1)
@@ -607,9 +600,11 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
     cpu_model: str | None = None
     try:
         import platform as _platform
+
         cpu_model = _platform.processor() or None
         if not cpu_model:
             import cpuinfo as _ci  # type: ignore[import]
+
             cpu_model = _ci.get_cpu_info().get("brand_raw")
     except Exception:
         pass
@@ -629,15 +624,17 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
         for part in psutil.disk_partitions(all=False):
             try:
                 usage = psutil.disk_usage(part.mountpoint)
-                disks.append({
-                    "mountpoint": part.mountpoint,
-                    "device": part.device,
-                    "fstype": part.fstype,
-                    "total_gib": round(usage.total / (1024 ** 3), 1),
-                    "used_gib": round(usage.used / (1024 ** 3), 1),
-                    "free_gib": round(usage.free / (1024 ** 3), 1),
-                    "pct_used": round(usage.percent, 1),
-                })
+                disks.append(
+                    {
+                        "mountpoint": part.mountpoint,
+                        "device": part.device,
+                        "fstype": part.fstype,
+                        "total_gib": round(usage.total / (1024**3), 1),
+                        "used_gib": round(usage.used / (1024**3), 1),
+                        "free_gib": round(usage.free / (1024**3), 1),
+                        "pct_used": round(usage.percent, 1),
+                    }
+                )
             except Exception:
                 pass
     except Exception:
@@ -647,6 +644,7 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
     os_info: dict[str, Any] = {}
     try:
         import platform as _plat
+
         os_info = {
             "system": _plat.system(),
             "release": _plat.release(),
@@ -664,7 +662,7 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
         "cpu_freq_mhz": cpu_freq_mhz,
         "ram_total_gib": round(ram_total_gib, 1),
         "ram_used_gib": round(ram_used_gib, 1),
-        "ram_available_gib": round(vm.available / (1024 ** 3), 1),
+        "ram_available_gib": round(vm.available / (1024**3), 1),
         "gpu_name": gpus[0]["name"] if gpus else None,
         "gpu_vram_total_gib": total_vram,
         "gpus": gpus,
@@ -679,9 +677,7 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
     }
     if apply_last_good:
         global _gpu_last_good
-        live, _gpu_last_good, _unhealthy = apply_gpu_last_good(
-            live, _gpu_last_good, now=time.monotonic()
-        )
+        live, _gpu_last_good, _unhealthy = apply_gpu_last_good(live, _gpu_last_good, now=time.monotonic())
         live["gpu_probe_unhealthy"] = _unhealthy
     else:
         live["gpu_probe_unhealthy"] = not probe.ok
@@ -698,13 +694,14 @@ def ram_used_gib() -> float:
     ResourceBudget.measurement_failed.
     """
     try:
-        return psutil.virtual_memory().used / (1024 ** 3)
+        return psutil.virtual_memory().used / (1024**3)
     except Exception as exc:  # pragma: no cover - platform dependent
         raise RuntimeError(f"cannot read host RAM: {exc}") from exc
 
 
-def top_ram_consumers(exclude_pids: set[int] | None = None, n: int = 8, *, budget_sec: float | None = None,
-                      stats: dict | None = None) -> list[dict[str, Any]]:
+def top_ram_consumers(
+    exclude_pids: set[int] | None = None, n: int = 8, *, budget_sec: float | None = None, stats: dict | None = None
+) -> list[dict[str, Any]]:
     """Return the top-N processes by RSS, excluding tq-owned PIDs.
 
     Used by `tq doctor` to identify stray processes that block admission.
@@ -727,7 +724,7 @@ def top_ram_consumers(exclude_pids: set[int] | None = None, n: int = 8, *, budge
                 info = proc.info
                 if int(info["pid"]) in exclude or not info["memory_info"]:
                     continue
-                rss = info["memory_info"].rss / (1024 ** 3)
+                rss = info["memory_info"].rss / (1024**3)
                 if rss >= 0.1:
                     rows.append((rss, proc))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -797,6 +794,7 @@ def cuda_health(*, check_torch: bool = False) -> dict[str, Any]:
         return result
     try:
         import importlib
+
         torch = importlib.import_module("torch")
         avail = bool(torch.cuda.is_available())
         result["torch_cuda_available"] = avail
@@ -970,9 +968,7 @@ class ResourceBudget:
         self.cpu_ema: float = float(system.get("cpu_used_cores_ema", 0.0))
         self.cpu_declared: float = 0.0
         self.cpu_reserved: float = self.cpu_ema
-        self.gpu_live: float = round(
-            sum(float(g.get("vram_used_gib", 0.0)) for g in self.gpus), 2
-        )
+        self.gpu_live: float = round(sum(float(g.get("vram_used_gib", 0.0)) for g in self.gpus), 2)
         self.gpu_reserved: float = self.gpu_live
         # D10: fail closed. If we cannot measure host RAM we must not assume
         # zero usage — that would admit everything at the worst possible time.
@@ -1028,10 +1024,7 @@ class ResourceBudget:
         # F-137: gate on max(EMA, declared+candidate), not EMA+declared+candidate.
         cpu_need = max(self.cpu_ema, self.cpu_declared + cpu_cores)
         if cpu_need > self.cpu_limit:
-            return False, (
-                f"CPU: need {cpu_need:.1f} cores "
-                f"but limit is {self.cpu_limit:.1f}"
-            )
+            return False, (f"CPU: need {cpu_need:.1f} cores but limit is {self.cpu_limit:.1f}")
         if gpu_vram_gib > 0 and self.gpu_total > 0 and gpu_vram_gib > self.gpu_total:
             return False, (
                 f"GPU: task requests {gpu_vram_gib:.1f} GiB but system total is "
@@ -1046,16 +1039,11 @@ class ResourceBudget:
             if self.gpu_probe_error:
                 extra = f" [{self.gpu_probe_error}"
                 if self.gpu_probe_stale:
-                    extra += (
-                        f"; last_good={self.gpu_total:.1f} GiB "
-                        f"stale={self.gpu_last_good_age_sec:.0f}s"
-                    )
+                    extra += f"; last_good={self.gpu_total:.1f} GiB stale={self.gpu_last_good_age_sec:.0f}s"
                 extra += "]"
             hold = max(0.0, eff_gpu_reserved - self.gpu_live)
             if hold > 0.05:
-                breakdown = (
-                    f"live {self.gpu_live:.1f} + hold {hold:.1f} + est {gpu_vram_gib:.1f}"
-                )
+                breakdown = f"live {self.gpu_live:.1f} + hold {hold:.1f} + est {gpu_vram_gib:.1f}"
             else:
                 breakdown = f"live {self.gpu_live:.1f} + est {gpu_vram_gib:.1f}"
             return False, (
@@ -1064,10 +1052,26 @@ class ResourceBudget:
                 f"but limit is {self.gpu_limit:.1f}{extra}"
             )
         if gpu_vram_gib > 0 and self.device_free:
-            if pack_gpu(
+            # F-200: credit P6 hold onto each candidate device in turn so the
+            # held task can pack onto the device reserve() subtracted from.
+            _packed = pack_gpu(
                 [{"index": i, "vram_gib_free": f} for i, f in self.device_free.items()],
                 gpu_vram_gib,
-            ) is None:
+            )
+            if _packed is None and gpu_credit > 0:
+                for _di, _df in self.device_free.items():
+                    _trial = dict(self.device_free)
+                    _trial[_di] = _df + gpu_credit
+                    if (
+                        pack_gpu(
+                            [{"index": i, "vram_gib_free": f} for i, f in _trial.items()],
+                            gpu_vram_gib,
+                        )
+                        is not None
+                    ):
+                        _packed = _di
+                        break
+            if _packed is None:
                 return False, f"GPU: no device has {gpu_vram_gib:.1f} GiB free"
         # D2: additive host RAM gate. Previously this asked "am I already over?"
         # rather than "will this task put me over?", so admission always
@@ -1081,9 +1085,7 @@ class ResourceBudget:
             # host is somehow using more RAM than it has installed.
             hold = max(0.0, eff_reserved - self.ram_live)
             if hold > 0.05:
-                breakdown = (
-                    f"live {self.ram_live:.1f} + hold {hold:.1f} + est {ram_gib:.1f}"
-                )
+                breakdown = f"live {self.ram_live:.1f} + hold {hold:.1f} + est {ram_gib:.1f}"
             else:
                 breakdown = f"live {self.ram_live:.1f} + est {ram_gib:.1f}"
             return False, (
@@ -1094,9 +1096,7 @@ class ResourceBudget:
             )
         return True, ""
 
-    def antiflap_ram(
-        self, hint_ram_gib: float, last_peak_ram_gib: float
-    ) -> tuple[bool, str]:
+    def antiflap_ram(self, hint_ram_gib: float, last_peak_ram_gib: float) -> tuple[bool, str]:
         """Return (blocked, reason) if starting would likely hit the hard limit again.
 
         Uses live host RSS only — not ``ram_reserved``, which may include P6
@@ -1120,10 +1120,12 @@ class ResourceBudget:
             idx = int(g.get("index", 0))
             total = float(g.get("vram_gib", 0.0))
             free = self.device_free.get(idx, total)
-            out.append({
-                "index": idx,
-                "name": g.get("name"),
-                "vram_gib_total": total,
-                "vram_gib_free": round(free, 2),
-            })
+            out.append(
+                {
+                    "index": idx,
+                    "name": g.get("name"),
+                    "vram_gib_total": total,
+                    "vram_gib_free": round(free, 2),
+                }
+            )
         return out

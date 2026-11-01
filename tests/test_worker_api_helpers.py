@@ -1,4 +1,5 @@
 """worker_api claim helpers: service pre-check, peer nodes, response builder."""
+
 from types import SimpleNamespace
 
 from taskqueue import worker_api
@@ -23,7 +24,8 @@ def test_precheck_services_probes_each_distinct_requirement_once(tmp_path, monke
 
     calls = []
     monkeypatch.setattr(
-        scheduler, "check_services_cached",
+        scheduler,
+        "check_services_cached",
         lambda sv, allow_remote=False, system_info=None: calls.append(sv) or ("down", ""),
     )
     worker_api._QUEUED_SVC_CACHE.pop("k", None)
@@ -35,9 +37,21 @@ def test_precheck_services_probes_each_distinct_requirement_once(tmp_path, monke
 
 def test_claim_response_shape_and_override_dropped():
     resp = worker_api._claim_response(
-        {"project": "p", "task_id": "t", "args": '["--a"]', "args_override": None,
-         "resources": "{}", "requires_paths": "[]"},
-        lambda: {}, "p", 7, "/l.log", True, 60, "tok",
+        {
+            "project": "p",
+            "task_id": "t",
+            "args": '["--a"]',
+            "args_override": None,
+            "resources": "{}",
+            "requires_paths": "[]",
+        },
+        lambda: {},
+        "p",
+        7,
+        "/l.log",
+        True,
+        60,
+        "tok",
     )
     assert resp["run_id"] == 7 and resp["use_resume"] is True
     assert resp["finalize_token"] == "tok" and resp["protocol"] == PROTOCOL_VERSION

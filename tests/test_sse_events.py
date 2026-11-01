@@ -1,4 +1,5 @@
 """Behavior tests for the /api/events stream (snapshot, disconnect cleanup, cap)."""
+
 from __future__ import annotations
 
 import json

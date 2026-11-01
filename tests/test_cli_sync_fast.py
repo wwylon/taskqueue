@@ -64,6 +64,7 @@ def test_second_sync_parses_nothing(tmp_path: Path, monkeypatch) -> None:
         encoding="utf-8",
     )
     import os
+
     os.utime(p, ns=(p.stat().st_atime_ns, p.stat().st_mtime_ns + 5_000_000_000))
     http_request(HandlerClass, "POST", "/api/cli/sync")
     assert seen == ["t2.yaml"]

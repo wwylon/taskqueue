@@ -103,8 +103,7 @@ def test_apply_cap_auto_retry_exhausted(tmp_path: Path) -> None:
     )
     set_task_status(db, "p", "t1", STATUS_INTERRUPTED)
     db.execute(
-        "UPDATE tasks SET last_error_code = ?, cap_auto_retry_count = 2 "
-        "WHERE project = ? AND task_id = ?",
+        "UPDATE tasks SET last_error_code = ?, cap_auto_retry_count = 2 WHERE project = ? AND task_id = ?",
         (tqerr.RUN_CAP, "p", "t1"),
     )
     db.commit()

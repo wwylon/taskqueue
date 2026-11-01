@@ -10,10 +10,16 @@ def _runs(tmp_path):
     seed_queued_task(db, project="p", task_id="t", dispatch="local")
     a = insert_run(db, "p", "t", "l")
     b = insert_run(db, "p", "t", "l")
-    db.execute("UPDATE runs SET started_at='2026-01-01T00:00:00+00:00', finished_at='2026-01-01T00:01:00+00:00',"
-               " status='completed', exit_code=0, peak_ram_gib=4.0 WHERE run_id=?", (a,))
-    db.execute("UPDATE runs SET started_at='2026-01-02T00:00:00+00:00', finished_at='2026-01-02T00:03:00+00:00',"
-               " status='failed', exit_code=1, peak_ram_gib=6.0 WHERE run_id=?", (b,))
+    db.execute(
+        "UPDATE runs SET started_at='2026-01-01T00:00:00+00:00', finished_at='2026-01-01T00:01:00+00:00',"
+        " status='completed', exit_code=0, peak_ram_gib=4.0 WHERE run_id=?",
+        (a,),
+    )
+    db.execute(
+        "UPDATE runs SET started_at='2026-01-02T00:00:00+00:00', finished_at='2026-01-02T00:03:00+00:00',"
+        " status='failed', exit_code=1, peak_ram_gib=6.0 WHERE run_id=?",
+        (b,),
+    )
     db.commit()
     return db, a, b
 

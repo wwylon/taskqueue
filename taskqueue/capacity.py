@@ -69,20 +69,20 @@ def build_capacity(
 
     # S9: sum VRAM declared by local (no worker_id) running tasks
     vram_gib_reserved_local = sum(
-        float(row_resources(row).get("gpu_vram_gib", 0.0))
-        for row in running
-        if not row["worker_id"]
+        float(row_resources(row).get("gpu_vram_gib", 0.0)) for row in running if not row["worker_id"]
     )
 
     gpus = budget.gpus_free_snapshot()
     if not gpus and float(system.get("gpu_vram_total_gib") or 0.0) > 0:
         vram_total = float(system["gpu_vram_total_gib"])
-        gpus = [{
-            "index": 0,
-            "vram_gib_total": vram_total,
-            "vram_gib_free": max(0.0, round(budget.gpu_limit - budget.gpu_reserved, 2)),
-            "vram_gib_reserved": round(vram_gib_reserved_local, 2),  # S9
-        }]
+        gpus = [
+            {
+                "index": 0,
+                "vram_gib_total": vram_total,
+                "vram_gib_free": max(0.0, round(budget.gpu_limit - budget.gpu_reserved, 2)),
+                "vram_gib_reserved": round(vram_gib_reserved_local, 2),  # S9
+            }
+        ]
     else:
         # S9: annotate existing GPU entries with vram_gib_reserved
         for g in gpus:
@@ -140,33 +140,39 @@ def build_capacity(
             for dev in gpus_devices:
                 dev_total = float(dev.get("vram_gib", 0.0))
                 dev_used = float(dev.get("vram_used_gib", 0.0))
-                worker_gpus.append({
-                    "index": int(dev.get("index", 0)),
-                    "name": dev.get("name"),
-                    "vram_gib_total": dev_total,
-                    "vram_gib_free": max(0.0, round(dev_total - dev_used, 2)),
-                })
+                worker_gpus.append(
+                    {
+                        "index": int(dev.get("index", 0)),
+                        "name": dev.get("name"),
+                        "vram_gib_total": dev_total,
+                        "vram_gib_free": max(0.0, round(dev_total - dev_used, 2)),
+                    }
+                )
         elif vram_total and online:
-            worker_gpus = [{
-                "index": 0,
-                "vram_gib_total": vram_total,
-                "vram_gib_free": max(0.0, round(vram_total - vram_used, 2)),
-            }]
+            worker_gpus = [
+                {
+                    "index": 0,
+                    "vram_gib_total": vram_total,
+                    "vram_gib_free": max(0.0, round(vram_total - vram_used, 2)),
+                }
+            ]
         else:
             worker_gpus = []
-        workers_out.append({
-            "worker_id": w["worker_id"],
-            "status": w["status"],
-            # Finer-grained than `status` (online/offline, used for dispatch
-            # gating): "unreachable" means a heartbeat or two was missed but
-            # the worker isn't past the stored-offline threshold yet -- a
-            # plausible network blip, not yet a confirmed-dead worker.
-            "health": worker_health(w["last_seen"], heartbeat_sec=heartbeat_sec),
-            "cpu_cores_total": cpu_total,
-            "cpu_cores_free": max(0.0, round(cpu_total - cpu_used, 2)) if online else 0,
-            "ram_gib_free": max(0.0, round(ram_total - ram_used, 2)) if online else 0,
-            "gpus": worker_gpus,
-        })
+        workers_out.append(
+            {
+                "worker_id": w["worker_id"],
+                "status": w["status"],
+                # Finer-grained than `status` (online/offline, used for dispatch
+                # gating): "unreachable" means a heartbeat or two was missed but
+                # the worker isn't past the stored-offline threshold yet -- a
+                # plausible network blip, not yet a confirmed-dead worker.
+                "health": worker_health(w["last_seen"], heartbeat_sec=heartbeat_sec),
+                "cpu_cores_total": cpu_total,
+                "cpu_cores_free": max(0.0, round(cpu_total - cpu_used, 2)) if online else 0,
+                "ram_gib_free": max(0.0, round(ram_total - ram_used, 2)) if online else 0,
+                "gpus": worker_gpus,
+            }
+        )
 
     return {
         "protocol": PROTOCOL_VERSION,

@@ -10,10 +10,13 @@ from tests.helpers.master_worker import http_request, make_handler_env
 def test_ticket_roundtrip_and_expiry(monkeypatch):
     t = sse_ticket.issue_ticket("tok")
     assert sse_ticket.redeem_ticket(t) == "tok"
+    # F-151: single-use — second redeem fails even within TTL.
+    assert sse_ticket.redeem_ticket(t) is None
     assert sse_ticket.redeem_ticket("nope") is None
+    t2 = sse_ticket.issue_ticket("tok2")
     real = sse_ticket.time.monotonic
     monkeypatch.setattr(sse_ticket.time, "monotonic", lambda: real() + sse_ticket.TICKET_TTL_SEC + 1)
-    assert sse_ticket.redeem_ticket(t) is None
+    assert sse_ticket.redeem_ticket(t2) is None
 
 
 def test_stream_paths_only():

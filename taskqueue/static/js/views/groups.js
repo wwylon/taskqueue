@@ -3,14 +3,17 @@
 import { S } from '../core/state.js';
 import { escHtml } from '../util/format.js';
 import { projStyle } from '../util/projcolor.js';
+import { latest } from '../core/api.js';
 
 export async function loadGroups() {
+  const live = latest('groups');
   const proj = S.selectedProject && S.selectedProject !== 'all' ? S.selectedProject : '';
   const qs = proj ? `?project=${encodeURIComponent(proj)}` : '';
   const el = document.getElementById('groups-content');
   if (!el) return;
   try {
     const data = await fetch('/api/groups' + qs).then(r => r.ok ? r.json() : Promise.resolve({}));
+    if (!live()) return;
     const groups = (data.groups || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     if (!groups.length) { el.innerHTML = `<p style="color:var(--muted)">${i18n.t('groups.noGroups')}</p>`; return; }
     const STATUS_ORDER = ['running','queued','failed','unknown','interrupted','suspended','stopped','cancelled','completed','disabled'];

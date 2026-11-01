@@ -1,4 +1,5 @@
 """/api/usage reports GPU hours used today (UTC) against the project's daily budget."""
+
 from taskqueue.db import open_db
 from taskqueue.web.responses import _get_usage_response
 
@@ -11,9 +12,7 @@ def test_usage_gpu_today_with_budget(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("taskqueue.db.gpu_hours_today", lambda c, p: 2.5 if p == "p" else 0.0)
     out = _get_usage_response(conn, days=7)
-    assert out["gpu_today"] == {
-        "p": {"used_hours": 2.5, "limit_hours": 2.0, "remaining_hours": 0.0}
-    }
+    assert out["gpu_today"] == {"p": {"used_hours": 2.5, "limit_hours": 2.0, "remaining_hours": 0.0}}
     only = _get_usage_response(conn, project="zzz", days=7)
     assert only["gpu_today"] == {}
     conn.close()

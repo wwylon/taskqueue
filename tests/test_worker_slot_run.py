@@ -1,4 +1,5 @@
 """WorkerSlot.run end to end with no reachable master: master-dependent phases degrade, the task runs."""
+
 from __future__ import annotations
 
 import pytest
@@ -20,22 +21,32 @@ def test_slot_runs_task_and_finalizes_without_master(tmp_path: Path, monkeypatch
     (home / "projects.yaml").write_text(f"projects:\n  p:\n    root: {root.as_posix()}\n", encoding="utf-8")
     monkeypatch.setenv("TASKQUEUE_HOME", str(home))
     script = root / "job.py"
-    script.write_text("import os\nprint('(50.0%) half', flush=True)\nprint(os.environ['TQ_PROJECT'])\n", encoding="utf-8")
+    script.write_text(
+        "import os\nprint('(50.0%) half', flush=True)\nprint(os.environ['TQ_PROJECT'])\n", encoding="utf-8"
+    )
 
     finals: list[dict] = []
     chunks: list[str] = []
     slots = {7: {}}
     slot = WorkerSlot(
-        home=home, master_url="http://127.0.0.1:9", worker_id="w1", session_id="s1",
+        home=home,
+        master_url="http://127.0.0.1:9",
+        worker_id="w1",
+        session_id="s1",
         finalize_fn=lambda run_id, **kw: finals.append({"run_id": run_id, **kw}),
         log_chunk_fn=lambda run_id, text: chunks.append(text),
-        slots_lock=threading.Lock(), slots=slots,
+        slots_lock=threading.Lock(),
+        slots=slots,
     )
     resp = {
         "finalize_token": "tok",
         "task": {
-            "project": "p", "task_id": "t", "command": sys.executable, "args": [str(script)],
-            "requires_paths": [], "env": '{"TQ_PROJECT": "hijack"}',
+            "project": "p",
+            "task_id": "t",
+            "command": sys.executable,
+            "args": [str(script)],
+            "requires_paths": [],
+            "env": '{"TQ_PROJECT": "hijack"}',
         },
     }
     sl = {"stop_flag": [False], "control_file": [None], "proc": [None]}

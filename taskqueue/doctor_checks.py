@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 WAL_WARN_BYTES = 512 * 1024 * 1024
-DISK_WARN_BYTES = 2 * 1024 ** 3
-DISK_FAIL_BYTES = 200 * 1024 ** 2
+DISK_WARN_BYTES = 2 * 1024**3
+DISK_FAIL_BYTES = 200 * 1024**2
 
 
 def _check(name: str, level: str, detail: str) -> dict[str, str]:
@@ -38,8 +38,9 @@ def run_checks(home: Path) -> dict[str, Any]:
         checks.append(_check("daemon", "warn", "not running (tq start)"))
     else:
         http_ok = api_request(home, "GET", "/api/status", timeout=3.0) is not None
-        checks.append(_check("daemon", "ok" if http_ok else "fail",
-                             f"pid {pid}, http {'ok' if http_ok else 'not answering'}"))
+        checks.append(
+            _check("daemon", "ok" if http_ok else "fail", f"pid {pid}, http {'ok' if http_ok else 'not answering'}")
+        )
 
     # Database integrity and WAL size (read-only)
     db = db_path(home)
@@ -58,14 +59,13 @@ def run_checks(home: Path) -> dict[str, Any]:
         wal = db.with_name(db.name + "-wal")
         if wal.is_file():
             size = wal.stat().st_size
-            checks.append(_check("wal", "warn" if size > WAL_WARN_BYTES else "ok",
-                                 f"{size / 1024 ** 2:.1f} MiB"))
+            checks.append(_check("wal", "warn" if size > WAL_WARN_BYTES else "ok", f"{size / 1024**2:.1f} MiB"))
 
     # Free disk at the state home
     try:
         free = shutil.disk_usage(home if home.exists() else home.parent).free
         level = "fail" if free < DISK_FAIL_BYTES else "warn" if free < DISK_WARN_BYTES else "ok"
-        checks.append(_check("disk", level, f"{free / 1024 ** 3:.1f} GiB free"))
+        checks.append(_check("disk", level, f"{free / 1024**3:.1f} GiB free"))
     except OSError as exc:
         checks.append(_check("disk", "warn", f"unknown: {exc}"))
 
@@ -73,16 +73,42 @@ def run_checks(home: Path) -> dict[str, Any]:
     try:
         projects = load_projects(home)
         missing = [f"{n}: root {p.root}" for n, p in projects.items() if not Path(p.root).is_dir()]
-        missing += [f"{n}: queue_dir {p.queue_dir}" for n, p in projects.items()
-                    if Path(p.root).is_dir() and not Path(p.queue_dir).is_dir()]
-        checks.append(_check("projects", "warn" if missing else "ok",
-                             "; ".join(missing) if missing else f"{len(projects)} registered"))
+        missing += [
+            f"{n}: queue_dir {p.queue_dir}"
+            for n, p in projects.items()
+            if Path(p.root).is_dir() and not Path(p.queue_dir).is_dir()
+        ]
+        checks.append(
+            _check(
+                "projects",
+                "warn" if missing else "ok",
+                "; ".join(missing) if missing else f"{len(projects)} registered",
+            )
+        )
     except Exception as exc:  # malformed projects.yaml
         checks.append(_check("projects", "fail", f"projects.yaml: {exc}"))
 
     if os.environ.get("TASKQUEUE_HOME") and Path(os.environ["TASKQUEUE_HOME"]) != home:
         checks.append(_check("home", "warn", "TASKQUEUE_HOME differs from the home in use"))
 
-    worst = "fail" if any(c["level"] == "fail" for c in checks) else (
-        "warn" if any(c["level"] == "warn" for c in checks) else "ok")
+    try:
+        from taskqueue.yaml_sync import yaml_cache_stats
+
+        stats = yaml_cache_stats()
+        checks.append(
+            _check(
+                "yaml_cache",
+                "ok",
+                f"{stats['entries']} entries, {stats['bytes']} bytes "
+                f"(budget {stats['max_bytes']} bytes), hits={stats['hits']}, misses={stats['misses']}",
+            )
+        )
+    except Exception as exc:
+        checks.append(_check("yaml_cache", "warn", f"unavailable: {exc}"))
+
+    worst = (
+        "fail"
+        if any(c["level"] == "fail" for c in checks)
+        else ("warn" if any(c["level"] == "warn" for c in checks) else "ok")
+    )
     return {"ok": worst != "fail", "status": worst, "checks": checks, "home": str(home)}

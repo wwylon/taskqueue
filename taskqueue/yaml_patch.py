@@ -8,12 +8,14 @@ from typing import Any
 
 from taskqueue.fsutil import atomic_write_text
 
-ALLOWED_PATCH_KEYS = frozenset({
-    "priority",
-    "enabled",
-    "wall_clock_cap_sec",
-    "max_attempts",
-})
+ALLOWED_PATCH_KEYS = frozenset(
+    {
+        "priority",
+        "enabled",
+        "wall_clock_cap_sec",
+        "max_attempts",
+    }
+)
 
 _INT_KEYS = frozenset({"priority", "wall_clock_cap_sec", "max_attempts"})
 
@@ -45,9 +47,7 @@ def _target_span(text: str, task_id: str | None) -> tuple[int, int]:
         return 0, len(text)
     starts = [0] + [end for _, end in cuts]
     ends = [begin for begin, _ in cuts] + [len(text)]
-    pat = re.compile(
-        rf"^task_id\s*:\s*[\"']?{re.escape(task_id)}[\"']?\s*(#.*)?$", re.MULTILINE
-    )
+    pat = re.compile(rf"^task_id\s*:\s*[\"']?{re.escape(task_id)}[\"']?\s*(#.*)?$", re.MULTILINE)
     for start, end in zip(starts, ends):
         if pat.search(text, start, end):
             return start, end

@@ -50,7 +50,9 @@ def _call(tmp_path, monkeypatch, url, path):
     H, db, _ = make_handler_env(tmp_path)
     rid = _seed(db, url)
     monkeypatch.setattr("taskqueue.data.service_broker.verify_service_token", lambda *a, **k: (True, ""))
-    return http_request(H, "GET", f"/api/service/svc{path}", extra_headers={"X-TQ-Service-Token": "t", "X-TQ-Run-Id": str(rid)})
+    return http_request(
+        H, "GET", f"/api/service/svc{path}", extra_headers={"X-TQ-Service-Token": "t", "X-TQ-Run-Id": str(rid)}
+    )
 
 
 def test_upstream_404_passed_through(tmp_path, monkeypatch, upstream):

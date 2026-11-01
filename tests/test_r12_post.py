@@ -1,4 +1,5 @@
 """Post–Round-12 features: sticky preflight, snapshot allowlist, SSRF pin."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,15 +20,12 @@ def test_sticky_preflight_survives_retry(tmp_path: Path) -> None:
     path = _yaml(tmp_path, "p", "t1")
     upsert_task(db, parse_task_yaml(path, proj))
     db.execute(
-        "UPDATE tasks SET status='failed', last_error_code=?, block_reason=? "
-        "WHERE project='p' AND task_id='t1'",
+        "UPDATE tasks SET status='failed', last_error_code=?, block_reason=? WHERE project='p' AND task_id='t1'",
         (tqerr.RUN_PREFLIGHT, "command missing: /no/such"),
     )
     db.commit()
     assert retry_task(db, "p", "t1")
-    row = db.execute(
-        "SELECT status, last_error_code, block_reason FROM tasks WHERE task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT status, last_error_code, block_reason FROM tasks WHERE task_id='t1'").fetchone()
     assert row["status"] == "queued"
     assert row["last_error_code"] == tqerr.RUN_PREFLIGHT
     assert "missing" in (row["block_reason"] or "")
@@ -40,15 +38,12 @@ def test_retry_clears_non_preflight_error(tmp_path: Path) -> None:
     path = _yaml(tmp_path, "p", "t2")
     upsert_task(db, parse_task_yaml(path, proj))
     db.execute(
-        "UPDATE tasks SET status='failed', last_error_code=?, block_reason=? "
-        "WHERE project='p' AND task_id='t2'",
+        "UPDATE tasks SET status='failed', last_error_code=?, block_reason=? WHERE project='p' AND task_id='t2'",
         ("tq.run.nonzero", "exit 1"),
     )
     db.commit()
     assert retry_task(db, "p", "t2")
-    row = db.execute(
-        "SELECT last_error_code, block_reason FROM tasks WHERE task_id='t2'"
-    ).fetchone()
+    row = db.execute("SELECT last_error_code, block_reason FROM tasks WHERE task_id='t2'").fetchone()
     assert row["last_error_code"] is None
     assert row["block_reason"] is None
     db.close()

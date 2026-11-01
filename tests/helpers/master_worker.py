@@ -169,11 +169,7 @@ def http_request(
         hdrs = dict(extra_headers or {})
 
     content_length = hdrs.get("Content-Length", str(len(body_bytes)))
-    headers_raw = (
-        f"{method} {path} HTTP/1.1\r\n"
-        f"Host: localhost:8765\r\n"
-        f"Content-Length: {content_length}\r\n"
-    )
+    headers_raw = f"{method} {path} HTTP/1.1\r\nHost: localhost:8765\r\nContent-Length: {content_length}\r\n"
     for k, v in hdrs.items():
         if k.lower() == "content-length":
             continue

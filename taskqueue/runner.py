@@ -33,13 +33,20 @@ from taskqueue._db_tasks import (
     write_control_action,
 )
 from taskqueue._db_runs import finish_run, update_run_metrics, update_run_progress
-from taskqueue.log_issues import note_progress, record_metric_samples, classify_log_line, empty_log_counts, merge_metrics_payload
+from taskqueue.log_issues import (
+    note_progress,
+    record_metric_samples,
+    classify_log_line,
+    empty_log_counts,
+    merge_metrics_payload,
+)
 from taskqueue.resources import (
     parse_json_list,
     parse_json_obj,
     sidecar_name_hints,
     task_requires_gpu,
 )
+
 _PCT_RE = re.compile(r"\((\d+(?:\.\d+)?)%\)")
 _TQ_METRIC_RE = re.compile(r"^TQ_METRIC\s+(\{.+\})\s*$")
 # W4.6: cpu_count never changes — cache it once at import time.
@@ -77,7 +84,6 @@ def _descendant_pids(root_pid: int, children_map: dict[int, list[int]]) -> list[
         out.append(c)
         stack.extend(children_map.get(c, ()))
     return out
-
 
 
 def _parse_pct(line: str) -> float | None:
@@ -165,12 +171,8 @@ class ActiveRun:
         self._rss_window: collections.deque[tuple[float, float]] = collections.deque(maxlen=60)
         self._rss_leak_warned: bool = False  # avoid flooding the log
         keys = task_row.keys() if hasattr(task_row, "keys") else []
-        self._task_resources = parse_json_obj(
-            task_row["resources"] if "resources" in keys else {}
-        )
-        self._requires_services = parse_json_list(
-            task_row["requires_services"] if "requires_services" in keys else []
-        )
+        self._task_resources = parse_json_obj(task_row["resources"] if "resources" in keys else {})
+        self._requires_services = parse_json_list(task_row["requires_services"] if "requires_services" in keys else [])
         self._gpu_hints = sidecar_name_hints(self._task_resources, self._requires_services)
         self._needs_gpu_probe = task_requires_gpu(self._task_resources) or bool(self._gpu_hints)
         self.log_counts = empty_log_counts()
@@ -354,10 +356,7 @@ class ActiveRun:
                     _task_env = json.loads(_task_env_raw)
                     if isinstance(_task_env, dict):
                         _reserved = {"TQ_HOME", "TQ_PROJECT", "TQ_TASK_ID", "TQ_CONTROL_FILE"}
-                        env.update({
-                            str(k): str(v) for k, v in _task_env.items()
-                            if str(k) not in _reserved
-                        })
+                        env.update({str(k): str(v) for k, v in _task_env.items() if str(k) not in _reserved})
             except (KeyError, IndexError, TypeError, ValueError):
                 pass
         return env
@@ -462,19 +461,23 @@ class ActiveRun:
                 kill_process_tree(self.proc.pid, graceful_sec=1.0)
             except Exception:
                 pass
+        # F-157: one atomic finalize so we never leave run terminal / task running.
         if self.run_id:
-            finish_run(
+            from taskqueue.db import finalize_run_and_task
+
+            finalize_run_and_task(
                 self.conn,
                 self.run_id,
+                self.project,
+                self.task_id,
                 -1,
                 "failed",
                 last_error_code=tqerr.RUN_PREFLIGHT,
                 only_if_running=True,
             )
-        set_task_status(self.conn, self.project, self.task_id, "failed")
-        set_task_error(
-            self.conn, self.project, self.task_id, tqerr.RUN_PREFLIGHT, block_reason=err
-        )
+        else:
+            set_task_status(self.conn, self.project, self.task_id, "failed")
+        set_task_error(self.conn, self.project, self.task_id, tqerr.RUN_PREFLIGHT, block_reason=err)
         if self._log_file is not None:
             try:
                 self._log_file.close()
@@ -539,8 +542,12 @@ class ActiveRun:
         pct = _parse_pct(line)
         if pct is not None:
             if pct != self.progress_pct:
-                self._progress_timing = note_progress(getattr(self, "_progress_timing", None), self.progress_pct, pct, time.time())
+                self._progress_timing = note_progress(
+                    getattr(self, "_progress_timing", None), self.progress_pct, pct, time.time()
+                )
             self.progress_pct = pct
+            # F-162: chatty (N%) lines coalesce to ~2 DB writes/sec (heartbeat still force-flushes).
+            self._write_progress()
         kind = classify_log_line(line)
         if kind:
             self.log_counts[kind] = self.log_counts.get(kind, 0) + 1
@@ -577,8 +584,7 @@ class ActiveRun:
             cap = None
         try:
             self._log_file.write(
-                f"[{time.strftime('%H:%M:%S')}] [queue] wall_clock_cap_sec={cap} "
-                f"reached — terminating\n"
+                f"[{time.strftime('%H:%M:%S')}] [queue] wall_clock_cap_sec={cap} reached — terminating\n"
             )
             self._log_file.flush()
         except Exception:
@@ -704,6 +710,7 @@ class ActiveRun:
             pass
         self._done.set()
         from taskqueue.sched_wake import signal_run_finished
+
         signal_run_finished()
 
     def _terminate(self) -> None:
@@ -736,7 +743,14 @@ class ActiveRun:
     def pid(self) -> int | None:
         return self.proc.pid if self.proc else None
 
-    def finalize(self, status: str, *, last_error_code: str | None = None, stopped_by: str | None = None, only_if_running: bool = False) -> None:
+    def finalize(
+        self,
+        status: str,
+        *,
+        last_error_code: str | None = None,
+        stopped_by: str | None = None,
+        only_if_running: bool = False,
+    ) -> None:
         """Called when the run is done. Writes final DB state."""
         from taskqueue.db import set_task_error
         from taskqueue.notify import emit_task_notify
@@ -748,7 +762,9 @@ class ActiveRun:
             try:
                 _arts_raw = self.task_row["artifacts"] if "artifacts" in self.task_row.keys() else None
                 _artifacts = json_list(_arts_raw)
-                _req = bool(self.task_row["artifacts_required"]) if "artifacts_required" in self.task_row.keys() else False
+                _req = (
+                    bool(self.task_row["artifacts_required"]) if "artifacts_required" in self.task_row.keys() else False
+                )
                 # F-038: resolve artifact paths against project root, not daemon CWD
                 _proj_root = self.cwd
                 missing = [p for p in _artifacts if not (_proj_root / p).exists()]
@@ -800,9 +816,7 @@ class ActiveRun:
                 (self.project, self.task_id),
             ).fetchone()
             br = prev["block_reason"] if prev else None
-            set_task_error(
-                self.conn, self.project, self.task_id, last_error_code, block_reason=br
-            )
+            set_task_error(self.conn, self.project, self.task_id, last_error_code, block_reason=br)
         elif status in ("completed", "suspended"):
             set_task_error(self.conn, self.project, self.task_id, None, block_reason=None)
         clear_stop_request(self.conn, self.project, self.task_id)
@@ -827,7 +841,9 @@ class ActiveRun:
         # notify_on_attention: fire webhook when task lands on attention list.
         try:
             if bool(note["cfg"].get("notify_on_attention")) and status in (
-                "failed", "interrupted", "blocked",
+                "failed",
+                "interrupted",
+                "blocked",
             ):
                 emit_task_notify(home, status=f"attention:{status}", **note)
         except Exception:
@@ -862,9 +878,7 @@ class ActiveRun:
         stop_reason: str | None = self.stop_reason
         if not stop_reason and self.run_id:
             try:
-                _sr_row = self.conn.execute(
-                    "SELECT stop_reason FROM runs WHERE run_id = ?", (self.run_id,)
-                ).fetchone()
+                _sr_row = self.conn.execute("SELECT stop_reason FROM runs WHERE run_id = ?", (self.run_id,)).fetchone()
                 if _sr_row:
                     stop_reason = _sr_row[0] or None
             except Exception:
@@ -977,9 +991,7 @@ class ActiveRun:
         if resource_evict or background:
             import threading
 
-            self._reap_thread = threading.Thread(
-                target=_reap, daemon=True, name=f"tq-stop-{pid}"
-            )
+            self._reap_thread = threading.Thread(target=_reap, daemon=True, name=f"tq-stop-{pid}")
             self._reap_thread.start()
             return
 
@@ -1014,6 +1026,7 @@ class ActiveRun:
             pass
         self._done.set()
         from taskqueue.sched_wake import signal_run_finished
+
         signal_run_finished()
 
     def _sample_tree(self, children_map: dict[int, list[int]] | None = None) -> set[int] | None:
@@ -1054,7 +1067,7 @@ class ActiveRun:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
         self._evict_dead_psutil_procs(live_pids)
-        ram_gib = ram_bytes / (1024 ** 3)
+        ram_gib = ram_bytes / (1024**3)
         self.current_ram_gib = ram_gib
         self.peak_ram_gib = max(self.peak_ram_gib, ram_gib)
         self.current_cpu_pct = cpu_pct / _CPU_COUNT
@@ -1108,9 +1121,7 @@ class ActiveRun:
         attributed = attributed_gpu_pids(probe.processes, live_pids, self._gpu_hints)
         if attributed and not any(float(p.get("vram_gib") or 0) > 0 for p in attributed):
             device_used = shared_gpu_probe("mem", lambda: probe_gpu_memory_used(timeout=2.0))
-        vram_gib = attributed_vram_gib(
-            probe.processes, live_pids, self._gpu_hints, device_used_gib=device_used
-        )
+        vram_gib = attributed_vram_gib(probe.processes, live_pids, self._gpu_hints, device_used_gib=device_used)
         self.current_vram_gib = vram_gib
         self.peak_vram_gib = max(self.peak_vram_gib, vram_gib)
 
@@ -1123,13 +1134,16 @@ class ActiveRun:
             smi = resolve_nvidia_smi()
             if not smi:
                 return
-            util_out = shared_gpu_probe("util", lambda: subprocess.check_output(
-                [smi, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
-                timeout=2,
-                text=True,
-                stderr=subprocess.DEVNULL,
-                **hide_console_check_output_kwargs(),
-            ))
+            util_out = shared_gpu_probe(
+                "util",
+                lambda: subprocess.check_output(
+                    [smi, "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                    timeout=2,
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    **hide_console_check_output_kwargs(),
+                ),
+            )
             lines = [ln.strip() for ln in util_out.strip().splitlines() if ln.strip()]
             if lines:
                 util_pct = float(lines[0])
@@ -1144,19 +1158,31 @@ class ActiveRun:
 
     def update_db_progress_light(self, conn=None) -> None:
         """Flush cached peaks/progress without nvidia-smi (finalize hot path)."""
-        self._write_progress(conn)
+        self._write_progress(conn, force=True)
 
     def update_db_progress(self, conn=None) -> None:
         """Heartbeat: sample resources (incl. GPU), then persist progress and peaks."""
         self.update_resources()
-        self._write_progress(conn)
+        self._write_progress(conn, force=True)
 
-    def _write_progress(self, conn=None) -> None:
-        """Persist progress/peaks and metrics. Without ``conn`` a short-lived one is used."""
+    def _write_progress(self, conn=None, *, force: bool = False) -> None:
+        """Persist progress/peaks and metrics. Without ``conn`` a short-lived one is used.
+
+        F-162: coalesce chatty progress updates to ~2 Hz unless ``force`` (heartbeat /
+        finalize). Last pct is still correct after the next forced write.
+        """
+        now = time.monotonic()
+        last = getattr(self, "_progress_flushed_at", 0.0)
+        if not force and (now - last) < 0.5:
+            self._progress_pending = True
+            return
+        self._progress_pending = False
+        self._progress_flushed_at = now
         close_conn = False
         if conn is None:
             if self.db_path:
                 import sqlite3
+
                 conn = sqlite3.connect(str(self.db_path), timeout=10)
                 close_conn = True
             else:
@@ -1170,13 +1196,15 @@ class ActiveRun:
                 self.peak_ram_gib,
                 self.peak_vram_gib,
                 self.peak_cpu_pct,
+                commit=False,
             )
-            self._flush_metrics_json(conn=conn)
+            self._flush_metrics_json(conn=conn, commit=False)
+            conn.commit()
         finally:
             if close_conn and conn:
                 conn.close()
 
-    def _flush_metrics_json(self, conn=None) -> None:
+    def _flush_metrics_json(self, conn=None, *, commit: bool = True) -> None:
         """Persist TQ_METRIC fields plus reserved log counts (heartbeat, not per line).
 
         Called from the output reader thread when conn is None: sqlite connections
@@ -1190,8 +1218,12 @@ class ActiveRun:
             if now - getattr(self, "_metrics_flushed_at", 0.0) < 1.0:
                 return
             self._metrics_flushed_at = now
-        payload = merge_metrics_payload(self.last_metrics, self.log_counts, getattr(self, "metric_series", None),
-                                        getattr(self, "_progress_timing", None))
+        payload = merge_metrics_payload(
+            self.last_metrics,
+            self.log_counts,
+            getattr(self, "metric_series", None),
+            getattr(self, "_progress_timing", None),
+        )
         if not payload:
             return
         own = None
@@ -1206,7 +1238,7 @@ class ActiveRun:
                     db = self.conn
             if db is None:
                 return
-            update_run_metrics(db, self.run_id, payload)
+            update_run_metrics(db, self.run_id, payload, commit=commit)
         except Exception as exc:
             _log.warning("metrics flush failed for run %s: %s", self.run_id, exc)
         finally:

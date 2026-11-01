@@ -1,4 +1,5 @@
 """8.1 HIGH: SSE streams may not exhaust the HTTP pool; docs ship with the package; webhooks don't follow remote redirects."""
+
 from __future__ import annotations
 
 import http.server

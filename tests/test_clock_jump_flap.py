@@ -43,9 +43,7 @@ def test_requeue_clock_jump_sets_stop_reason(tmp_path: Path) -> None:
 
     requeue_orphaned_running(db, reason="clock-jump", gap_sec=185.0)
 
-    run = db.execute(
-        "SELECT stop_reason, last_error_code, stopped_by FROM runs WHERE project='p'"
-    ).fetchone()
+    run = db.execute("SELECT stop_reason, last_error_code, stopped_by FROM runs WHERE project='p'").fetchone()
     assert run["stop_reason"] == "clock-jump:gap=185s"
     assert run["last_error_code"] == tqerr.INFRA_CLOCK_JUMP
     assert run["stopped_by"] == "host-sleep"
@@ -75,9 +73,7 @@ def test_clock_jump_flap_leaves_interrupted(tmp_path: Path) -> None:
 
     n = requeue_orphaned_running(db, reason="clock-jump", gap_sec=200.0)
     assert n == 1
-    task = db.execute(
-        "SELECT status, last_error_code, block_reason FROM tasks WHERE project='p'"
-    ).fetchone()
+    task = db.execute("SELECT status, last_error_code, block_reason FROM tasks WHERE project='p'").fetchone()
     assert task["status"] == STATUS_INTERRUPTED
     assert task["last_error_code"] == tqerr.INFRA_CLOCK_JUMP_FLAP
     assert "clock-jump flap" in (task["block_reason"] or "")

@@ -1,4 +1,5 @@
 """daemon.log stays bounded while the daemon runs; heartbeat lines are throttled."""
+
 from __future__ import annotations
 
 import subprocess

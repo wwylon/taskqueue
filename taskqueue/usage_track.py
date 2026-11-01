@@ -5,6 +5,7 @@ Hourly buckets, never events: no args, payloads, logs or tokens are stored. The
 cardinality stays bounded. Recording is fail-open and can be disabled with
 ``tq config set usage_tracking=0``. Identity (client/operator) is self-reported.
 """
+
 from __future__ import annotations
 
 import re
@@ -64,7 +65,15 @@ class UsageRecorder:
         if not self.enabled:
             return
         ms_i = max(0, int(ms))
-        key = (bucket_now(), channel, _clip(client), _clip(operator), _clip(project), _clip(op, 96), _clip(error_code, 48))
+        key = (
+            bucket_now(),
+            channel,
+            _clip(client),
+            _clip(operator),
+            _clip(project),
+            _clip(op, 96),
+            _clip(error_code, 48),
+        )
         with self._lock:
             slot = self._acc.get(key)
             if slot is None:
@@ -141,7 +150,15 @@ def record_direct(
         if int(get_config(conn).get("usage_tracking", 1)) == 0:
             return
         ms_i = max(0, int(ms))
-        key = (bucket_now(), channel, _clip(client), _clip(operator), _clip(project), _clip(op, 96), _clip(error_code, 48))
+        key = (
+            bucket_now(),
+            channel,
+            _clip(client),
+            _clip(operator),
+            _clip(project),
+            _clip(op, 96),
+            _clip(error_code, 48),
+        )
         _upsert(conn, [(key, [1, ms_i, ms_i])])
         conn.commit()
     except Exception:
@@ -164,7 +181,11 @@ def _routes() -> list[tuple[str, re.Pattern[str], str]]:
         built = []
         for e in _API_REGISTRY:
             path = str(e["path"])
-            rx = re.sub(r"<([A-Za-z_]+)>", lambda m: f"(?P<{m.group(1)}>[^/]+)", re.escape(path).replace("\\<", "<").replace("\\>", ">"))
+            rx = re.sub(
+                r"<([A-Za-z_]+)>",
+                lambda m: f"(?P<{m.group(1)}>[^/]+)",
+                re.escape(path).replace("\\<", "<").replace("\\>", ">"),
+            )
             built.append((str(e["method"]).upper(), re.compile("^" + rx + "$"), path))
         # most specific (fewest placeholders, longest) first
         built.sort(key=lambda t: (t[2].count("<"), -len(t[2])))

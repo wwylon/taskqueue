@@ -1,10 +1,13 @@
 from taskqueue.web.hardware import gpu_fit_summary
 
-HW = {"ram_available_gib": 16, "gpu": [
-    {"name": "A", "mem_total_gib": 24, "mem_used_gib": 20},
-    {"name": "B", "mem_total_gib": 24, "mem_used_gib": 4},
-    {"name": "C", "mem_total_gib": 12, "mem_used_gib": 2},
-]}
+HW = {
+    "ram_available_gib": 16,
+    "gpu": [
+        {"name": "A", "mem_total_gib": 24, "mem_used_gib": 20},
+        {"name": "B", "mem_total_gib": 24, "mem_used_gib": 4},
+        {"name": "C", "mem_total_gib": 12, "mem_used_gib": 2},
+    ],
+}
 
 
 def test_fits_picks_tightest_gpu():

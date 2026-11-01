@@ -1,4 +1,5 @@
 """Behavior tests for components/logdock.js (bottom log dock: static load, live SSE tail, close/clear)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -24,17 +25,20 @@ def _js(body: str) -> str:
 
 
 def test_missing_dock_elements_are_noops():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 g.tqAppendLogText('x'); g.tqClearLogView(); g.tqCloseLog();
 g.tqOpenLogPanel(1, 'p', 't', false);
 await g.tqLoadStaticLog(1);
 r.ok = true;
-"""))
+""")
+    )
     assert out["ok"] is True
 
 
 def test_open_static_log_loads_tail_and_sets_title_and_live_flag():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const e = mk();
 const text = Array.from({ length: 300 }, (_, i) => 'line' + i).join('\\n');
 g.fetch = async url => { r.url = url; return { ok: true, text: async () => text }; };
@@ -45,7 +49,8 @@ r.lines = [e.body.children.length, e.body.innerHTML.includes('line299'), e.body.
 g.tqClearLogView(); r.cleared = e.body.innerHTML;
 g.tqCloseLog();
 r.closed = [e.panel.hidden, doc.body.classList.has('tq-log-open'), e.live.hidden];
-"""))
+""")
+    )
     assert out["url"] == "/api/logs/7"
     assert out["open"] == [False, "proj/task #7", True, True]
     assert out["lines"][0] <= 200 and out["lines"][1] is True and out["lines"][2] is False
@@ -53,7 +58,8 @@ r.closed = [e.panel.hidden, doc.body.classList.has('tq-log-open'), e.live.hidden
 
 
 def test_append_escapes_html_and_caps_at_200_children():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const e = mk();
 g.tqAppendLogText('<b>x</b>\\n'); await frame();
 r.esc = e.body.innerHTML.includes('&lt;b&gt;x&lt;/b&gt;') && !e.body.innerHTML.includes('<b>');
@@ -63,12 +69,14 @@ const realGet = doc.getElementById.bind(doc);
 doc.getElementById = id => (id === 'tq-log-body' ? fake : realGet(id));
 g.tqAppendLogText('z'); await frame();
 r.count = kids.length; r.first = kids[0].i; r.scrolled = fake.scrollTop;
-"""))
+""")
+    )
     assert out["esc"] is True and out["count"] == 200 and out["first"] == 5 and out["scrolled"] == 9
 
 
 def test_live_stream_appends_replaces_previous_and_falls_back_on_error():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const e = mk();
 const made = [];
 g.EventSource = function (u) { this.url = u; this.closed = false; this.close = () => { this.closed = true; }; made.push(this); };
@@ -90,7 +98,8 @@ g.tqOpenLogPanel(8, 'p', 't', true);
 const es3 = made[made.length - 1];
 g.tqCloseLog();
 r.closeStops = es3.closed;
-"""))
+""")
+    )
     assert out["live"] == [False, True] and out["got"] is True
     assert out["replaced"] == [True, True] and out["stale"] is False
     assert out["fallback"] == [True, True, "/api/logs/6", True]
@@ -98,17 +107,20 @@ r.closeStops = es3.closed;
 
 
 def test_static_load_error_is_rendered_in_the_dock():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const e = mk();
 g.fetch = async () => { throw new Error('offline'); };
 await g.tqLoadStaticLog(3);
 r.html = e.body.innerHTML.includes('offline');
-"""))
+""")
+    )
     assert out["html"] is True
 
 
 def test_static_load_drops_a_response_that_arrives_after_a_newer_request():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const e = mk();
 const pending = [];
 g.fetch = url => new Promise(res => pending.push(t => res({ ok: true, text: async () => t })));
@@ -116,12 +128,14 @@ const older = g.tqLoadStaticLog(1); const newer = g.tqLoadStaticLog(2);
 pending[1]('NEW'); await newer; await frame();
 pending[0]('OLD'); await older; await frame();
 r.html = e.body.innerHTML;
-"""))
+""")
+    )
     assert "NEW" in out["html"] and "OLD" not in out["html"]
 
 
 def test_filter_level_wrap_and_regex_fallback():
-    out = run_js(_js(r"""
+    out = run_js(
+        _js(r"""
 const e = mk();
 const line = t => ({ textContent: t, hidden: false, classList: { contains: c => c === 'tq-log-line' } });
 const kids = [line('[INFO] epoch 1'), line('[ERROR] boom'), line('[WARN] slow')];
@@ -138,7 +152,8 @@ g.tqToggleLogWrap();
 r.nowrap = e.body.classList.has('nowrap');
 r.bad = String(g.tqLogFilterRegex('a(b'));                          // invalid regex -> literal
 r.empty = g.tqLogFilterRegex('  ');
-"""))
+""")
+    )
     assert out["filtered"] == [True, False, False] and out["cleared"] is False
     assert out["level"] == [True, False] and out["nowrap"] is True
     assert out["bad"] == r"/a\(b/i" and out["empty"] is None

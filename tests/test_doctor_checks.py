@@ -1,4 +1,5 @@
 """tq doctor checks: levels, JSON output and exit code."""
+
 from __future__ import annotations
 
 import json

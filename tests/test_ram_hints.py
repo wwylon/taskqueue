@@ -49,9 +49,9 @@ def test_ram_soft_blocks_when_host_over_soft() -> None:
 def test_same_tick_reserve_raises_soft_pressure() -> None:
     """Reserves accumulate within a tick, so later candidates see the pressure."""
     b = _budget(used=20.0, soft=80)  # soft=51.2
-    assert b.fits(1, 0.0, 25.0)[0]   # fits: 20 + 25 = 45
-    b.reserve(1, 0.0, 25.0)          # now reserved = 45
-    ok, _ = b.fits(1, 0.0, 10.0)     # 45 + 10 = 55 > 51.2
+    assert b.fits(1, 0.0, 25.0)[0]  # fits: 20 + 25 = 45
+    b.reserve(1, 0.0, 25.0)  # now reserved = 45
+    ok, _ = b.fits(1, 0.0, 10.0)  # 45 + 10 = 55 > 51.2
     assert not ok
 
 

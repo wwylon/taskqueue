@@ -1,4 +1,5 @@
 """POST /api/tasks/bulk: many tasks in one request, per-task results."""
+
 from __future__ import annotations
 
 from tests.helpers.master_worker import (
@@ -23,7 +24,9 @@ def _env(tmp_path):
 def test_bulk_stop_queued(tmp_path):
     handler, db = _env(tmp_path)
     status, body = http_request(
-        handler, "POST", "/api/tasks/bulk",
+        handler,
+        "POST",
+        "/api/tasks/bulk",
         {"action": "stop", "tasks": ["proj/A", "proj/B"]},
     )
     assert status == 200 and body["total"] == 2 and body["failed"] == 0
@@ -35,18 +38,24 @@ def test_bulk_stop_queued(tmp_path):
 def test_bulk_priority_and_pause_resume(tmp_path):
     handler, db = _env(tmp_path)
     status, body = http_request(
-        handler, "POST", "/api/tasks/bulk",
+        handler,
+        "POST",
+        "/api/tasks/bulk",
         {"action": "priority", "tasks": ["proj/A", "proj/C"], "priority": 7},
     )
     assert status == 200 and body["ok"]
     assert _status(db, "A")["priority"] == 7 and _status(db, "C")["priority"] == 7
     status, body = http_request(
-        handler, "POST", "/api/tasks/bulk",
+        handler,
+        "POST",
+        "/api/tasks/bulk",
         {"action": "pause", "tasks": ["proj/A"]},
     )
     assert status == 200 and body["ok"] and _status(db, "A")["enabled"] == 0
     status, body = http_request(
-        handler, "POST", "/api/tasks/bulk",
+        handler,
+        "POST",
+        "/api/tasks/bulk",
         {"action": "resume", "tasks": ["proj/A"]},
     )
     assert status == 200 and _status(db, "A")["enabled"] == 1
@@ -68,7 +77,9 @@ def test_bulk_rejects_bad_input(tmp_path):
 def test_bulk_failure_is_per_task(tmp_path):
     handler, db = _env(tmp_path)
     status, body = http_request(
-        handler, "POST", "/api/tasks/bulk",
+        handler,
+        "POST",
+        "/api/tasks/bulk",
         {"action": "pause", "tasks": ["proj/A", "proj/MISSING", "proj/B"]},
     )
     assert status == 200 and body["total"] == 3

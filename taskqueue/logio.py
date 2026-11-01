@@ -82,9 +82,7 @@ def format_log_tail(tail: LogTail) -> str:
     if not tail.truncated:
         return tail.text
     shown = tail.file_size - tail.start_offset
-    banner = (
-        f"--- truncated: showing last {shown} of {tail.file_size} bytes ---\n"
-    )
+    banner = f"--- truncated: showing last {shown} of {tail.file_size} bytes ---\n"
     return banner + tail.text
 
 

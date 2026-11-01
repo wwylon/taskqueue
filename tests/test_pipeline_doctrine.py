@@ -43,8 +43,7 @@ def _insert(
     )
     if block_reason is not None or last_error_code is not None:
         conn.execute(
-            "UPDATE tasks SET block_reason = ?, last_error_code = ? "
-            "WHERE project = ? AND task_id = ?",
+            "UPDATE tasks SET block_reason = ?, last_error_code = ? WHERE project = ? AND task_id = ?",
             (block_reason, last_error_code, project, task_id),
         )
     conn.commit()
@@ -66,8 +65,7 @@ def test_suite_retry_includes_completed(tmp_path: Path, monkeypatch: pytest.Monk
     assert rc == 0
     conn = _open(home)
     statuses = {
-        r["task_id"]: r["status"]
-        for r in conn.execute("SELECT task_id, status FROM tasks WHERE suite='s1'").fetchall()
+        r["task_id"]: r["status"] for r in conn.execute("SELECT task_id, status FROM tasks WHERE suite='s1'").fetchall()
     }
     conn.close()
     assert statuses["a"] == "queued"
@@ -278,9 +276,7 @@ def test_finalize_wake_hooks_on_complete(tmp_path: Path):
     _insert(conn, "p", "wake_me", status="completed")
     conn.commit()
     apply_finalize_wake_hooks(conn, "p", "a", "completed", run_teardown=False)
-    st = conn.execute(
-        "SELECT status FROM tasks WHERE project='p' AND task_id='wake_me'"
-    ).fetchone()["status"]
+    st = conn.execute("SELECT status FROM tasks WHERE project='p' AND task_id='wake_me'").fetchone()["status"]
     assert st == "queued"
     conn.close()
 
@@ -313,8 +309,7 @@ def test_web_suite_retry_includes_completed_group_retry_needs_explicit_restart_a
     assert code == 200 and body.get("retried") == 1
 
     statuses = {
-        r["task_id"]: r["status"]
-        for r in db.execute("SELECT task_id, status FROM tasks WHERE project='p'").fetchall()
+        r["task_id"]: r["status"] for r in db.execute("SELECT task_id, status FROM tasks WHERE project='p'").fetchall()
     }
     assert statuses["s_done"] == "queued"
     assert statuses["s_fail"] == "queued"
@@ -354,7 +349,9 @@ def test_suite_disable_patches_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     conn.close()
     patched = []
     monkeypatch.setattr(cfg, "load_projects", lambda h: {"p": object()})
-    monkeypatch.setattr(yp, "patch_task_yaml", lambda path, upd, task_id=None: patched.append((str(path), upd, task_id)))
+    monkeypatch.setattr(
+        yp, "patch_task_yaml", lambda path, upd, task_id=None: patched.append((str(path), upd, task_id))
+    )
     monkeypatch.setattr(dbmod, "parse_task_yaml", lambda *a, **k: None)
     monkeypatch.setattr(dbmod, "upsert_task", lambda *a, **k: None)
     assert cmd_suite(home, "disable", "s3") == 0

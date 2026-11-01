@@ -51,9 +51,7 @@ def test_capacity_partitions_local_vs_remote(tmp_path: Path) -> None:
     db.commit()
     cap = build_capacity(db, {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100})
     # Master should reserve only the local task (2 cores), not the remote 3.
-    assert cap["master"]["cpu_cores_free"] == round(
-        cap["master"]["cpu_cores_total"] - 2, 2
-    )
+    assert cap["master"]["cpu_cores_free"] == round(cap["master"]["cpu_cores_total"] - 2, 2)
     w = next(x for x in cap["workers"] if x["worker_id"] == "w1")
     assert w["cpu_cores_free"] == 5.0  # 8 - 3
 
@@ -65,11 +63,13 @@ def test_validate_ok_and_bad(tmp_path: Path, monkeypatch) -> None:
     q = root / "experiments" / "operator_queue"
     q.mkdir(parents=True)
     (q / "good.yaml").write_text(
-        yaml.dump({
-            "task_id": "good",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-        }),
+        yaml.dump(
+            {
+                "task_id": "good",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+            }
+        ),
         encoding="utf-8",
     )
     (q / "bad.yaml").write_text("task_id: bad/slash\ncommand: python\n", encoding="utf-8")
@@ -79,6 +79,7 @@ def test_validate_ok_and_bad(tmp_path: Path, monkeypatch) -> None:
     )
     monkeypatch.setenv("TASKQUEUE_HOME", str(home))
     from taskqueue.config import state_home
+
     report = validate_home(state_home())
     assert report["ok"] >= 1
     assert report["valid"] is False
@@ -110,12 +111,14 @@ def test_w619_cap_warning_fires(tmp_path: Path, monkeypatch) -> None:
     # Task with a cap far above its historical runtime
     yaml_file = q / "long_cap.yaml"
     yaml_file.write_text(
-        yaml.dump({
-            "task_id": "long_cap",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "wall_clock_cap_sec": 9000,  # 2.5 hours
-        }),
+        yaml.dump(
+            {
+                "task_id": "long_cap",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "wall_clock_cap_sec": 9000,  # 2.5 hours
+            }
+        ),
         encoding="utf-8",
     )
     (home / "projects.yaml").write_text(
@@ -125,6 +128,7 @@ def test_w619_cap_warning_fires(tmp_path: Path, monkeypatch) -> None:
 
     # Seed DB with completed runs that had ~60 s median
     from taskqueue.db import open_db as _open_db
+
     db_file = home / "queue.db"
     db = _open_db(db_file)
     now_start = "2026-01-01T00:00:00+00:00"
@@ -138,6 +142,7 @@ def test_w619_cap_warning_fires(tmp_path: Path, monkeypatch) -> None:
 
     monkeypatch.setenv("TASKQUEUE_HOME", str(home))
     from taskqueue.config import state_home
+
     report = validate_home(state_home())
     assert any("long_cap" in w.get("task_id", "") for w in report["warnings"]), (
         f"Expected W6.19 warning, got: {report['warnings']}"
@@ -155,12 +160,14 @@ def test_w619_cap_warning_silent_no_history(tmp_path: Path, monkeypatch) -> None
 
     yaml_file = q / "no_hist.yaml"
     yaml_file.write_text(
-        yaml.dump({
-            "task_id": "no_hist",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "wall_clock_cap_sec": 9000,
-        }),
+        yaml.dump(
+            {
+                "task_id": "no_hist",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "wall_clock_cap_sec": 9000,
+            }
+        ),
         encoding="utf-8",
     )
     (home / "projects.yaml").write_text(
@@ -170,5 +177,6 @@ def test_w619_cap_warning_silent_no_history(tmp_path: Path, monkeypatch) -> None
 
     monkeypatch.setenv("TASKQUEUE_HOME", str(home))
     from taskqueue.config import state_home
+
     report = validate_home(state_home())
     assert report["warnings"] == []

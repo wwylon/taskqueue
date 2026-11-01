@@ -1,4 +1,5 @@
 """Shared wait logic: tq wait / MCP wait_for_task (docs/mcp.md, docs/errors.md)."""
+
 from __future__ import annotations
 
 import json
@@ -29,8 +30,18 @@ def _mk(conn, project: str, task_id: str, status: str = "queued", **cols) -> Non
     conn.execute(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, suite, grp, tags, started_by) "
         "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (project, task_id, "python", status, _now(), _now(), cols.get("suite", ""),
-         cols.get("grp", ""), json.dumps(cols.get("tags", [])), cols.get("started_by")),
+        (
+            project,
+            task_id,
+            "python",
+            status,
+            _now(),
+            _now(),
+            cols.get("suite", ""),
+            cols.get("grp", ""),
+            json.dumps(cols.get("tags", [])),
+            cols.get("started_by"),
+        ),
     )
     conn.commit()
 
@@ -138,8 +149,9 @@ def test_selectors_only_pick_unsettled(home: Path) -> None:
     _mk(c, "p", "new", "running", suite="s1", tags=["x", "y"])
     _mk(c, "p", "other", "queued", suite="s2", tags=["x"])
     assert resolve_selectors(c, suite="s1") == ["p/new"]
-    assert resolve_selectors(c, suite="s1", include_finished=True) == ["p/new", "p/old"] or \
-        set(resolve_selectors(c, suite="s1", include_finished=True)) == {"p/new", "p/old"}
+    assert resolve_selectors(c, suite="s1", include_finished=True) == ["p/new", "p/old"] or set(
+        resolve_selectors(c, suite="s1", include_finished=True)
+    ) == {"p/new", "p/old"}
     assert resolve_selectors(c, tags=["x", "y"]) == ["p/new"]
     assert resolve_selectors(c, keys=["p/old"], suite="s2") == ["p/old", "p/other"]
     with pytest.raises(ValueError):
@@ -190,8 +202,6 @@ def test_mcp_stdio_wait_runs_off_thread(home: Path, capsys) -> None:
     c = open_db(tqconfig.db_path(home))
     _mk(c, "p", "done", "completed")
     c.close()
-    mcp_server._run_tool_call(
-        home, 5, {"name": "wait_for_task", "arguments": {"project": "p", "task_id": "done"}}
-    )
+    mcp_server._run_tool_call(home, 5, {"name": "wait_for_task", "arguments": {"project": "p", "task_id": "done"}})
     msg = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert msg["id"] == 5 and msg["result"]["structuredContent"]["done"] is True

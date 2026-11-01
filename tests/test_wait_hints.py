@@ -1,4 +1,5 @@
 """Next-step ``tq wait`` hints after tasks are created or re-queued (CLI stderr + MCP ``next``)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -67,9 +68,7 @@ def test_mcp_retry_returns_next(home: Path, monkeypatch) -> None:
 
 
 def test_mcp_submit_returns_next_unless_waiting(home: Path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        master_client, "via_master", lambda *a, **k: {"ok": True, "task_ids": ["x", "y"]}
-    )
+    monkeypatch.setattr(master_client, "via_master", lambda *a, **k: {"ok": True, "task_ids": ["x", "y"]})
     res = mcp_server._submit_task(home, {"project": "p", "yaml_text": "task_id: x\n"})
     assert res["next"]["arguments"]["tasks"] == ["p/x", "p/y"]
 

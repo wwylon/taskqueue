@@ -1,40 +1,46 @@
 # CI POSTPONED 2026-08-28 — GitHub Actions billing / spending limit exhausted.
-# Auto triggers (push/pull_request/schedule/etc.) removed so this does not burn Actions minutes.
+# Auto triggers removed so this does not burn Actions minutes.
 # Manual `workflow_dispatch` kept for optional resume after billing is restored.
-# See plan note: CI_POSTPONED.md under plan/ or plan/ops/.
-#
+# F-209: single source of truth is scripts/ci.ps1 (local + Actions).
+# See plan/CI_POSTPONED.md.
 
 name: ci
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "CI suite"
+        required: true
+        default: fast
+        type: choice
+        options: [fast, full, nightly]
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.12"]
-    runs-on: ${{ matrix.os }}
+  gate:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
       - uses: actions/setup-node@v4
+        if: inputs.suite != 'fast'
         with:
-          node-version: "22"   # Node behaviour tests for the web UI modules
-      - name: Lint
+          node-version: "22"
+      - name: Sync (locked)
+        run: uv sync --locked --group dev
+      - name: Run scripts/ci.ps1
+        shell: pwsh
         run: |
-          uv sync --group dev
-          uv run ruff check taskqueue/ tests/
-      - name: Generated docs and help are current
-        run: |
-          uv run python scripts/build_docs.py --check
-          uv run python scripts/check_docs.py
-      - name: Test
-        run: uv run pytest -q -m "not stress"
-      - name: Example YAML lint smoke
-        run: |
-          uv run python -c "from pathlib import Path; import yaml; p=Path('examples/minimal/experiments/operator_queue'); assert any(p.glob('*.yaml'))"
+          $mode = "${{ inputs.suite }}"
+          if ($mode -eq "nightly") {
+            # Nightly: stress/slow/nightly markers (ci.ps1 Mode full covers Node; keep stress separate).
+            uv run ruff check taskqueue/ tests/
+            uv run ruff format --check taskqueue/ tests/ scripts/
+            uv run pytest -q -m "stress or slow or nightly" --durations=20
+            uv build
+            uv pip check
+          } else {
+            pwsh scripts/ci.ps1 -Mode $mode
+          }

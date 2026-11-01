@@ -1,4 +1,5 @@
 """Behavior tests for components/modals.js (generic modal, YAML modal, metrics modal, toasts) under the Node DOM stub."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js

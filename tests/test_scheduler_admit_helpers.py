@@ -1,4 +1,5 @@
 """Helpers split out of _local_admit_queued: excess-running stops, estimate cache, P6 hold."""
+
 from taskqueue import _db_tasks, scheduler
 
 
@@ -8,9 +9,7 @@ def _rows(*pairs):
 
 def _capture_stops(monkeypatch):
     stops = []
-    monkeypatch.setattr(
-        _db_tasks, "request_stop_with_control", lambda c, h, p, t: stops.append((p, t))
-    )
+    monkeypatch.setattr(_db_tasks, "request_stop_with_control", lambda c, h, p, t: stops.append((p, t)))
     import taskqueue.db as db
 
     monkeypatch.setattr(db, "request_stop_with_control", lambda c, h, p, t: stops.append((p, t)))
@@ -106,15 +105,11 @@ def test_estimate_cache_evicts_when_a_run_finishes(tmp_path, monkeypatch):
 def test_p6_no_top_returns_empty_hold(monkeypatch):
     monkeypatch.setattr(scheduler, "pick_reservation_top", lambda *a: None)
     state = {"key": ("p", "t")}
-    top, key, ram, vram = scheduler._p6_reserve_top(
-        None, [object()], None, 60, state, None, {}, {}, None, 1.0, 5
-    )
+    top, key, ram, vram = scheduler._p6_reserve_top(None, [object()], None, 60, state, None, {}, {}, None, 1.0, 5)
     assert (top, key, ram, vram) == (None, None, 0.0, 0.0) and state == {}
 
 
 def test_p6_disabled_never_picks(monkeypatch):
-    monkeypatch.setattr(
-        scheduler, "pick_reservation_top", lambda *a: (_ for _ in ()).throw(AssertionError)
-    )
+    monkeypatch.setattr(scheduler, "pick_reservation_top", lambda *a: (_ for _ in ()).throw(AssertionError))
     top, key, *_ = scheduler._p6_reserve_top(None, [object()], None, 0, {}, None, {}, {}, None, 1.0, 5)
     assert top is None and key is None

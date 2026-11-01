@@ -38,15 +38,6 @@ _CACHE_TTL_SEC = 20.0
 _SUFFIX_RE = re.compile(r"(?:_seed\d+|_\d+)$", re.IGNORECASE)
 
 
-
-
-
-
-
-
-
-
-
 def _percentile(sorted_vals: list[float], p: float) -> float | None:
     n = len(sorted_vals)
     if n == 0:
@@ -282,8 +273,7 @@ def _load_candidates(
     """Return (candidates, already-completed keys from DB)."""
     completed: set[tuple[str, str]] = set()
     for row in conn.execute(
-        "SELECT project, task_id, status FROM tasks"
-        + (" WHERE project = ?" if project else ""),
+        "SELECT project, task_id, status FROM tasks" + (" WHERE project = ?" if project else ""),
         (project,) if project else (),
     ).fetchall():
         if row["status"] == "completed":
@@ -307,10 +297,7 @@ def _load_candidates(
     est_cache: dict = {}
     open_starts: dict[tuple[str, str], str] = {}
     open_runs: dict[tuple[str, str], Any] = {}
-    open_sql = (
-        "SELECT run_id, project, task_id, started_at, progress_pct FROM runs "
-        "WHERE finished_at IS NULL"
-    )
+    open_sql = "SELECT run_id, project, task_id, started_at, progress_pct FROM runs WHERE finished_at IS NULL"
     open_args: list[Any] = []
     if project:
         open_sql += " AND project = ?"
@@ -347,7 +334,10 @@ def _load_candidates(
 
     def _est(proj: str, tid: str, res: dict[str, Any]) -> dict[str, Any]:
         return estimate_task_resources(
-            conn, proj, tid, res,
+            conn,
+            proj,
+            tid,
+            res,
             default_ram_gib=default_ram,
             predict_runs=predict_runs,
             cache=est_cache,
@@ -386,25 +376,27 @@ def _load_candidates(
                     src = "overdue"
                 else:
                     remaining = max(1.0, dur - elapsed)
-        cands.append(_Cand(
-            project=proj,
-            task_id=tid,
-            status=row["status"] or "queued",
-            kind="running" if row["status"] == "running" else "queued",
-            priority=int(row["priority"] or 0),
-            enqueued_at=str(row["enqueued_at"] or ""),
-            depends_on=_parse_json_list(row["depends_on"]),
-            depends_on_any=_parse_json_list(row["depends_on_any"]),
-            exclusive=bool(row["exclusive"]),
-            exclusive_project=bool(row["exclusive_project"]),
-            cpu=float(est["cpu_cores"]),
-            ram=float(est["ram_gib"]),
-            gpu=float(est["vram_gib"]),
-            duration_sec=dur,
-            estimate_source=src,
-            remaining_sec=remaining,
-            arrive_sec=0.0,
-        ))
+        cands.append(
+            _Cand(
+                project=proj,
+                task_id=tid,
+                status=row["status"] or "queued",
+                kind="running" if row["status"] == "running" else "queued",
+                priority=int(row["priority"] or 0),
+                enqueued_at=str(row["enqueued_at"] or ""),
+                depends_on=_parse_json_list(row["depends_on"]),
+                depends_on_any=_parse_json_list(row["depends_on_any"]),
+                exclusive=bool(row["exclusive"]),
+                exclusive_project=bool(row["exclusive_project"]),
+                cpu=float(est["cpu_cores"]),
+                ram=float(est["ram_gib"]),
+                gpu=float(est["vram_gib"]),
+                duration_sec=dur,
+                estimate_source=src,
+                remaining_sec=remaining,
+                arrive_sec=0.0,
+            )
+        )
 
     span = float(hours * 3600)
     for row in cron_rows:
@@ -426,25 +418,27 @@ def _load_candidates(
         res = _parse_json_dict(row["resources"])
         est = _est(proj, tid, res)
         dur, src = estimate_duration_sec(proj, tid, index)
-        cands.append(_Cand(
-            project=proj,
-            task_id=tid,
-            status=row["status"] or "queued",
-            kind="cron",
-            priority=int(row["priority"] or 0),
-            enqueued_at=str(row["enqueued_at"] or ""),
-            depends_on=_parse_json_list(row["depends_on"]),
-            depends_on_any=_parse_json_list(row["depends_on_any"]),
-            exclusive=bool(row["exclusive"]),
-            exclusive_project=bool(row["exclusive_project"]),
-            cpu=float(est["cpu_cores"]),
-            ram=float(est["ram_gib"]),
-            gpu=float(est["vram_gib"]),
-            duration_sec=dur,
-            estimate_source=src,
-            remaining_sec=dur,
-            arrive_sec=arrive,
-        ))
+        cands.append(
+            _Cand(
+                project=proj,
+                task_id=tid,
+                status=row["status"] or "queued",
+                kind="cron",
+                priority=int(row["priority"] or 0),
+                enqueued_at=str(row["enqueued_at"] or ""),
+                depends_on=_parse_json_list(row["depends_on"]),
+                depends_on_any=_parse_json_list(row["depends_on_any"]),
+                exclusive=bool(row["exclusive"]),
+                exclusive_project=bool(row["exclusive_project"]),
+                cpu=float(est["cpu_cores"]),
+                ram=float(est["ram_gib"]),
+                gpu=float(est["vram_gib"]),
+                duration_sec=dur,
+                estimate_source=src,
+                remaining_sec=dur,
+                arrive_sec=arrive,
+            )
+        )
         seen.add(key)
 
     return cands, completed
@@ -485,7 +479,11 @@ def forecast_timeline(
 
     index = build_duration_index(conn, project=project)
     candidates, completed = _load_candidates(
-        conn, project=project, hours=hours, now=t0, index=index,
+        conn,
+        project=project,
+        hours=hours,
+        now=t0,
+        index=index,
     )
 
     cfg = get_config(conn)
@@ -575,10 +573,7 @@ def forecast_timeline(
         if cand.exclusive:
             has_exclusive = any(a.cand.exclusive for a in active.values())
         if cand.exclusive_project and cand.project in exclusive_projects:
-            if not any(
-                a.cand.exclusive_project and a.cand.project == cand.project
-                for a in active.values()
-            ):
+            if not any(a.cand.exclusive_project and a.cand.project == cand.project for a in active.values()):
                 exclusive_projects.discard(cand.project)
         completed.add(key)
         raw_bunch_end = max(raw_bunch_end, act.end_sec)
@@ -591,21 +586,23 @@ def forecast_timeline(
         clip_e = min(span, act.end_sec)
         if clip_e <= clip_s:
             return
-        bars.append({
-            "project": cand.project,
-            "task_id": cand.task_id,
-            "status": "running" if cand.kind == "running" else "queued",
-            "start_sec": round(clip_s, 1),
-            "end_sec": round(clip_e, 1),
-            "lane": act.lane,
-            "duration_sec": round(cand.duration_sec, 1),
-            "estimate_source": cand.estimate_source,
-            "kind": cand.kind,
-            "priority": cand.priority,
-            "clipped": bool(act.end_sec > span),
-            "start_at": _iso(t0 + timedelta(seconds=clip_s)),
-            "end_at": _iso(t0 + timedelta(seconds=act.end_sec)),
-        })
+        bars.append(
+            {
+                "project": cand.project,
+                "task_id": cand.task_id,
+                "status": "running" if cand.kind == "running" else "queued",
+                "start_sec": round(clip_s, 1),
+                "end_sec": round(clip_e, 1),
+                "lane": act.lane,
+                "duration_sec": round(cand.duration_sec, 1),
+                "estimate_source": cand.estimate_source,
+                "kind": cand.kind,
+                "priority": cand.priority,
+                "clipped": bool(act.end_sec > span),
+                "start_at": _iso(t0 + timedelta(seconds=clip_s)),
+                "end_at": _iso(t0 + timedelta(seconds=act.end_sec)),
+            }
+        )
 
     def _can_start(cand: _Cand) -> bool:
         if not _deps_ok(cand, completed):
@@ -754,16 +751,19 @@ def _state_token(conn: sqlite3.Connection, project: str | None) -> tuple:
     a = (project,) if project else ()
     rows = conn.execute(
         "SELECT status, COUNT(*), COALESCE(SUM(priority),0), COALESCE(SUM(enabled),0), "
-        "MAX(enqueued_at) FROM tasks" + w + " GROUP BY status", a,
+        "MAX(enqueued_at) FROM tasks" + w + " GROUP BY status",
+        a,
     ).fetchall()
     run_w = " WHERE project = ?" if project else ""
     last_run = conn.execute("SELECT MAX(run_id) FROM runs" + run_w, a).fetchone()[0]
-    blocked = tuple(sorted(
-        r["key"] for r in conn.execute(
-            "SELECT key FROM config WHERE key LIKE 'project_paused_%' "
-            "OR key LIKE 'project_frozen_%'"
-        ).fetchall()
-    ))
+    blocked = tuple(
+        sorted(
+            r["key"]
+            for r in conn.execute(
+                "SELECT key FROM config WHERE key LIKE 'project_paused_%' OR key LIKE 'project_frozen_%'"
+            ).fetchall()
+        )
+    )
     return (tuple(tuple(r) for r in rows), last_run, blocked)
 
 

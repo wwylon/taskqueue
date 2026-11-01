@@ -8,6 +8,6 @@ guide_anchors:
   web-ui: block-project
 ---
 
-With a project selected, **Block project** (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant.
+With a project selected, **Block project** (freeze) stops the scheduler from starting new tasks in that project only. Running tasks continue. Pause is a softer variant. Agents must not clear freeze/pause unless you ask.
 
 This is different from the idle **FROZEN** badge on a running card (no recent log output).

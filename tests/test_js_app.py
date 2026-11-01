@@ -4,6 +4,7 @@ tests/js_dom_stub.mjs builds the element tree from index.html, records timers/fe
 i18n.js, js/main.js and app.js in one global context. Each scenario runs in its own node process (app.js declares
 top-level consts, so it can only be evaluated once per process) and prints one `RESULT:<json>` line.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,12 +26,16 @@ PRELUDE = f"import {{ setup }} from {STUB_URL!r};\nconst LOGPANEL = {LOGPANEL_UR
 def run_js(body: str, timeout: int = 60):
     proc = subprocess.run(
         ["node", "--input-type=module", "-e", PRELUDE + body],
-        capture_output=True, text=True, timeout=timeout, cwd=str(ROOT), encoding="utf-8",
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=str(ROOT),
+        encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stderr[-3000:]
     for line in reversed(proc.stdout.splitlines()):
         if line.startswith("RESULT:"):
-            return json.loads(line[len("RESULT:"):])
+            return json.loads(line[len("RESULT:") :])
     raise AssertionError("no RESULT line; stdout=%r stderr=%r" % (proc.stdout[-1500:], proc.stderr[-1500:]))
 
 

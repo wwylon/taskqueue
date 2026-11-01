@@ -20,11 +20,19 @@ def test_running_task_charged_by_estimate_against_global_ram(tmp_path) -> None:
     projects = {"p": Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")}
     system = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
     cfg = {
-        "cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 80, "ram_hard_limit_pct": 95,
-        "max_ram_gib": 1.5, "default_ram_gib": 1.0, "max_concurrent_unknown": 0,
+        "cpu_limit_pct": 100,
+        "gpu_limit_pct": 100,
+        "ram_limit_pct": 80,
+        "ram_hard_limit_pct": 95,
+        "max_ram_gib": 1.5,
+        "default_ram_gib": 1.0,
+        "max_concurrent_unknown": 0,
     }
     run = SimpleNamespace(
-        elapsed_sec=lambda: 1.0, current_ram_gib=0.0, current_vram_gib=0.0, stop_reason=None,
+        elapsed_sec=lambda: 1.0,
+        current_ram_gib=0.0,
+        current_vram_gib=0.0,
+        stop_reason=None,
     )
     _local_admit_queued(conn, tmp_path, projects, {("p", "r1"): run}, system, cfg, 30, False)
     row = get_task(conn, "p", "t2")

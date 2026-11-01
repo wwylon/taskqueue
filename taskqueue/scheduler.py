@@ -104,6 +104,7 @@ def _version_matches(actual: str, constraint: str) -> bool:
         pass
     return True
 
+
 # Cross-tick estimate cache: avoids re-querying run history every tick for tasks
 # whose resource history has not changed. Keyed by (project, task_id, default_ram_gib,
 # predict_runs). Per-task eviction: only entries whose run history changed are dropped,
@@ -118,9 +119,7 @@ from taskqueue.netutil import is_loopback_host
 from taskqueue.rows import row_get
 
 
-def should_schedule_locally(
-    dispatch: str, *, online_workers: int = 0, local_running: int = 0
-) -> bool:
+def should_schedule_locally(dispatch: str, *, online_workers: int = 0, local_running: int = 0) -> bool:
     """Whether the master may start this task locally.
 
     ``dispatch: remote`` is a hint: prefer workers when any are online; if none
@@ -175,12 +174,45 @@ def _flush_pending_blocks(
     conn.commit()
 
 
-def build_task_status_map(conn: sqlite3.Connection) -> dict[tuple[str, str], str]:
-    """One-shot status map for dep lookups (avoids N+1 get_task per candidate)."""
-    return {
-        (str(r["project"]), str(r["task_id"])): str(r["status"])
-        for r in conn.execute("SELECT project, task_id, status FROM tasks").fetchall()
-    }
+def build_task_status_map(
+    conn: sqlite3.Connection,
+    rows: list[Any] | None = None,
+    *,
+    projects: set[str] | None = None,
+) -> dict[tuple[str, str], str]:
+    """Build a dependency status map for the current candidate scope.
+
+    Admission used to materialize every task in the database on every tick.  When
+    candidate rows are supplied, include only those rows and their dependency
+    peers; ``projects`` is retained for callers that already have a project
+    scope but do not have candidate rows.
+    """
+    from taskqueue.deprefs import row_dep_refs
+
+    needed: set[tuple[str, str]] = set()
+    if rows is not None:
+        for row in rows:
+            owner = str(row["project"])
+            needed.add((owner, str(row["task_id"])))
+            for col in ("depends_on", "depends_on_any"):
+                needed.update((p, t) for p, t, _ in row_dep_refs(row, col, owner))
+    elif projects:
+        marks = ",".join("?" for _ in projects)
+        for row in conn.execute(
+            f"SELECT project, task_id FROM tasks WHERE project IN ({marks})",
+            tuple(projects),
+        ):
+            needed.add((str(row["project"]), str(row["task_id"])))
+    else:
+        return {
+            (str(r["project"]), str(r["task_id"])): str(r["status"])
+            for r in conn.execute("SELECT project, task_id, status FROM tasks").fetchall()
+        }
+    if not needed:
+        return {}
+    from taskqueue.queries import _fetch_status_map
+
+    return _fetch_status_map(conn, needed)
 
 
 def _is_probe_timeout(exc: BaseException) -> bool:
@@ -189,6 +221,7 @@ def _is_probe_timeout(exc: BaseException) -> bool:
         return True
     try:
         import socket
+
         if isinstance(exc, socket.timeout):
             return True
     except Exception:
@@ -254,7 +287,7 @@ def _warm_vram_admit_gib(
         services = json_list(requires_services_json)
     except Exception:
         return est_vram_gib
-    for svc in (services or []):
+    for svc in services or []:
         ok_list = svc.get("resident_ok_models")
         if ok_list and _resident_only_ok_models(ps_models, ok_list):
             return 0.0
@@ -264,11 +297,12 @@ def _warm_vram_admit_gib(
 def _ollama_ps_url_from_services(services_json: str) -> str | None:
     """Derive Ollama /api/ps URL from the first service entry with resident_ok_models."""
     import urllib.parse as _uparse
+
     try:
         services = json_list(services_json)
     except Exception:
         return None
-    for svc in (services or []):
+    for svc in services or []:
         if not svc.get("resident_ok_models"):
             continue
         url = str(svc.get("health_url") or "")
@@ -283,21 +317,27 @@ def _ollama_ps_url_from_services(services_json: str) -> str | None:
 
 
 _OLLAMA_PS_TTL_SEC = 3.0
+_OLLAMA_PS_FAIL_TTL_SEC = 30.0  # F-205: do not re-block the admit thread on a dead endpoint
 _ollama_ps_cache: dict[str, tuple[float, list[dict[str, Any]] | None]] = {}
+_ollama_ps_lock = __import__("threading").Lock()
 
 
-def _fetch_ollama_ps_models(ps_url: str, *, timeout: float = 5.0) -> list[dict[str, Any]] | None:
+def _fetch_ollama_ps_models(ps_url: str, *, timeout: float = 1.5) -> list[dict[str, Any]] | None:
     """Fetch Ollama /api/ps models list; None on failure.
 
-    Results (including failures) are cached for a few seconds so back-to-back
-    scheduler ticks do not each block on a slow or dead endpoint.
+    Results (including failures) are cached so back-to-back scheduler ticks do
+    not each block on a slow or dead endpoint. Failures use a longer TTL.
     """
     import time as _time
     import urllib.request
+
     now = _time.monotonic()
-    hit = _ollama_ps_cache.get(ps_url)
-    if hit is not None and now - hit[0] < _OLLAMA_PS_TTL_SEC:
-        return None if hit[1] is None else list(hit[1])
+    with _ollama_ps_lock:
+        hit = _ollama_ps_cache.get(ps_url)
+        if hit is not None:
+            ttl = _OLLAMA_PS_FAIL_TTL_SEC if hit[1] is None else _OLLAMA_PS_TTL_SEC
+            if now - hit[0] < ttl:
+                return None if hit[1] is None else list(hit[1])
     try:
         req = urllib.request.Request(ps_url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -305,9 +345,10 @@ def _fetch_ollama_ps_models(ps_url: str, *, timeout: float = 5.0) -> list[dict[s
         models: list[dict[str, Any]] | None = list(ps.get("models") or [])
     except Exception:
         models = None
-    if len(_ollama_ps_cache) > 32:
-        _ollama_ps_cache.clear()
-    _ollama_ps_cache[ps_url] = (now, models)
+    with _ollama_ps_lock:
+        if len(_ollama_ps_cache) > 32:
+            _ollama_ps_cache.clear()
+        _ollama_ps_cache[ps_url] = (now, models)
     return None if models is None else list(models)
 
 
@@ -327,11 +368,12 @@ def _check_services(
     """
     import urllib.parse as _uparse
     import urllib.request
+
     try:
         services = json_list(services_json)
     except Exception:
         return None, ""
-    for svc in (services or []):
+    for svc in services or []:
         url = svc.get("health_url", "")
         if not url:
             continue
@@ -397,7 +439,7 @@ def _check_services(
             if resident_ok and _resident_only_ok_models(ps_models, resident_ok):
                 continue
             vram_used_bytes = sum(m.get("size_vram", 0) for m in ps_models)
-            ollama_resident_gib = vram_used_bytes / (1024 ** 3)
+            ollama_resident_gib = vram_used_bytes / (1024**3)
             vram_total_gib = float(svc.get("vram_total_gib", 0.0) or 0.0)
             if not vram_total_gib and system_info:
                 vram_total_gib = float(system_info.get("gpu_vram_total_gib") or 0.0)
@@ -467,10 +509,12 @@ def check_services_cached(
     # per-GPU free VRAM (which drifts every tick) made the cache miss on every probe.
     _gpu_key = 0
     if "min_vram_free_gib" in (services_json or ""):
-        _gpu_key = hash(frozenset(
-            (g.get("index", i), round(float(g.get("vram_gib", 0.0)) - float(g.get("vram_used_gib", 0.0)), 1))
-            for i, g in enumerate((system_info or {}).get("gpus", []))
-        ))
+        _gpu_key = hash(
+            frozenset(
+                (g.get("index", i), round(float(g.get("vram_gib", 0.0)) - float(g.get("vram_used_gib", 0.0)), 1))
+                for i, g in enumerate((system_info or {}).get("gpus", []))
+            )
+        )
     key = (services_json or "[]", bool(allow_remote), _node_id, _gpu_key)
     now = time.monotonic()
     with _svc_probe_lock:
@@ -486,9 +530,7 @@ def check_services_cached(
                 del _svc_probe_cache[k]
             while len(_svc_probe_cache) >= _SVC_PROBE_CACHE_MAX:
                 _svc_probe_cache.popitem(last=False)  # pop LRU (front)
-    result = _check_services(
-        services_json, allow_remote=allow_remote, system_info=system_info
-    )
+    result = _check_services(services_json, allow_remote=allow_remote, system_info=system_info)
     with _svc_probe_lock:
         _svc_probe_cache[key] = (time.monotonic(), result)
         _svc_probe_cache.move_to_end(key)
@@ -553,7 +595,7 @@ class FilterContext:
 
     n_running: int = 0
     has_exclusive: bool = False
-    exclusive_task: str = ""   # project/task_id of the running exclusive task
+    exclusive_task: str = ""  # project/task_id of the running exclusive task
     # project -> project/task_id of a running exclusive_project holder
     exclusive_projects: dict[str, str] = field(default_factory=dict)
     n_running_by_proj: dict[str, int] = field(default_factory=dict)
@@ -997,9 +1039,7 @@ def filter_max_attempts(row: Any, attempt_count: int) -> FilterResult:
     return FilterResult.accept()
 
 
-def filter_global_limits(
-    ctx: FilterContext, *, cpu: float, ram: float
-) -> FilterResult:
+def filter_global_limits(ctx: FilterContext, *, cpu: float, ram: float) -> FilterResult:
     if ctx.g_max_tasks > 0 and ctx.n_running >= ctx.g_max_tasks:
         return FilterResult.reject(
             f"max_running_tasks={ctx.g_max_tasks} reached ({ctx.n_running} running)",
@@ -1009,14 +1049,12 @@ def filter_global_limits(
         return FilterResult.accept()
     if ctx.g_max_cpu > 0 and ctx.total_cpu_declared + cpu > ctx.g_max_cpu:
         return FilterResult.reject(
-            f"global max_cpu_cores={ctx.g_max_cpu:.0f} reached "
-            f"({ctx.total_cpu_declared:.0f} in use)",
+            f"global max_cpu_cores={ctx.g_max_cpu:.0f} reached ({ctx.total_cpu_declared:.0f} in use)",
             tqerr.BLOCK_RESOURCES,
         )
     if ctx.g_max_ram > 0 and ctx.total_ram_declared + ram > ctx.g_max_ram:
         return FilterResult.reject(
-            f"global max_ram_gib={ctx.g_max_ram:.1f} reached "
-            f"({ctx.total_ram_declared:.1f} in use)",
+            f"global max_ram_gib={ctx.g_max_ram:.1f} reached ({ctx.total_ram_declared:.1f} in use)",
             tqerr.BLOCK_RESOURCES,
         )
     return FilterResult.accept()
@@ -1056,9 +1094,7 @@ def filter_project_min(ctx: FilterContext) -> FilterResult:
     return FilterResult.accept()
 
 
-def filter_project_limits(
-    row: Any, ctx: FilterContext, *, cpu: float, ram: float, gpu: float
-) -> FilterResult:
+def filter_project_limits(row: Any, ctx: FilterContext, *, cpu: float, ram: float, gpu: float) -> FilterResult:
     proj = str(_row_get(row, "project", ""))
     plim = ctx.project_limits or {}
     p_max_tasks = int(plim.get("max_tasks", 0) or 0)
@@ -1121,8 +1157,7 @@ def filter_deps(row: Any, ctx: FilterContext) -> FilterResult:
         # F-090: include disabled (matches queries.DEAD_DEP_STATUSES / health UI).
         if dep_status in DEAD_DEP_STATUSES:
             return FilterResult.reject(
-                f"dead dependency: {dep_label} [{dep_status}]"
-                f" — retry or remove it to unblock",
+                f"dead dependency: {dep_label} [{dep_status}] — retry or remove it to unblock",
                 tqerr.BLOCK_DEPS,
             )
         if dep_status != STATUS_COMPLETED:
@@ -1154,14 +1189,15 @@ def filter_deps(row: Any, ctx: FilterContext) -> FilterResult:
                     tqerr.BLOCK_DEPS,
                 )
             return FilterResult.reject(
-                f"dead dependency (any): {', '.join(dead_labels)}"
-                f" — retry or remove one to unblock",
+                f"dead dependency (any): {', '.join(dead_labels)} — retry or remove one to unblock",
                 tqerr.BLOCK_DEPS,
             )
     return FilterResult.accept()
 
 
-def pick_reservation_top(conn: sqlite3.Connection, queued: list, dep_lookup: Callable[[str, str], str | None]) -> Any | None:
+def pick_reservation_top(
+    conn: sqlite3.Connection, queued: list, dep_lookup: Callable[[str, str], str | None]
+) -> Any | None:
     """First queued task that is not blocked for a non-capacity reason.
 
     A dependency-blocked or paused-project task must never hold RAM/VRAM (P6), otherwise it
@@ -1216,9 +1252,7 @@ def filter_mutex(row: Any, ctx: FilterContext) -> FilterResult:
     return FilterResult.accept()
 
 
-def filter_node_capacity(
-    node: Node, ctx: FilterContext, *, cpu: float, ram: float, gpu: float
-) -> FilterResult:
+def filter_node_capacity(node: Node, ctx: FilterContext, *, cpu: float, ram: float, gpu: float) -> FilterResult:
     if ctx.skip_node_capacity or ctx.force:
         return FilterResult.accept()
     if cpu > 0 and node.cpu_free + 1e-9 < cpu:
@@ -1316,10 +1350,10 @@ def occupancy_from_running_rows(
         if r is not None and _row_get(r, "exclusive", False):
             has_exclusive = True
             if not exclusive_task:
-                exclusive_task = f"{proj}/{_row_get(r,'task_id','')}"
+                exclusive_task = f"{proj}/{_row_get(r, 'task_id', '')}"
         if r is not None and _row_get(r, "exclusive_project", False) and proj:
             if proj not in exclusive_projects:
-                exclusive_projects[proj] = f"{proj}/{_row_get(r,'task_id','')}"
+                exclusive_projects[proj] = f"{proj}/{_row_get(r, 'task_id', '')}"
         res0 = _parse_resources(_row_get(r, "resources", "{}"))
         cpu0 = float(res0.get("cpu_cores", 1))
         ram0 = float(res0.get("ram_gib", 0.0))
@@ -1368,6 +1402,34 @@ def worker_slot_reserved(conn: sqlite3.Connection, worker_id: str) -> tuple[floa
     return cpu, ram, vram
 
 
+def worker_slot_reserved_many(
+    conn: sqlite3.Connection, worker_ids: list[str] | tuple[str, ...]
+) -> dict[str, tuple[float, float, float]]:
+    """Batch declared resource reservations for a set of workers."""
+    ids = [str(worker_id) for worker_id in worker_ids]
+    out = {worker_id: (0.0, 0.0, 0.0) for worker_id in ids}
+    if not ids:
+        return out
+    marks = ",".join("?" for _ in ids)
+    rows = conn.execute(
+        "SELECT r.worker_id, t.resources FROM tasks t "
+        "JOIN runs r ON r.project = t.project AND r.task_id = t.task_id "
+        "AND r.status = 'running' "
+        f"WHERE t.status = 'running' AND r.worker_id IN ({marks})",
+        ids,
+    ).fetchall()
+    totals: dict[str, list[float]] = {worker_id: [0.0, 0.0, 0.0] for worker_id in ids}
+    for row in rows:
+        worker_id = str(row["worker_id"])
+        if worker_id not in totals:
+            continue
+        cpu, ram, vram = declared_resources(row)
+        totals[worker_id][0] += cpu
+        totals[worker_id][1] += ram
+        totals[worker_id][2] += vram
+    return {worker_id: tuple(values) for worker_id, values in totals.items()}
+
+
 def dep_status_from_conn(conn: sqlite3.Connection, project: str, task_id: str) -> str | None:
     row = get_task(conn, project, task_id)
     if row is None:
@@ -1388,8 +1450,7 @@ def _most_recent_first(conn: sqlite3.Connection, rows: list[Any]) -> list[Any]:
     latest = {
         (r["project"], r["task_id"]): int(r["rid"] or 0)
         for r in conn.execute(
-            "SELECT project, task_id, MAX(run_id) AS rid FROM runs WHERE status = 'running' "
-            "GROUP BY project, task_id"
+            "SELECT project, task_id, MAX(run_id) AS rid FROM runs WHERE status = 'running' GROUP BY project, task_id"
         ).fetchall()
     }
     return sorted(rows, key=lambda r: latest.get((r["project"], r["task_id"]), 0), reverse=True)
@@ -1428,7 +1489,8 @@ def _shared_estimate_cache(conn: sqlite3.Connection) -> dict:
                 ).fetchall()
                 _changed_keys = {(str(_cr["project"]), str(_cr["task_id"])) for _cr in changed}
                 _estimate_cross_tick = {
-                    k: v for k, v in _estimate_cross_tick.items()
+                    k: v
+                    for k, v in _estimate_cross_tick.items()
                     if k[:2] not in _changed_keys and v.get("source") not in ("sibling", "group")
                 }
             else:
@@ -1438,9 +1500,17 @@ def _shared_estimate_cache(conn: sqlite3.Connection) -> dict:
 
 
 def _p6_reserve_top(
-    conn: sqlite3.Connection, queued: list, _dep_lookup: Any, _res_max_ticks: int,
-    reservation_state: dict, budget: Any, active_runs: dict, _est_cache: dict,
-    _vram_ps_models: Any, _default_ram: float, _predict_runs: int,
+    conn: sqlite3.Connection,
+    queued: list,
+    _dep_lookup: Any,
+    _res_max_ticks: int,
+    reservation_state: dict,
+    budget: Any,
+    active_runs: dict,
+    _est_cache: dict,
+    _vram_ps_models: Any,
+    _default_ram: float,
+    _predict_runs: int,
 ) -> tuple:
     """P6 EASY backfill: pre-reserve headroom for the top blocked task.
 
@@ -1457,8 +1527,13 @@ def _p6_reserve_top(
         _top_key = (_top["project"], _top["task_id"])
         _top_res = _parse_resources(_top["resources"])
         _top_est = estimate_task_resources(
-            conn, _top["project"], _top["task_id"], _top_res,
-            default_ram_gib=_default_ram, predict_runs=_predict_runs, cache=_est_cache,
+            conn,
+            _top["project"],
+            _top["task_id"],
+            _top_res,
+            default_ram_gib=_default_ram,
+            predict_runs=_predict_runs,
+            cache=_est_cache,
         )
         _top_gpu_admit = _warm_vram_admit_gib(
             _top_est["vram_gib"],
@@ -1494,9 +1569,7 @@ def _p6_reserve_top(
                 # in block_reason as live + hold + est).
                 _p6_overlap = 0.0
                 if _top_key in active_runs:
-                    _p6_overlap = float(
-                        active_runs[_top_key].current_ram_gib or 0.0
-                    )
+                    _p6_overlap = float(active_runs[_top_key].current_ram_gib or 0.0)
                 elif _top_last and _top_last["status"] == STATUS_STOPPED:
                     _peak = float(_top_last["peak_ram_gib"] or 0.0)
                     if _peak > 0 and budget.ram_live >= _peak * 0.8:
@@ -1504,28 +1577,20 @@ def _p6_reserve_top(
                             float(_top_est["ram_gib"]),
                             _peak,
                         )
-                _p6_hold_ram = max(
-                    0.0, float(_top_est["ram_gib"]) - _p6_overlap
-                )
+                _p6_hold_ram = max(0.0, float(_top_est["ram_gib"]) - _p6_overlap)
                 _p6_overlap_vram = 0.0
                 if _top_key in active_runs:
-                    _p6_overlap_vram = float(
-                        active_runs[_top_key].current_vram_gib or 0.0
-                    )
+                    _p6_overlap_vram = float(active_runs[_top_key].current_vram_gib or 0.0)
                 elif _top_last and _top_last["status"] == STATUS_STOPPED:
                     _peak_vram = float(_top_last["peak_vram_gib"] or 0.0)
                     if _peak_vram > 0:
-                        _live_vram = sum(
-                            float(g.get("vram_used_gib", 0.0)) for g in budget.gpus
-                        )
+                        _live_vram = sum(float(g.get("vram_used_gib", 0.0)) for g in budget.gpus)
                         if _live_vram >= _peak_vram * 0.8:
                             _p6_overlap_vram = min(
                                 float(_top_gpu_admit),
                                 _peak_vram,
                             )
-                _p6_hold_vram = max(
-                    0.0, float(_top_gpu_admit) - _p6_overlap_vram
-                )
+                _p6_hold_vram = max(0.0, float(_top_gpu_admit) - _p6_overlap_vram)
                 if _p6_hold_ram > 0.0 or _p6_hold_vram > 0.0:
                     budget.reserve(0, _p6_hold_vram, _p6_hold_ram)
                 _p6_hold_key = _top_key
@@ -1558,6 +1623,7 @@ def _stop_excess(conn, home: Path, candidates: list, excess: int, describe, warn
     ``describe(project, task_id, remaining)`` is the info line logged per stop.
     """
     from taskqueue.db import request_stop_with_control
+
     stopped = 0
     for cand in candidates:
         if stopped >= excess:
@@ -1573,15 +1639,23 @@ def _stop_excess(conn, home: Path, candidates: list, excess: int, describe, warn
 
 
 def _enforce_excess_running(
-    conn: sqlite3.Connection, home: Path, active_runs: dict, running_tasks_snapshot: list,
-    max_tasks: int, n_running: int, n_running_by_proj: dict,
+    conn: sqlite3.Connection,
+    home: Path,
+    active_runs: dict,
+    running_tasks_snapshot: list,
+    max_tasks: int,
+    n_running: int,
+    n_running_by_proj: dict,
 ) -> None:
     """Stop the most recently started local tasks above the global / per-project caps."""
     # Only local tasks are stopped here (remote workers manage themselves).
     local = [r for r in running_tasks_snapshot if (r["project"], r["task_id"]) in active_runs]
     if max_tasks > 0 and n_running > max_tasks:
         _stop_excess(
-            conn, home, _most_recent_first(conn, local), n_running - max_tasks,
+            conn,
+            home,
+            _most_recent_first(conn, local),
+            n_running - max_tasks,
             lambda p, t, left: f"max_running_tasks={max_tasks} enforced: stopping {p}/{t} (excess={left})",
             "excess-stop",
         )
@@ -1597,7 +1671,9 @@ def _enforce_excess_running(
         if pm <= 0 or count <= pm:
             continue
         _stop_excess(
-            conn, home, _most_recent_first(conn, [r for r in local if r["project"] == pn]),
+            conn,
+            home,
+            _most_recent_first(conn, [r for r in local if r["project"] == pn]),
             count - pm,
             lambda p, t, left, pm=pm: f"project max_tasks={pm} enforced: stopping {p}/{t}",
             "proj-excess-stop",
@@ -1633,8 +1709,9 @@ def _start_local_run(conn, home: Path, project, row, key, use_resume: bool, grac
     return None
 
 
-def _record_admission(conn, run, row, key, ram: float, gpu: float, source: str, budget,
-                      *, resumed: bool, forced: bool) -> None:
+def _record_admission(
+    conn, run, row, key, ram: float, gpu: float, source: str, budget, *, resumed: bool, forced: bool
+) -> None:
     """P9: store the estimate on the run row; D11: log why the task was admitted."""
     try:
         if run.run_id:
@@ -1745,8 +1822,17 @@ class _OccupancyState:
         self.total_ram_declared += delta
 
     def note_admitted(
-        self, project: str, task_id: str, *, cpu: float, ram: float, gpu: float,
-        locks: set[str], unknown: bool, exclusive: bool, exclusive_project: bool,
+        self,
+        project: str,
+        task_id: str,
+        *,
+        cpu: float,
+        ram: float,
+        gpu: float,
+        locks: set[str],
+        unknown: bool,
+        exclusive: bool,
+        exclusive_project: bool,
     ) -> None:
         self.n_running += 1
         self.running_locks.update(locks)
@@ -1764,40 +1850,48 @@ class _OccupancyState:
 
 
 def _p6_annotate_hold(
-    fit_reason: str, hold_key: tuple[str, str], hold_ram: float, hold_vram: float,
+    fit_reason: str,
+    hold_key: tuple[str, str],
+    hold_ram: float,
+    hold_vram: float,
 ) -> str:
     """Name the task a P6 hold was reserved for inside a fit() refusal reason."""
     for amount in (hold_ram, hold_vram):
         needle = f"hold {amount:.1f}"
         if amount > 0.05 and needle in fit_reason:
-            fit_reason = fit_reason.replace(
-                needle, f"{needle} (reserved for {task_key(*hold_key)})"
-            )
+            fit_reason = fit_reason.replace(needle, f"{needle} (reserved for {task_key(*hold_key)})")
     return fit_reason
 
 
 def _resource_block(
-    fit_reason: str, ram: float, gpu: float, est: dict, system_vram_total: float,
+    fit_reason: str,
+    ram: float,
+    gpu: float,
+    est: dict,
+    system_vram_total: float,
 ) -> tuple[str, str]:
     """Block code and note for a task that does not fit the resource budget."""
     permanent = gpu > 0 and system_vram_total > 0 and gpu > system_vram_total
     code = tqerr.BLOCK_VRAM_EXCEEDS_SYSTEM if permanent else tqerr.BLOCK_RESOURCES
     est_vram = float(est["vram_gib"])
     vram_note = (
-        f"admit_vram={gpu:.1f} decl_vram={est_vram:.1f}"
-        if abs(gpu - est_vram) > 1e-9
-        else f"est_vram={est_vram:.1f}"
+        f"admit_vram={gpu:.1f} decl_vram={est_vram:.1f}" if abs(gpu - est_vram) > 1e-9 else f"est_vram={est_vram:.1f}"
     )
-    return code, (
-        f"{fit_reason or 'insufficient resources'} "
-        f"[est_ram={ram:.1f} {vram_note} src={est['source']}]"
-    )
+    return code, (f"{fit_reason or 'insufficient resources'} [est_ram={ram:.1f} {vram_note} src={est['source']}]")
 
 
 def _seed_budget_from_running(
-    conn: sqlite3.Connection, rows: list, active_runs: dict, budget: Any,
-    occ: _OccupancyState, settled_footprint: dict[str, tuple[float, float]],
-    *, default_ram: float, predict_runs: int, settle_window: float, est_cache: dict,
+    conn: sqlite3.Connection,
+    rows: list,
+    active_runs: dict,
+    budget: Any,
+    occ: _OccupancyState,
+    settled_footprint: dict[str, tuple[float, float]],
+    *,
+    default_ram: float,
+    predict_runs: int,
+    settle_window: float,
+    est_cache: dict,
 ) -> None:
     """Reserve the unsettled footprint of our own running tasks in ``budget``.
 
@@ -1821,8 +1915,13 @@ def _seed_budget_from_running(
         # once. Reserving est here instead would double-count.
         run = active_runs[key]
         est = estimate_task_resources(
-            conn, row["project"], row["task_id"], res_r,
-            default_ram_gib=default_ram, predict_runs=predict_runs, cache=est_cache,
+            conn,
+            row["project"],
+            row["task_id"],
+            res_r,
+            default_ram_gib=default_ram,
+            predict_runs=predict_runs,
+            cache=est_cache,
         )
         # Candidates are charged their *estimate* against max_ram_gib; charge running
         # tasks the same way, otherwise a task counts as its estimate on the admit tick
@@ -1883,13 +1982,23 @@ def _local_admit_queued_body(
     # Fetch a bit more than the window so fairshare can re-order among a larger set,
     # then trim after sort. When window is 0, load all.
     _fetch_limit = None if _cand_window <= 0 else max(_cand_window * 2, _cand_window)
-    # Status map is needed for the head-of-line window below and reused for dep checks.
-    _status_map = build_task_status_map(conn)
-    queued = get_queued_tasks(
+    # First fetch is bounded by the admission window.  Build dependency state
+    # only for those candidates and their peers, rather than scanning all tasks.
+    _initial_queued = get_queued_tasks(
         conn,
         limit=_fetch_limit,
-        status_map=_status_map,
         skip_projects=set(blocked_projects(conn)),
+    )
+    _status_map = build_task_status_map(conn, _initial_queued)
+    queued = (
+        get_queued_tasks(
+            conn,
+            limit=_fetch_limit,
+            status_map=_status_map,
+            skip_projects=set(blocked_projects(conn)),
+        )
+        if _initial_queued and _fetch_limit is not None and len(_initial_queued) >= _fetch_limit
+        else _initial_queued
     )
     if not queued:
         return
@@ -1899,6 +2008,7 @@ def _local_admit_queued_body(
     # and cleared by claim on start. No bulk NULL here — that races with UI polls.
     # W4.5: call get_running_tasks once per tick instead of twice.
     running_tasks_snapshot = get_running_tasks(conn)
+
     def _dep_lookup(p: str, t: str, _m: dict = _status_map) -> str | None:
         return _m.get((p, t))
 
@@ -1924,15 +2034,9 @@ def _local_admit_queued_body(
     if _cand_window > 0 and len(queued) > _cand_window:
         queued = queued[:_cand_window]
     # T-204: scavengers go last so they only see capacity normal work left idle.
-    _scav_keys = {
-        (r["project"], r["task_id"])
-        for r in queued
-        if _row_get(r, "task_class", "normal") == "scavenger"
-    }
+    _scav_keys = {(r["project"], r["task_id"]) for r in queued if _row_get(r, "task_class", "normal") == "scavenger"}
     if _scav_keys:
-        queued = sorted(
-            queued, key=lambda r: (r["project"], r["task_id"]) in _scav_keys
-        )
+        queued = sorted(queued, key=lambda r: (r["project"], r["task_id"]) in _scav_keys)
     _contended_by: list[str] = []
     budget = ResourceBudget(system_info, cfg)
     # Admission-control knobs.
@@ -1969,9 +2073,16 @@ def _local_admit_queued_body(
     _frozen_cache = _admit_caches.frozen
     _proj_limits_cache = _admit_caches.limits
     _seed_budget_from_running(
-        conn, running_tasks_snapshot, active_runs, budget, occ, _settled_unknown_footprint,
-        default_ram=_default_ram, predict_runs=_predict_runs,
-        settle_window=_settle_window, est_cache=_est_cache,
+        conn,
+        running_tasks_snapshot,
+        active_runs,
+        budget,
+        occ,
+        _settled_unknown_footprint,
+        default_ram=_default_ram,
+        predict_runs=_predict_runs,
+        settle_window=_settle_window,
+        est_cache=_est_cache,
     )
 
     max_conc = int(cfg.get("max_concurrent_tasks", 0))
@@ -1985,12 +2096,22 @@ def _local_admit_queued_body(
     # reservation_state dict is maintained across ticks (passed in by run_daemon)
     # so we can detect and expire a task that has been waiting too long.
     _top, _p6_hold_key, _p6_hold_ram, _p6_hold_vram = _p6_reserve_top(
-        conn, queued, _dep_lookup, _res_max_ticks, reservation_state, budget,
-        active_runs, _est_cache, _vram_ps_models, _default_ram, _predict_runs,
+        conn,
+        queued,
+        _dep_lookup,
+        _res_max_ticks,
+        reservation_state,
+        budget,
+        active_runs,
+        _est_cache,
+        _vram_ps_models,
+        _default_ram,
+        _predict_runs,
     )
 
-    _enforce_excess_running(conn, home, active_runs, running_tasks_snapshot,
-                            max_tasks, occ.n_running, occ.n_running_by_proj)
+    _enforce_excess_running(
+        conn, home, active_runs, running_tasks_snapshot, max_tasks, occ.n_running, occ.n_running_by_proj
+    )
 
     local_node = node_from_system(system_info)
 
@@ -2003,8 +2124,13 @@ def _local_admit_queued_body(
         if code == tqerr.BLOCK_RESOURCES and (project, task_id) not in _scav_keys:
             _contended_by.append(f"{project}/{task_id}")
         _note_block(
-            conn, project, task_id, code, reason,
-            pending=_pending_blocks, status_row=row,
+            conn,
+            project,
+            task_id,
+            code,
+            reason,
+            pending=_pending_blocks,
+            status_row=row,
         )
 
     _drain = exclusive_drain_target(
@@ -2015,16 +2141,12 @@ def _local_admit_queued_body(
     _last_runs = get_last_runs_for_tasks(conn, [(r["project"], r["task_id"]) for r in queued])
     # Wave C: one GROUP BY for max_attempts candidates instead of per-row COUNT.
     _attempt_keys = [
-        (r["project"], r["task_id"])
-        for r in queued
-        if "max_attempts" in r.keys() and int(r["max_attempts"] or 0) > 0
+        (r["project"], r["task_id"]) for r in queued if "max_attempts" in r.keys() and int(r["max_attempts"] or 0) > 0
     ]
     _attempt_bases = {
         (r["project"], r["task_id"]): int(r["retry_attempt_baseline"] or 0)
         for r in queued
-        if "retry_attempt_baseline" in r.keys()
-        and "max_attempts" in r.keys()
-        and int(r["max_attempts"] or 0) > 0
+        if "retry_attempt_baseline" in r.keys() and "max_attempts" in r.keys() and int(r["max_attempts"] or 0) > 0
     }
     _attempt_counts = failed_attempt_counts_bulk(conn, _attempt_keys, baselines=_attempt_bases)
     for row in queued:
@@ -2036,14 +2158,10 @@ def _local_admit_queued_body(
             # Task belongs to a project no longer in the registry — leave queued.
             continue
         force = bool(row["force_run"]) if "force_run" in row.keys() else False
-        if (
-            _drain is not None
-            and key != _drain[0]
-            and not force
-            and (_drain[1] is None or _drain[1] == row["project"])
-        ):
+        if _drain is not None and key != _drain[0] and not force and (_drain[1] is None or _drain[1] == row["project"]):
             _nb(
-                row["project"], row["task_id"],
+                row["project"],
+                row["task_id"],
                 tqerr.BLOCK_EXCLUSIVE if _drain[1] is None else tqerr.BLOCK_EXCLUSIVE_PROJECT,
                 f"draining for exclusive task {task_key(*_drain[0])}",
             )
@@ -2054,34 +2172,36 @@ def _local_admit_queued_body(
         if admit_frozen and not force:
             if admit_frozen_reason:
                 _nb(
-                    row["project"], row["task_id"], tqerr.BLOCK_RESOURCES,
+                    row["project"],
+                    row["task_id"],
+                    tqerr.BLOCK_RESOURCES,
                     admit_frozen_reason,
                 )
             continue
         if host_cpu_blocked and not force:
             if host_cpu_reason:
                 _nb(
-                    row["project"], row["task_id"], tqerr.BLOCK_RESOURCES,
+                    row["project"],
+                    row["task_id"],
+                    tqerr.BLOCK_RESOURCES,
                     host_cpu_reason,
                 )
             continue
         if key in _scav_keys and _contended_by and not force:
             _nb(
-                row["project"], row["task_id"], tqerr.BLOCK_SCAVENGER,
+                row["project"],
+                row["task_id"],
+                tqerr.BLOCK_SCAVENGER,
                 f"scavenger: capacity contended by {_contended_by[0]}",
             )
             continue
         proj_key = row["project"]
-        _frozen_cache[proj_key], _paused_cache[proj_key], _proj_limits_cache[proj_key] = (
-            _admit_caches.project_state(conn, proj_key)
+        _frozen_cache[proj_key], _paused_cache[proj_key], _proj_limits_cache[proj_key] = _admit_caches.project_state(
+            conn, proj_key
         )
         # filter_freeze_pause runs before filter_services, so a frozen/paused
         # project never needs its (possibly slow) service probes.
-        if (
-            "requires_services" in row.keys()
-            and not _frozen_cache[proj_key]
-            and not _paused_cache[proj_key]
-        ):
+        if "requires_services" in row.keys() and not _frozen_cache[proj_key] and not _paused_cache[proj_key]:
             _svc_raw = row["requires_services"] or "[]"
             if _svc_raw not in _svc_cache:
                 _svc_cache[_svc_raw] = check_services_cached(
@@ -2099,7 +2219,9 @@ def _local_admit_queued_body(
             # F-030: mark failed so task doesn't stay stuck in queued forever
             _exhausted.append((row["project"], row["task_id"]))  # marked failed in one batch after the loop
             _nb(
-                row["project"], row["task_id"], tqerr.BLOCK_MAX_ATTEMPTS,
+                row["project"],
+                row["task_id"],
+                tqerr.BLOCK_MAX_ATTEMPTS,
                 f"max_attempts={max_a} reached — marked failed",
             )
             continue
@@ -2110,8 +2232,13 @@ def _local_admit_queued_body(
         # ram_gib/gpu_vram_gib used to be accounted as zero, which silently
         # disabled every resource gate for that task (F2).
         _est = estimate_task_resources(
-            conn, row["project"], row["task_id"], res,
-            default_ram_gib=_default_ram, predict_runs=_predict_runs, cache=_est_cache,
+            conn,
+            row["project"],
+            row["task_id"],
+            res,
+            default_ram_gib=_default_ram,
+            predict_runs=_predict_runs,
+            cache=_est_cache,
         )
         gpu = _warm_vram_admit_gib(
             _est["vram_gib"],
@@ -2140,7 +2267,9 @@ def _local_admit_queued_body(
                 # Don't block — fall through to normal resource check below.
             else:
                 _nb(
-                    proj_name, row["task_id"], tqerr.BLOCK_RESOURCES,
+                    proj_name,
+                    row["task_id"],
+                    tqerr.BLOCK_RESOURCES,
                     f"max_concurrent_unknown={_max_unknown} reached — waiting for a "
                     f"task with no declared resources and no run history to settle "
                     f"(settle_window_sec={_settle_window:.0f}s) so its footprint "
@@ -2168,7 +2297,10 @@ def _local_admit_queued_body(
             skip_node_capacity=True,
             running_locks=occ.running_locks,
             min_reserved_others=reserved_slots_for_others(
-                _all_limits, _queued_by_proj, occ.n_running_by_proj, proj_key,
+                _all_limits,
+                _queued_by_proj,
+                occ.n_running_by_proj,
+                proj_key,
             ),
         )
         fr = filter_task(row, local_node, ctx, cpu=cpu, ram=ram, gpu=gpu)
@@ -2182,7 +2314,9 @@ def _local_admit_queued_body(
             flap, flap_reason = budget.antiflap_ram(ram, peak)
             if flap:
                 _nb(
-                    row["project"], row["task_id"], tqerr.BLOCK_RESOURCES,
+                    row["project"],
+                    row["task_id"],
+                    tqerr.BLOCK_RESOURCES,
                     flap_reason,
                 )
                 continue
@@ -2192,16 +2326,13 @@ def _local_admit_queued_body(
         # see the hold as unavailable headroom.
         _hold_credit_ram, _hold_credit_gpu = p6_hold_credit(key, _p6_hold_key, _p6_hold_ram, _p6_hold_vram)
         ok, fit_reason = budget.fits(
-            cpu, gpu, ram,
+            cpu,
+            gpu,
+            ram,
             ram_hold_credit=_hold_credit_ram,
             gpu_hold_credit=_hold_credit_gpu,
         )
-        if (
-            not ok
-            and _p6_hold_key
-            and key != _p6_hold_key
-            and fit_reason
-        ):
+        if not ok and _p6_hold_key and key != _p6_hold_key and fit_reason:
             fit_reason = _p6_annotate_hold(fit_reason, _p6_hold_key, _p6_hold_ram, _p6_hold_vram)
         if not ok and _shadow:
             # Shadow mode: log the decision we *would* have made without acting
@@ -2215,15 +2346,17 @@ def _local_admit_queued_body(
             ok = True
         if not ok and not force:
             block_code, block_note = _resource_block(
-                fit_reason, ram, gpu, _est,
+                fit_reason,
+                ram,
+                gpu,
+                _est,
                 float(system_info.get("gpu_vram_total_gib") or 0),
             )
             _nb(row["project"], row["task_id"], block_code, block_note)
             continue
         if not ok and force:
             print(
-                f"[queue] {_ts()} WARN force_run bypassing resource gate for "
-                f"{task_key(*key)}: {fit_reason}",
+                f"[queue] {_ts()} WARN force_run bypassing resource gate for {task_key(*key)}: {fit_reason}",
                 flush=True,
             )
 
@@ -2233,24 +2366,24 @@ def _local_admit_queued_body(
         if task_locks & occ.running_locks:
             held = sorted(task_locks & occ.running_locks)
             _nb(
-                row["project"], row["task_id"], tqerr.BLOCK_MUTEX,
+                row["project"],
+                row["task_id"],
+                tqerr.BLOCK_MUTEX,
                 f"lock(s) held by another running task: {', '.join(held)}",
             )
             continue
 
         if max_conc > 0 and occ.n_running >= max_conc and not force:
             _nb(
-                row["project"], row["task_id"], tqerr.BLOCK_RESOURCES,
+                row["project"],
+                row["task_id"],
+                tqerr.BLOCK_RESOURCES,
                 f"max_concurrent_tasks={max_conc} reached ({occ.n_running} running)",
             )
             continue
 
         # Resume after interrupt, cooperative suspend, or RAM stop.
-        use_resume = bool(
-            last_run
-            and last_run["status"]
-            in (STATUS_INTERRUPTED, STATUS_SUSPENDED, STATUS_STOPPED)
-        )
+        use_resume = bool(last_run and last_run["status"] in (STATUS_INTERRUPTED, STATUS_SUSPENDED, STATUS_STOPPED))
         run = _start_local_run(conn, home, project, row, key, use_resume, graceful_stop)
         if run is None:
             continue
@@ -2261,12 +2394,17 @@ def _local_admit_queued_body(
         if reservation_state.get("key") == key:
             reservation_state.clear()
         occ.note_admitted(
-            proj_name, row["task_id"], cpu=cpu, ram=ram, gpu=gpu, locks=task_locks,
-            unknown=bool(_est["unknown"]), exclusive=exclusive,
+            proj_name,
+            row["task_id"],
+            cpu=cpu,
+            ram=ram,
+            gpu=gpu,
+            locks=task_locks,
+            unknown=bool(_est["unknown"]),
+            exclusive=exclusive,
             exclusive_project=exclusive_project,
         )
-        _record_admission(conn, run, row, key, ram, gpu, _est["source"], budget,
-                          resumed=use_resume, forced=force)
+        _record_admission(conn, run, row, key, ram, gpu, _est["source"], budget, resumed=use_resume, forced=force)
         if exclusive:
             break
 
@@ -2285,4 +2423,3 @@ def _local_admit_queued_body(
                 budget.ram_reserved = live
             except RuntimeError:
                 break
-

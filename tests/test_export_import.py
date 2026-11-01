@@ -1,5 +1,3 @@
-
-
 def test_force_import_keeps_pre_import_backup(tmp_path):
     import sqlite3
     from taskqueue.db import open_db
@@ -42,7 +40,9 @@ def test_remove_project_offline_drops_resource_history(tmp_path):
     home = tmp_path / "h"
     home.mkdir()
     c = open_db(home / "queue.db")
-    c.execute("INSERT INTO tasks(project, task_id, status, command, enqueued_at, updated_at) VALUES('p','t','done','x',1,1)")
+    c.execute(
+        "INSERT INTO tasks(project, task_id, status, command, enqueued_at, updated_at) VALUES('p','t','done','x',1,1)"
+    )
     c.execute("INSERT INTO runs(project, task_id, status, started_at) VALUES('p','t','done',1)")
     rid = c.execute("SELECT run_id FROM runs").fetchone()[0]
     c.execute("INSERT INTO resource_history(run_id, ts, cpu_pct) VALUES(?,1,1.0)", (rid,))

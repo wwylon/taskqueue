@@ -68,15 +68,6 @@ def _fmt_elapsed(sec: float | None) -> str:
     return f"{h}h{m:02d}m"
 
 
-
-
-
-
-
-
-
-
-
 def _alert_log(msg: str) -> None:
     """One line in the daemon log (stdout) for every alert that fires."""
     print(f"[alert] {time.strftime('%H:%M:%S')} {msg}", flush=True)
@@ -109,9 +100,7 @@ def _run_context(conn: sqlite3.Connection, project: str, task_id: str, run_id: i
             if int(t["max_attempts"] or 0) > 0:
                 out["max_attempts"] = int(t["max_attempts"])
         if run_id is not None:
-            r = conn.execute(
-                "SELECT started_at, log_path, worker_id FROM runs WHERE run_id = ?", (run_id,)
-            ).fetchone()
+            r = conn.execute("SELECT started_at, log_path, worker_id FROM runs WHERE run_id = ?", (run_id,)).fetchone()
             if r is not None:
                 if r["started_at"]:
                     out["started_at"] = r["started_at"]
@@ -145,8 +134,7 @@ def seed_system_alerts(conn: sqlite3.Connection) -> None:
     try:
         for key in SYSTEM_ALERT_KEYS:
             conn.execute(
-                "INSERT OR IGNORE INTO system_alerts (key, enabled, windows_toast, fire_count) "
-                "VALUES (?, 1, 1, 0)",
+                "INSERT OR IGNORE INTO system_alerts (key, enabled, windows_toast, fire_count) VALUES (?, 1, 1, 0)",
                 (key,),
             )
         conn.commit()
@@ -160,8 +148,7 @@ def queue_status_triplet(conn: sqlite3.Connection) -> tuple[int, int, int]:
     counts = {"running": 0, "failed": 0, "queued": 0}
     try:
         for row in conn.execute(
-            "SELECT status, COUNT(*) AS n FROM tasks "
-            "WHERE status IN ('running','failed','queued') GROUP BY status"
+            "SELECT status, COUNT(*) AS n FROM tasks WHERE status IN ('running','failed','queued') GROUP BY status"
         ).fetchall():
             st = row["status"]
             if st in counts:
@@ -223,8 +210,7 @@ def list_system_alerts(
     """Public list for GET /api/alerts/system."""
     try:
         rows = conn.execute(
-            "SELECT key, enabled, windows_toast, last_fired_at, fire_count "
-            "FROM system_alerts ORDER BY key"
+            "SELECT key, enabled, windows_toast, last_fired_at, fire_count FROM system_alerts ORDER BY key"
         ).fetchall()
     except sqlite3.OperationalError:
         return {"alerts": []}
@@ -235,17 +221,22 @@ def list_system_alerts(
         if row is None:
             continue
         firing = system_alert_is_hot(
-            conn, key, enabled=bool(int(row["enabled"] or 0)),
-            frozen_run_ids=frozen_run_ids, now=now,
+            conn,
+            key,
+            enabled=bool(int(row["enabled"] or 0)),
+            frozen_run_ids=frozen_run_ids,
+            now=now,
         )
-        alerts.append({
-            "key": key,
-            "enabled": int(row["enabled"] or 0),
-            "windows_toast": int(row["windows_toast"] or 0),
-            "last_fired_at": row["last_fired_at"],
-            "fire_count": int(row["fire_count"] or 0),
-            "firing": firing,
-        })
+        alerts.append(
+            {
+                "key": key,
+                "enabled": int(row["enabled"] or 0),
+                "windows_toast": int(row["windows_toast"] or 0),
+                "last_fired_at": row["last_fired_at"],
+                "fire_count": int(row["fire_count"] or 0),
+                "firing": firing,
+            }
+        )
     return {"alerts": alerts}
 
 
@@ -276,16 +267,17 @@ def count_system_alert_firing(
     now: datetime | None = None,
 ) -> int:
     try:
-        rows = conn.execute(
-            "SELECT key, enabled FROM system_alerts WHERE enabled = 1"
-        ).fetchall()
+        rows = conn.execute("SELECT key, enabled FROM system_alerts WHERE enabled = 1").fetchall()
     except sqlite3.OperationalError:
         return 0
     n = 0
     for row in rows:
         if system_alert_is_hot(
-            conn, row["key"], enabled=True,
-            frozen_run_ids=frozen_run_ids, now=now,
+            conn,
+            row["key"],
+            enabled=True,
+            frozen_run_ids=frozen_run_ids,
+            now=now,
         ):
             n += 1
     return n
@@ -305,9 +297,7 @@ def update_system_alert(
     if "enabled" in data:
         fields["enabled"] = 0 if str(data.get("enabled")).strip().lower() in ("0", "false", "no") else 1
     if "windows_toast" in data:
-        fields["windows_toast"] = (
-            0 if str(data.get("windows_toast")).strip().lower() in ("0", "false", "no") else 1
-        )
+        fields["windows_toast"] = 0 if str(data.get("windows_toast")).strip().lower() in ("0", "false", "no") else 1
     if fields:
         sets = ", ".join(f"{k} = ?" for k in fields)
         conn.execute(
@@ -328,9 +318,7 @@ def update_system_alert(
 
 
 def _is_queue_idle(conn: sqlite3.Connection) -> bool:
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','running')"
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','running')").fetchone()
     return int(row["n"] or 0) == 0
 
 
@@ -354,8 +342,7 @@ def _count_running_with_frozen_block(conn: sqlite3.Connection) -> int:
     """Best-effort hot check without daemon in-memory frozen set."""
     try:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM tasks "
-            "WHERE status = 'running' AND last_error_code = 'tq.run.frozen'"
+            "SELECT COUNT(*) AS n FROM tasks WHERE status = 'running' AND last_error_code = 'tq.run.frozen'"
         ).fetchone()
         return int(row["n"] or 0)
     except sqlite3.OperationalError:
@@ -488,8 +475,12 @@ def on_run_terminal(
             if stop_reason:
                 detail["stop_reason"] = stop_reason
             maybe_emit_system_alert(
-                conn, home, "tq_stopped", f"{label}{elapsed_str}: {why}",
-                title=f"Stopped by taskqueue: {label}", detail=detail,
+                conn,
+                home,
+                "tq_stopped",
+                f"{label}{elapsed_str}: {why}",
+                title=f"Stopped by taskqueue: {label}",
+                detail=detail,
             )
     except Exception:
         log.warning("system alert evaluation failed", exc_info=True)
@@ -518,7 +509,10 @@ def _emit_run_anomaly(conn, home, project: str, task_id: str, run_id: int) -> No
             )
         label = f"{project}/{task_id}"
         maybe_emit_system_alert(
-            conn, home, "run_anomaly", f"{label}: " + "; ".join(parts),
+            conn,
+            home,
+            "run_anomaly",
+            f"{label}: " + "; ".join(parts),
             title=f"Unusual run: {label}",
             detail={"project": project, "task_id": task_id, "run_id": run_id, "anomalies": found},
         )
@@ -539,8 +533,12 @@ def emit_task_frozen(
     """Emit task_frozen (caller enforces once-per-run_id)."""
     try:
         elapsed_str = f" (running for {_fmt_elapsed(elapsed_sec)})" if elapsed_sec is not None else ""
-        detail = {"project": project, "task_id": task_id, "run_id": run_id,
-                  "elapsed_sec": round(elapsed_sec, 1) if elapsed_sec is not None else None}
+        detail = {
+            "project": project,
+            "task_id": task_id,
+            "run_id": run_id,
+            "elapsed_sec": round(elapsed_sec, 1) if elapsed_sec is not None else None,
+        }
         detail = {k: v for k, v in detail.items() if v is not None}
         detail.update(_run_context(conn, project, task_id, run_id))
         tail = detail.get("log_tail") or []
@@ -548,8 +546,12 @@ def emit_task_frozen(
         if tail:
             body += f"\nlast output: {tail[-1][:160]}"
         return maybe_emit_system_alert(
-            conn, home, "task_frozen", body,
-            title=f"Task frozen: {project}/{task_id}", detail=detail,
+            conn,
+            home,
+            "task_frozen",
+            body,
+            title=f"Task frozen: {project}/{task_id}",
+            detail=detail,
         )
     except Exception:
         log.warning("system alert evaluation failed", exc_info=True)
@@ -584,8 +586,7 @@ def evaluate_all_done(
             detail["failed_tasks"] = [
                 f"{row['project']}/{row['task_id']}"
                 for row in conn.execute(
-                    "SELECT project, task_id FROM tasks WHERE status = 'failed' "
-                    "ORDER BY updated_at DESC LIMIT 5"
+                    "SELECT project, task_id FROM tasks WHERE status = 'failed' ORDER BY updated_at DESC LIMIT 5"
                 ).fetchall()
             ]
         except Exception:
@@ -597,7 +598,10 @@ def evaluate_all_done(
         if detail.get("failed_tasks"):
             body += "\nfailed: " + ", ".join(detail["failed_tasks"])
         return maybe_emit_system_alert(
-            conn, home, "all_done", body,
+            conn,
+            home,
+            "all_done",
+            body,
             now=now,
             cooldown_sec=ALL_DONE_COOLDOWN_SEC,
             title="Queue idle" + (f" — {f} failed" if f else ""),

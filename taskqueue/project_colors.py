@@ -3,6 +3,7 @@
 Colors are stored as config keys ``project_color_<name>`` ("#rrggbb") so they survive restarts and
 stay stable when projects come and go. Distance is CIE76 ΔE in CIELAB.
 """
+
 from __future__ import annotations
 
 import colorsys
@@ -24,7 +25,7 @@ def _hex(r: float, g: float, b: float) -> str:
 
 def _rgb(hexcol: str) -> tuple[float, float, float]:
     h = hexcol.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
+    return tuple(int(h[i : i + 2], 16) / 255.0 for i in (0, 2, 4))  # type: ignore[return-value]
 
 
 def _lab(hexcol: str) -> tuple[float, float, float]:
@@ -78,7 +79,7 @@ def hash_color(name: str) -> str:
 
 
 def load_project_colors(cfg: dict) -> dict[str, str]:
-    return {k[len(PREFIX):]: v for k, v in cfg.items() if k.startswith(PREFIX) and isinstance(v, str)}
+    return {k[len(PREFIX) :]: v for k, v in cfg.items() if k.startswith(PREFIX) and isinstance(v, str)}
 
 
 def ensure_project_colors(conn: sqlite3.Connection, projects: list[str]) -> dict[str, str]:

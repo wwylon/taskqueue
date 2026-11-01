@@ -38,17 +38,28 @@
  * with ?tq_ticket= so the long-lived token never appears in a URL. Returns an EventSource-like handle
  * (onopen/onmessage/onerror/close/readyState); reports an error (no token-in-URL fallback) if the ticket call fails.
  */
-export function tqEventSource(path) {
-  const h = { readyState: 0, onopen: null, onmessage: null, onerror: null, _es: null, _closed: false,
-    _ls: [],
+/**
+ * F-207: mint a fresh SSE ticket and open EventSource. Reconnects remint the
+ * ticket (native EventSource retry reuses a single-use URL → 401).
+ */
+export function openStream(path, handlers = {}) {
+  const h = {
+    readyState: 0, onopen: handlers.onopen || null, onmessage: handlers.onmessage || null,
+    onerror: handlers.onerror || null, _es: null, _closed: false, _ls: [], _path: path,
+    _backoff: 500, _reconnectTimer: 0,
     addEventListener(n, f) { this._ls.push([n, f]); if (this._es) this._es.addEventListener(n, f); },
-    close() { this._closed = true; this.readyState = 2; if (this._es) this._es.close(); } };
-  (async () => {
+    close() {
+      this._closed = true; this.readyState = 2;
+      if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+      if (this._es) this._es.close();
+    },
+  };
+  const connect = async () => {
+    if (h._closed) return;
     const tok = localStorage.getItem('tq_token');
     let qs = '';
     if (tok) {
       try {
-        // Bounded: a hung ticket call must not block the (re)connect forever.
         const ctl = typeof AbortController === 'function' ? new AbortController() : null;
         const timer = ctl ? setTimeout(() => ctl.abort(), 5000) : 0;
         let r;
@@ -56,23 +67,46 @@ export function tqEventSource(path) {
         finally { if (timer) clearTimeout(timer); }
         const j = r.ok ? await r.json() : null;
         if (!j || !j.ticket) throw new Error('no ticket');
-        qs = '?tq_ticket=' + encodeURIComponent(j.ticket);
+        qs = (path.includes('?') ? '&' : '?') + 'tq_ticket=' + encodeURIComponent(j.ticket);
       } catch (e) {
-        // Never fall back to ?tq_token=: the long-lived token must not reach URLs, logs or Referer headers.
         h.readyState = 2;
         if (h.onerror && !h._closed) h.onerror(new Event('error'));
+        if (!h._closed) {
+          h._reconnectTimer = setTimeout(connect, h._backoff);
+          h._backoff = Math.min(h._backoff * 2, 15000);
+        }
         return;
       }
     }
     if (h._closed) return;
+    if (h._es) { try { h._es.close(); } catch (_) {} }
     const es = new EventSource(path + qs);
     h._es = es;
     for (const [n, f] of h._ls) es.addEventListener(n, f);
-    es.onopen = ev => { h.readyState = es.readyState; if (h.onopen) h.onopen(ev); };
+    es.onopen = ev => {
+      h.readyState = es.readyState;
+      h._backoff = 500;
+      if (h.onopen) h.onopen(ev);
+    };
     es.onmessage = ev => { if (h.onmessage) h.onmessage(ev); };
-    es.onerror = ev => { h.readyState = es.readyState; if (h.onerror) h.onerror(ev); };
-  })();
+    es.onerror = ev => {
+      h.readyState = es.readyState;
+      if (h.onerror) h.onerror(ev);
+      // CLOSED: remint ticket and reconnect (native retry would reuse spent ticket).
+      if (!h._closed && es.readyState === 2) {
+        try { es.close(); } catch (_) {}
+        h._reconnectTimer = setTimeout(connect, h._backoff);
+        h._backoff = Math.min(h._backoff * 2, 15000);
+      }
+    };
+  };
+  connect();
   return h;
+}
+
+/** @deprecated use openStream — kept as alias for existing call sites */
+export function tqEventSource(path) {
+  return openStream(path);
 }
 
 const _latest = {};
@@ -115,15 +149,15 @@ export async function fetchJsonEtag(url, timeoutMs, etag) {
     const wallMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
     const hdr = r.headers && typeof r.headers.get === 'function' ? r.headers : null;
     const serverTiming = hdr ? (hdr.get('Server-Timing') || hdr.get('X-TQ-Timing') || '') : '';
-    if (r.status === 304) return { data: null, etag, notModified: true, wallMs, serverTiming };
-    if (!r.ok) return { data: null, etag, notModified: false, wallMs, serverTiming };
+    if (r.status === 304) return { data: null, etag, notModified: true, wallMs, serverTiming, status: 304 };
+    if (!r.ok) return { data: null, etag, notModified: false, wallMs, serverTiming, status: r.status };
     const data = await r.json().catch(() => null);
     const newEtag = (data && data.etag) || (hdr && hdr.get('ETag')) || etag;
-    return { data, etag: newEtag ? newEtag.replace(/"/g, '') : etag, notModified: false, wallMs, serverTiming };
+    return { data, etag: newEtag ? newEtag.replace(/"/g, '') : etag, notModified: false, wallMs, serverTiming, status: r.status };
   } catch (e) {
     if (timer) clearTimeout(timer);
     const wallMs = Math.round(((typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now()) - t0);
-    return { data: null, etag, notModified: false, wallMs, serverTiming: '' };
+    return { data: null, etag, notModified: false, wallMs, serverTiming: '', status: 0 };
   }
 }
 

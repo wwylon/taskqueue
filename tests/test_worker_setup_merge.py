@@ -23,15 +23,18 @@ def test_setup_keeps_local_only_projects_and_extra_keys(tmp_path, monkeypatch):
     shared_root = tmp_path / "shared"
     shared_root.mkdir()
     (home / "projects.yaml").write_text(
-        yaml.dump({"projects": {
-            "localonly": {"root": str(local_root)},
-            "shared": {"root": str(shared_root), "queue_dir": "custom/q"},
-        }}),
+        yaml.dump(
+            {
+                "projects": {
+                    "localonly": {"root": str(local_root)},
+                    "shared": {"root": str(shared_root), "queue_dir": "custom/q"},
+                }
+            }
+        ),
         encoding="utf-8",
     )
     master = {"shared": {"git_url": None}}
-    monkeypatch.setattr(worker.urllib.request, "urlopen",
-                        lambda req, timeout=0: _Resp(json.dumps(master).encode()))
+    monkeypatch.setattr(worker.urllib.request, "urlopen", lambda req, timeout=0: _Resp(json.dumps(master).encode()))
     worker.setup_worker(home, "http://m:1", "w1")
     out = yaml.safe_load((home / "projects.yaml").read_text(encoding="utf-8"))["projects"]
     assert out["localonly"]["root"] == str(local_root)

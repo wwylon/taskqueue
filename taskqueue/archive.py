@@ -28,11 +28,16 @@ def archive_tasks(
     only_projects: list[str] | None = None,
     dry_run: bool = False,
     now: str | None = None,
+    max_completed_runs: int | None = None,
 ) -> dict[str, Any]:
-    """Archive tasks in ``statuses`` whose ``updated_at`` is older than ``older_than_days``."""
+    """Archive tasks in ``statuses`` whose ``updated_at`` is older than ``older_than_days``.
+
+    ``max_completed_runs`` (optional): skip tasks with ``completed_run_count`` greater than
+    this value (keeps multi-use / often re-run tasks). ``None`` = no limit (backward compatible).
+    """
     statuses = tuple(s for s in statuses if s not in _NEVER)
     if not statuses:
-        return {"archived": 0, "tasks": [], "dry_run": dry_run}
+        return {"archived": 0, "tasks": [], "dry_run": dry_run, "max_completed_runs": max_completed_runs}
     ref = datetime.fromisoformat(now) if now else datetime.now(UTC).replace(tzinfo=None)
     cutoff = (ref - timedelta(days=older_than_days)).isoformat()
     marks = ",".join("?" * len(statuses))
@@ -41,6 +46,9 @@ def archive_tasks(
     if only_projects:
         sql += f" AND project IN ({','.join('?' * len(only_projects))})"
         params += only_projects
+    if max_completed_runs is not None:
+        sql += " AND COALESCE(completed_run_count, 0) <= ?"
+        params.append(int(max_completed_runs))
     rows = conn.execute(sql + " ORDER BY project, task_id", params).fetchall()
     done: list[dict[str, str]] = []
     for row in rows:
@@ -62,7 +70,7 @@ def archive_tasks(
         conn.execute("DELETE FROM runs WHERE project = ? AND task_id = ?", (proj, tid))
         conn.execute("DELETE FROM tasks WHERE project = ? AND task_id = ?", (proj, tid))
         conn.commit()
-    return {"archived": len(done), "tasks": done, "dry_run": dry_run}
+    return {"archived": len(done), "tasks": done, "dry_run": dry_run, "max_completed_runs": max_completed_runs}
 
 
 def _movable(src: str | None) -> bool:

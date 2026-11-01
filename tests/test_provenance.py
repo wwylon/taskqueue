@@ -1,4 +1,5 @@
 """v22 task provenance: submitted_via / submitted_by / client_info."""
+
 from __future__ import annotations
 
 import sys
@@ -55,7 +56,9 @@ def test_cli_add_route_stamps_and_audits(tmp_path: Path) -> None:
     proj = Project(name="p", root=root, queue_dir=qdir)
     HandlerClass, db, _ = make_handler_env(tmp_path, projects={"p": proj})
     code, data = http_request(
-        HandlerClass, "POST", "/api/cli/add",
+        HandlerClass,
+        "POST",
+        "/api/cli/add",
         {"project": "p", "filename": "a.yaml", "yaml_text": _yaml("a")},
         extra_headers={"X-TQ-Via": "mcp", "X-TQ-Operator": "ada", "X-TQ-Client": "mcp/cursor 1.0"},
     )
@@ -65,8 +68,7 @@ def test_cli_add_route_stamps_and_audits(tmp_path: Path) -> None:
     audit = db.execute("SELECT actor, action, project, target FROM operator_audit").fetchone()
     assert tuple(audit) == ("ada", "task_add", "p", "a")
     # no headers at all -> generic api caller
-    http_request(HandlerClass, "POST", "/api/cli/add",
-                 {"project": "p", "filename": "b.yaml", "yaml_text": _yaml("b")})
+    http_request(HandlerClass, "POST", "/api/cli/add", {"project": "p", "filename": "b.yaml", "yaml_text": _yaml("b")})
     assert _row(db, "b")["submitted_via"] == "api"
     db.close()
 

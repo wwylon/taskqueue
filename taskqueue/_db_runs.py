@@ -17,6 +17,7 @@ from taskqueue._time import _now  # noqa: F401  # canonical ISO timestamp helper
 
 # --- run records ---
 
+
 def insert_run(
     conn: sqlite3.Connection,
     project: str,
@@ -33,7 +34,8 @@ def insert_run(
     )
     run_id = cur.lastrowid or 0
     conn.execute(
-        "UPDATE tasks SET last_run_id = ? WHERE project = ? AND task_id = ?",
+        "UPDATE tasks SET last_run_id = ?, total_run_count = COALESCE(total_run_count, 0) + 1 "
+        "WHERE project = ? AND task_id = ?",
         (run_id, project, task_id),
     )
     if commit:
@@ -64,21 +66,25 @@ def update_run_progress(
     peak_ram_gib: float | None = None,
     peak_vram_gib: float | None = None,
     peak_cpu_pct: float | None = None,
+    *,
+    commit: bool = True,
 ) -> None:
     conn.execute(
         "UPDATE runs SET progress_pct = ?, last_log_line = ?, peak_ram_gib = ?, peak_vram_gib = ?, peak_cpu_pct = ? WHERE run_id = ?",
         (progress_pct, last_log_line, peak_ram_gib, peak_vram_gib, peak_cpu_pct, run_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
-def update_run_metrics(conn: sqlite3.Connection, run_id: int, metrics: dict) -> None:
+def update_run_metrics(conn: sqlite3.Connection, run_id: int, metrics: dict, *, commit: bool = True) -> None:
     """R8: Persist latest TQ_METRIC values for a running task."""
     conn.execute(
         "UPDATE runs SET metrics_json = ? WHERE run_id = ?",
         (json.dumps(metrics, ensure_ascii=False), run_id),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def set_run_stop_reason(conn: sqlite3.Connection, run_id: int, reason: str) -> None:
@@ -104,11 +110,10 @@ def finish_run(
 ) -> bool:
     """Finalize a run. If only_if_running, no-op when already terminal. Returns whether updated."""
     from taskqueue.errors import classify_error
+
     error_category = classify_error(last_error_code, exit_code, stopped_by)
     # G3: compute wall_sec from started_at in-database to avoid Python datetime parsing.
-    wall_sec_expr = (
-        "CAST(ROUND((julianday(?) - julianday(started_at)) * 86400) AS INTEGER)"
-    )
+    wall_sec_expr = "CAST(ROUND((julianday(?) - julianday(started_at)) * 86400) AS INTEGER)"
     if peak_ram_gib is not None or peak_vram_gib is not None or peak_cpu_pct is not None:
         sql = (
             f"UPDATE runs SET finished_at = ?, wall_sec = {wall_sec_expr}, "
@@ -120,8 +125,18 @@ def finish_run(
         )
         now = _now()
         params: tuple = (
-            now, now, exit_code, status, last_error_code, peak_ram_gib, peak_vram_gib, peak_cpu_pct,
-            stopped_by, stop_reason, error_category, run_id,
+            now,
+            now,
+            exit_code,
+            status,
+            last_error_code,
+            peak_ram_gib,
+            peak_vram_gib,
+            peak_cpu_pct,
+            stopped_by,
+            stop_reason,
+            error_category,
+            run_id,
         )
     else:
         sql = (
@@ -132,8 +147,15 @@ def finish_run(
         )
         now = _now()
         params = (
-            now, now, exit_code, status, last_error_code, stopped_by, stop_reason,
-            error_category, run_id,
+            now,
+            now,
+            exit_code,
+            status,
+            last_error_code,
+            stopped_by,
+            stop_reason,
+            error_category,
+            run_id,
         )
     if only_if_running:
         sql += " AND status = 'running'"
@@ -218,8 +240,7 @@ def finalize_run_and_task(
             )
         else:
             cur = conn.execute(
-                "UPDATE tasks SET status = ?, updated_at = ? "
-                "WHERE project = ? AND task_id = ? AND status = 'running'",
+                "UPDATE tasks SET status = ?, updated_at = ? WHERE project = ? AND task_id = ? AND status = 'running'",
                 (status, now, project, task_id),
             )
         if (cur.rowcount or 0) == 0:
@@ -239,6 +260,12 @@ def finalize_run_and_task(
         # G3: update predicted_duration_sec (p50 of last 10 wall_sec for this task).
         if status in _TERMINAL_STATUSES:
             _update_predicted_duration(conn, project, task_id)
+        if status == "completed":
+            conn.execute(
+                "UPDATE tasks SET completed_run_count = COALESCE(completed_run_count, 0) + 1 "
+                "WHERE project = ? AND task_id = ?",
+                (project, task_id),
+            )
         conn.commit()
         return True
     except Exception:
@@ -270,17 +297,14 @@ def renew_run_lease_for_worker(
 ) -> bool:
     """Renew lease only if the run is still running and owned by worker_id."""
     cur = conn.execute(
-        "UPDATE runs SET lease_expires_at = ? "
-        "WHERE run_id = ? AND status = 'running' AND worker_id = ?",
+        "UPDATE runs SET lease_expires_at = ? WHERE run_id = ? AND status = 'running' AND worker_id = ?",
         (lease_expiry_iso(ttl_sec), run_id, worker_id),
     )
     conn.commit()
     return (cur.rowcount or 0) > 0
 
 
-def get_run_owned(
-    conn: sqlite3.Connection, run_id: int, worker_id: str
-) -> sqlite3.Row | None:
+def get_run_owned(conn: sqlite3.Connection, run_id: int, worker_id: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM runs WHERE run_id = ? AND worker_id = ?",
         (run_id, worker_id),
@@ -342,9 +366,7 @@ def reclaim_expired_leases(conn: sqlite3.Connection, *, heartbeat_sec: float = 3
     ).fetchall()
     reclaimed: list[tuple[str, str]] = []
     for row in rows:
-        worker_row = conn.execute(
-            "SELECT last_seen FROM workers WHERE worker_id = ?", (row["worker_id"],)
-        ).fetchone()
+        worker_row = conn.execute("SELECT last_seen FROM workers WHERE worker_id = ?", (row["worker_id"],)).fetchone()
         last_seen = worker_row["last_seen"] if worker_row else None
         code = (
             tqerr.INFRA_LEASE_EXPIRED_WORKER_ALIVE
@@ -358,14 +380,12 @@ def reclaim_expired_leases(conn: sqlite3.Connection, *, heartbeat_sec: float = 3
             "stopped_by = 'lease-timeout' "
             "WHERE run_id = ? AND status = 'running' "
             "AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
-            (now, now, code, tqerr.classify_error(code, -1, "lease-timeout"),
-             row["run_id"], now),
+            (now, now, code, tqerr.classify_error(code, -1, "lease-timeout"), row["run_id"], now),
         )
         if (cur.rowcount or 0) == 0:
             continue
         task_row = conn.execute(
-            "SELECT idempotent, execution_semantics FROM tasks "
-            "WHERE project = ? AND task_id = ?",
+            "SELECT idempotent, execution_semantics FROM tasks WHERE project = ? AND task_id = ?",
             (row["project"], row["task_id"]),
         ).fetchone()
         raw_sem = ""
@@ -407,8 +427,7 @@ def mark_stale_workers_offline(conn: sqlite3.Connection, offline_sec: int | None
     if not row or int(row["n"]) == 0:
         return 0
     cur = conn.execute(
-        "UPDATE workers SET status = 'offline' "
-        "WHERE status = 'online' AND last_seen < ?",
+        "UPDATE workers SET status = 'offline' WHERE status = 'online' AND last_seen < ?",
         (cutoff,),
     )
     conn.commit()
@@ -435,6 +454,7 @@ def force_task(conn: sqlite3.Connection, project: str, task_id: str) -> str | No
         return "Cannot force task because it is currently running. Stop it first."
     try:
         from taskqueue.sched_wake import wake_scheduler
+
         wake_scheduler()
     except Exception:
         pass
@@ -471,8 +491,9 @@ def _runs_filter_sql(
     search: str = "",
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
+    status: str | None = None,
 ) -> tuple[str, list[Any]]:
-    """Build WHERE clause + params for recent-runs queries (project + text search)."""
+    """Build WHERE clause + params for recent-runs queries (project + text search + status)."""
     where: list[str] = []
     params: list[Any] = []
     if project:
@@ -481,6 +502,9 @@ def _runs_filter_sql(
     if exclude_projects:
         where.append(f"project NOT IN ({','.join('?' * len(exclude_projects))})")
         params.extend(exclude_projects)
+    if status and status != "all":
+        where.append("status = ?")
+        params.append(status)
     if started_by:
         where.append(
             "EXISTS (SELECT 1 FROM tasks _sb WHERE _sb.project = runs.project "
@@ -514,11 +538,16 @@ def get_recent_runs(
     search: str = "",
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
+    status: str | None = None,
 ) -> list[sqlite3.Row]:
     # W0.3: filter by project in SQL before LIMIT so low-traffic projects aren't
     # starved by the global 100-row cap (previously filtered in Python after LIMIT).
     where_sql, params = _runs_filter_sql(
-        project=project, search=search, exclude_projects=exclude_projects, started_by=started_by
+        project=project,
+        search=search,
+        exclude_projects=exclude_projects,
+        started_by=started_by,
+        status=status,
     )
     return conn.execute(
         f"SELECT * FROM runs {where_sql} ORDER BY run_id DESC LIMIT ? OFFSET ?",
@@ -533,9 +562,14 @@ def count_recent_runs(
     search: str = "",
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
+    status: str | None = None,
 ) -> int:
     where_sql, params = _runs_filter_sql(
-        project=project, search=search, exclude_projects=exclude_projects, started_by=started_by
+        project=project,
+        search=search,
+        exclude_projects=exclude_projects,
+        started_by=started_by,
+        status=status,
     )
     row = conn.execute(f"SELECT COUNT(*) FROM runs {where_sql}", params).fetchone()
     return int(row[0]) if row else 0
@@ -545,11 +579,29 @@ def get_run(conn: sqlite3.Connection, run_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
 
 
-def get_runs_for_task(conn: sqlite3.Connection, project: str, task_id: str) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT * FROM runs WHERE project = ? AND task_id = ? ORDER BY run_id DESC",
+def get_runs_for_task(
+    conn: sqlite3.Connection,
+    project: str,
+    task_id: str,
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    """Runs for one task, newest first. ``limit=None`` returns all (legacy callers)."""
+    sql = "SELECT * FROM runs WHERE project = ? AND task_id = ? ORDER BY run_id DESC"
+    params: list[Any] = [project, task_id]
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params.extend([max(0, int(limit)), max(0, int(offset))])
+    return conn.execute(sql, params).fetchall()
+
+
+def count_runs_for_task(conn: sqlite3.Connection, project: str, task_id: str) -> int:
+    row = conn.execute(
+        "SELECT COUNT(*) AS n FROM runs WHERE project = ? AND task_id = ?",
         (project, task_id),
-    ).fetchall()
+    ).fetchone()
+    return int(row["n"] if row and "n" in row.keys() else (row[0] if row else 0))
 
 
 def gpu_hours_today(conn: sqlite3.Connection, project: str) -> float:
@@ -578,7 +630,8 @@ def get_last_run_for_task(conn: sqlite3.Connection, project: str, task_id: str) 
 
 
 def get_last_runs_for_tasks(
-    conn: sqlite3.Connection, keys: "list[tuple[str, str]]",
+    conn: sqlite3.Connection,
+    keys: "list[tuple[str, str]]",
 ) -> "dict[tuple[str, str], sqlite3.Row]":
     """Latest run row per (project, task_id); keys with no run are absent.
 
@@ -587,7 +640,7 @@ def get_last_runs_for_tasks(
     out: dict[tuple[str, str], sqlite3.Row] = {}
     uniq = list(dict.fromkeys(keys))
     for i in range(0, len(uniq), 300):
-        chunk = uniq[i:i + 300]
+        chunk = uniq[i : i + 300]
         marks = ",".join("(?, ?)" for _ in chunk)
         params = [x for k in chunk for x in k]
         rows = conn.execute(

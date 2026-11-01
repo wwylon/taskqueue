@@ -2,6 +2,7 @@
 F-020, F-021, F-022, F-024, F-025, F-034, F-042, F-043, F-044, F-046, F-048,
 F-051, F-052, F-054, F-055 and related regressions).
 """
+
 from __future__ import annotations
 
 import json
@@ -25,6 +26,7 @@ from taskqueue.safetar import assert_safe_member
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _insert_task(db, project="p", task_id="t1", status="queued"):
     now = datetime.now(UTC).isoformat()
     db.execute(
@@ -36,8 +38,7 @@ def _insert_task(db, project="p", task_id="t1", status="queued"):
     db.commit()
 
 
-def _insert_run(db, project="p", task_id="t1", worker_id="w1",
-                finalize_token=None, status="running", sleep_tier=None):
+def _insert_run(db, project="p", task_id="t1", worker_id="w1", finalize_token=None, status="running", sleep_tier=None):
     now = datetime.now(UTC).isoformat()
     future = "2099-01-01T00:00:00+00:00"
     cur = db.execute(
@@ -54,6 +55,7 @@ def _insert_run(db, project="p", task_id="t1", worker_id="w1",
 # ---------------------------------------------------------------------------
 # F-055: finalize_token — only claiming worker can finalize
 # ---------------------------------------------------------------------------
+
 
 def test_finalize_token_stored_and_queryable(tmp_path):
     """finalize_token column exists and survives a round-trip."""
@@ -101,6 +103,7 @@ def test_finalize_token_column_exists(tmp_path):
 # F-007: registered_ip — column present and IP stored on registration
 # ---------------------------------------------------------------------------
 
+
 def test_registered_ip_column_exists(tmp_path):
     """registered_ip column must exist in workers table after migration."""
     db = open_db(tmp_path / "q.db")
@@ -127,6 +130,7 @@ def test_registered_ip_stored(tmp_path):
 # F-010: NtResumeProcess before kill — sleep_tier=2 in runs table
 # ---------------------------------------------------------------------------
 
+
 def test_sleep_tier_column_exists(tmp_path):
     """sleep_tier column must exist in runs table."""
     db = open_db(tmp_path / "q.db")
@@ -142,7 +146,8 @@ def test_requeue_orphaned_running_requeues_tier2(tmp_path):
     now = datetime.now(UTC).isoformat()
     db.execute(
         "INSERT INTO tasks (project, task_id, status, command, enqueued_at, updated_at, enabled) "
-        "VALUES ('p','t1','running','echo', ?, ?, 1)", (now, now)
+        "VALUES ('p','t1','running','echo', ?, ?, 1)",
+        (now, now),
     )
     # Use a PID that definitely does not exist to avoid kill_process_tree issues
     db.execute(
@@ -159,6 +164,7 @@ def test_requeue_orphaned_running_requeues_tier2(tmp_path):
     with patch("taskqueue.reap.kill_process_tree", return_value="no-op"):
         if sys.platform == "win32":
             import ctypes
+
             with patch.object(ctypes, "windll", create=True) as mock_wdll:
                 mock_wdll.kernel32 = MagicMock()
                 mock_wdll.ntdll = MagicMock()
@@ -167,9 +173,7 @@ def test_requeue_orphaned_running_requeues_tier2(tmp_path):
         else:
             requeue_orphaned_running(db, reason="test", graceful_sec=0.0)
 
-    row = db.execute(
-        "SELECT status FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT status FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     assert row["status"] == "queued", "tier-2 run must be re-queued after orphan reap"
 
 
@@ -195,15 +199,14 @@ def test_requeue_orphaned_clears_stop_requested(tmp_path):
     with patch("taskqueue.reap.kill_process_tree", return_value="no-op"):
         requeue_orphaned_running(db, reason="test", graceful_sec=0.0)
 
-    row = db.execute(
-        "SELECT stop_requested FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT stop_requested FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     assert row["stop_requested"] == 0, "stop_requested must be cleared on re-queue (F-008)"
 
 
 # ---------------------------------------------------------------------------
 # F-025: import_home refuses when daemon is alive
 # ---------------------------------------------------------------------------
+
 
 def _make_archive(tmp_path: Path) -> Path:
     src = tmp_path / "src"
@@ -218,6 +221,7 @@ def test_import_home_refuses_while_daemon_alive(tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     import os
+
     (home / "daemon.pid").write_text(str(os.getpid()), encoding="utf-8")
     archive = _make_archive(tmp_path)
 
@@ -251,6 +255,7 @@ def test_import_home_ok_with_stale_pid(tmp_path):
 # ---------------------------------------------------------------------------
 # F-018: safetar linkname validation — assert_safe_member(dest, member)
 # ---------------------------------------------------------------------------
+
 
 def _sym(name: str, linkname: str) -> tarfile.TarInfo:
     m = tarfile.TarInfo(name=name)
@@ -306,6 +311,7 @@ def test_safetar_rejects_windows_drive_linkname(tmp_path):
 # F-046: fairshare_halflife_days read from config, survives restart
 # ---------------------------------------------------------------------------
 
+
 def test_fairshare_halflife_config_key_survives_restart(tmp_path):
     """fairshare_halflife_days must not be pruned by _seed_config on open_db."""
     db = open_db(tmp_path / "q.db")
@@ -325,8 +331,8 @@ def test_fairshare_halflife_decay_formula():
         halflife_h = halflife_days * 24
         return 0.5 ** (elapsed_h / halflife_h)
 
-    short = decay(1)    # exactly one halflife → 0.5
-    medium = decay(7)   # less than one halflife → closer to 1
+    short = decay(1)  # exactly one halflife → 0.5
+    medium = decay(7)  # less than one halflife → closer to 1
     long_ = decay(30)
 
     assert abs(short - 0.5) < 1e-9, "1-day halflife after 24h must give exactly 0.5"
@@ -336,6 +342,7 @@ def test_fairshare_halflife_decay_formula():
 # ---------------------------------------------------------------------------
 # F-011: ON CONFLICT clears args_override when YAML args change
 # ---------------------------------------------------------------------------
+
 
 def test_args_override_cleared_on_args_change(tmp_path):
     """Upserting a task with changed args must clear any stale args_override."""
@@ -354,13 +361,12 @@ def test_args_override_cleared_on_args_change(tmp_path):
     db = open_db(tmp_path / "q.db")
     upsert_task(db, parse_task_yaml(yaml_path, proj))
 
-    db.execute(
-        "UPDATE tasks SET args_override='[\"override\"]' WHERE project='p' AND task_id='t1'"
-    )
+    db.execute("UPDATE tasks SET args_override='[\"override\"]' WHERE project='p' AND task_id='t1'")
     db.commit()
-    assert db.execute(
-        "SELECT args_override FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()["args_override"] is not None
+    assert (
+        db.execute("SELECT args_override FROM tasks WHERE project='p' AND task_id='t1'").fetchone()["args_override"]
+        is not None
+    )
 
     # Re-upsert with different args
     yaml_path.write_text("task_id: t1\ncommand: echo\nargs: [b]\npriority: 50\n", encoding="utf-8")
@@ -401,6 +407,7 @@ def test_args_override_preserved_when_args_unchanged(tmp_path):
 # F-042: enabled: regex is case-insensitive
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("disabled_val", ["False", "false", "NO", "no"])
 def test_enable_task_yaml_case_insensitive(tmp_path, disabled_val):
     """enable_task must handle 'False', 'NO', 'false', 'no' in the YAML."""
@@ -420,6 +427,7 @@ def test_enable_task_yaml_case_insensitive(tmp_path, disabled_val):
 # ---------------------------------------------------------------------------
 # F-015: strip_secrets — env/args_override/yaml_source not in task dicts
 # ---------------------------------------------------------------------------
+
 
 def test_task_dict_strip_secrets(tmp_path):
     """_task_dict with strip_secrets=True must omit env, args_override, yaml_source."""
@@ -471,6 +479,7 @@ def test_task_dict_no_strip_includes_secret_fields(tmp_path):
 # F-052: notify_task_started must NOT write to notify.jsonl
 # ---------------------------------------------------------------------------
 
+
 def test_notify_started_does_not_write_drain_queue(tmp_path):
     """notify_task_started must not append to notify.jsonl (not a terminal event)."""
     log_file = notify_log_path(tmp_path)
@@ -494,6 +503,7 @@ def test_notify_started_does_not_write_drain_queue(tmp_path):
 # F-044: stopped status treated as resumable
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("status", ["interrupted", "suspended", "stopped"])
 def test_resumable_statuses(tmp_path, status):
     """use_resume must be True for interrupted/suspended/stopped runs."""
@@ -510,15 +520,14 @@ def test_resumable_statuses(tmp_path, status):
     last_run = db.execute(
         "SELECT * FROM runs WHERE project='p' AND task_id='t1' ORDER BY run_id DESC LIMIT 1"
     ).fetchone()
-    use_resume = bool(
-        last_run and last_run["status"] in ("interrupted", "suspended", "stopped")
-    )
+    use_resume = bool(last_run and last_run["status"] in ("interrupted", "suspended", "stopped"))
     assert use_resume, f"status={status!r} must be treated as resumable (F-044)"
 
 
 # ---------------------------------------------------------------------------
 # F-004: last_error_code cleared to NULL on clean completion
 # ---------------------------------------------------------------------------
+
 
 def test_last_error_code_cleared_on_success(tmp_path):
     """A successful completion must NULL last_error_code."""
@@ -532,10 +541,7 @@ def test_last_error_code_cleared_on_success(tmp_path):
     db.commit()
 
     # F-004 fix: NULL on success (not COALESCE)
-    db.execute(
-        "UPDATE tasks SET status='completed', last_error_code=NULL "
-        "WHERE project='p' AND task_id='t1'"
-    )
+    db.execute("UPDATE tasks SET status='completed', last_error_code=NULL WHERE project='p' AND task_id='t1'")
     db.commit()
 
     row = db.execute("SELECT last_error_code FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
@@ -569,6 +575,7 @@ def test_last_error_code_preserved_on_failure(tmp_path):
 # ---------------------------------------------------------------------------
 # F-024: GPU requires float treated as minimum VRAM GiB
 # ---------------------------------------------------------------------------
+
 
 def test_gpu_float_vram_gate_passes():
     """gpu: 4.0 on a host with 8 GiB free VRAM must pass."""
@@ -612,19 +619,16 @@ def test_gpu_bool_true_requires_any_vram():
 # F-051: project_frozen_ prefix kept by _seed_config
 # ---------------------------------------------------------------------------
 
+
 def test_project_frozen_prefix_survives_restart(tmp_path):
     """project_frozen_<name> keys must survive open_db (not pruned by _seed_config)."""
     db = open_db(tmp_path / "q.db")
-    db.execute(
-        "INSERT OR REPLACE INTO config (key, value) VALUES ('project_frozen_myproj', '1')"
-    )
+    db.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('project_frozen_myproj', '1')")
     db.commit()
     db.close()
 
     db2 = open_db(tmp_path / "q.db")
-    row = db2.execute(
-        "SELECT value FROM config WHERE key='project_frozen_myproj'"
-    ).fetchone()
+    row = db2.execute("SELECT value FROM config WHERE key='project_frozen_myproj'").fetchone()
     assert row is not None and row["value"] == "1"
 
 
@@ -632,16 +636,20 @@ def test_project_frozen_prefix_survives_restart(tmp_path):
 # F-034 regression: all documented config keys survive restart
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("key,value", [
-    ("notify_url", "http://localhost:9000/hook"),
-    ("frozen_action", "suspend"),
-    ("limit_decrease_policy", "block"),
-    ("notify_on_attention", "1"),
-    ("fairshare_halflife_days", "14"),
-    ("fairshare_weight", "0.5"),
-    ("toast_notifications", "1"),
-    ("auth_token", "mytoken"),
-])
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("notify_url", "http://localhost:9000/hook"),
+        ("frozen_action", "suspend"),
+        ("limit_decrease_policy", "block"),
+        ("notify_on_attention", "1"),
+        ("fairshare_halflife_days", "14"),
+        ("fairshare_weight", "0.5"),
+        ("toast_notifications", "1"),
+        ("auth_token", "mytoken"),
+    ],
+)
 def test_config_keys_not_pruned_on_restart(tmp_path, key, value):
     """Config keys in _CORE_CONFIG_KEYS or VALID_CONFIG_KEYS must not be pruned."""
     db = open_db(tmp_path / "q.db")
@@ -663,6 +671,7 @@ def test_config_keys_not_pruned_on_restart(tmp_path, key, value):
 # ---------------------------------------------------------------------------
 # F-054: CSRF check enforced regardless of auth_token
 # ---------------------------------------------------------------------------
+
 
 def test_csrf_enforced_with_auth_token(tmp_path):
     """Foreign Origin must be rejected even when auth_token is set."""
@@ -686,14 +695,18 @@ def test_csrf_enforced_with_auth_token(tmp_path):
     status_codes = []
 
     class FakeWfile:
-        def write(self, data): pass
-        def flush(self): pass
+        def write(self, data):
+            pass
+
+        def flush(self):
+            pass
 
     class TestHandler(HandlerClass):
         def setup(self):
             self.rfile = io.BufferedReader(io.BytesIO(raw_request))
             self.wfile = FakeWfile()
             from http.client import parse_headers
+
             header_bytes = b"\r\n".join(raw_request.split(b"\r\n")[1:])
             self.headers = parse_headers(io.BytesIO(header_bytes))
             self.command = "POST"
@@ -703,8 +716,11 @@ def test_csrf_enforced_with_auth_token(tmp_path):
         def send_response(self, code, msg=None):
             status_codes.append(code)
 
-        def send_header(self, k, v): pass
-        def end_headers(self): pass
+        def send_header(self, k, v):
+            pass
+
+        def end_headers(self):
+            pass
 
         def handle_one_request(self):
             self._check_auth()
@@ -718,6 +734,7 @@ def test_csrf_enforced_with_auth_token(tmp_path):
 # ---------------------------------------------------------------------------
 # sort_queued_fairshare — usage affects ordering (F-046 context)
 # ---------------------------------------------------------------------------
+
 
 def _row(project, priority=50, enqueued_at="2024-01-01T00:00:00"):
     return {"project": project, "priority": priority, "enqueued_at": enqueued_at}

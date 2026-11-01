@@ -1,4 +1,5 @@
 """Behavior tests for core/loader.js (header project, tab loader dispatch, tqLoop single-flight/back-off, tqBusy)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -16,16 +17,19 @@ def _js(body: str) -> str:
 
 
 def test_header_project_and_query_encode_selection():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 S.selectedProject = 'all'; r.all = [g.tqHeaderProject(), g.tqProjectQuery()];
 S.selectedProject = ''; r.none = g.tqProjectQuery();
 S.selectedProject = 'a b'; r.one = [g.tqHeaderProject(), g.tqProjectQuery()];
-"""))
+""")
+    )
     assert out["all"] == ["", ""] and out["none"] == "" and out["one"] == ["a b", "?project=a%20b"]
 
 
 def test_load_tab_dispatches_to_the_page_loader():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const calls = [];
 for (const [tab, fn] of [['deps', 'loadDeps'], ['tasks', 'loadTaskStats'], ['timeline', 'loadTimeline'], ['schedule', 'loadSchedules'],
   ['alerts', 'loadAlerts'], ['audit', 'loadAudit'], ['api', 'loadApiTokens'], ['docs', 'loadDocsPage']]) {
@@ -33,13 +37,15 @@ for (const [tab, fn] of [['deps', 'loadDeps'], ['tasks', 'loadTaskStats'], ['tim
   r[tab] = g.tqLoadTab(tab);
 }
 r.unknown = g.tqLoadTab('nope') === undefined;
-"""))
+""")
+    )
     assert out["deps"] == "loadDeps" and out["docs"] == "loadDocsPage" and out["tasks"] == "loadTaskStats"
     assert out["unknown"] is True
 
 
 def test_loop_is_single_flight_reruns_once_and_backs_off_on_failure():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 let n = 0; let release;
 const fn = () => { n++; return new Promise(res => { release = res; }); };
 const p1 = g.tqLoop('t1', fn, { force: true });
@@ -63,14 +69,16 @@ let m = 0; await g.tqLoop('t4', () => { m++; }, { force: true, minGapMs: 5000 })
 const before = g.timers.length;
 await g.tqLoop('t4', () => { m++; }, { minGapMs: 5000 });
 r.deferred = [m, g.timers.length > before];
-"""))
+""")
+    )
     assert out["inFlight"] == [1, True, True] and out["rerun"] == [1, True]
     assert out["gap1"] == 2000 and out["gap2"] == 4000 and out["gap3"] == 1000 and out["thrown"] == 2000
     assert out["deferred"] == [1, True]
 
 
 def test_busy_tracks_count_shows_page_spinner_once_and_returns_work():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const page = doc.getElementById('audit') || doc.add('audit');
 let done; const work = new Promise(res => { done = res; });
 const ret = g.tqBusy(work, 'audit');
@@ -85,7 +93,8 @@ const hidden = {}; g._showPageEmpty('nope-a', 'nope-b', true); r.noEls = true;
 const e = doc.add('pe-empty'), w = doc.add('pe-wrap');
 g._showPageEmpty('pe-empty', 'pe-wrap', true); r.on = [e.hidden, w.style.display];
 g._showPageEmpty('pe-empty', 'pe-wrap', false); r.off = [e.hidden, w.style.display];
-"""))
+""")
+    )
     assert out["sameWork"] is True and out["during"][0] == 1
     assert out["value"] == "v" and out["after"][0] == 0 and out["after"][1] is True
     assert out["afterFail"] == 0 and out["noEls"] is True

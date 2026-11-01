@@ -1,4 +1,5 @@
 """Private CLI helper functions shared across command modules."""
+
 from __future__ import annotations
 
 import json
@@ -21,16 +22,19 @@ def emit_json(data: object, *, indent: int | None = 2, ensure_ascii: bool = True
 
 def _home() -> Path:
     from taskqueue.config import state_home
+
     return state_home()
 
 
 def _db(home: Path) -> Path:
     from taskqueue.config import db_path
+
     return db_path(home)
 
 
 def _pid_path(home: Path) -> Path:
     from taskqueue.config import pid_path
+
     return pid_path(home)
 
 
@@ -41,6 +45,7 @@ def _daemon_running(home: Path) -> int | None:
     try:
         raw = pid_file.read_text().strip()
         import psutil
+
         if ":" in raw:
             # F-103: PID:create_time format written since 0.9+
             pid_str, ct_str = raw.split(":", 1)
@@ -109,9 +114,7 @@ _ENABLED_TERMINAL_STATUSES = frozenset(
 
 # Post-sync summary: only statuses that usually need operator action.
 # completed+enabled is the normal steady state for finished experiments.
-_ENABLED_NEEDS_RETRY_STATUSES = frozenset(
-    {"failed", "interrupted", "stopped", "suspended", "unknown", "cancelled"}
-)
+_ENABLED_NEEDS_RETRY_STATUSES = frozenset({"failed", "interrupted", "stopped", "suspended", "unknown", "cancelled"})
 
 
 def warn_enabled_but_terminal(project: str, task_id: str, status: str) -> None:
@@ -119,8 +122,7 @@ def warn_enabled_but_terminal(project: str, task_id: str, status: str) -> None:
     if status not in _ENABLED_TERMINAL_STATUSES:
         return
     print(
-        f"[WARN] {project}/{task_id} is enabled but status={status} — "
-        f"will not run until: tq retry {project}/{task_id}",
+        f"[WARN] {project}/{task_id} is enabled but status={status} — will not run until: tq retry {project}/{task_id}",
         file=sys.stderr,
     )
 
@@ -143,8 +145,7 @@ def warn_enabled_terminal_summary(
         params.append(project)
     where = " AND ".join(clauses)
     rows = conn.execute(
-        f"SELECT project, task_id, status FROM tasks WHERE {where} "
-        f"ORDER BY project, task_id LIMIT ?",
+        f"SELECT project, task_id, status FROM tasks WHERE {where} ORDER BY project, task_id LIMIT ?",
         (*params, limit),
     ).fetchall()
     total = conn.execute(
@@ -153,13 +154,10 @@ def warn_enabled_terminal_summary(
     ).fetchone()["n"]
     if not total:
         return
-    examples = ", ".join(
-        f"{r['project']}/{r['task_id']}({r['status']})" for r in rows
-    )
+    examples = ", ".join(f"{r['project']}/{r['task_id']}({r['status']})" for r in rows)
     extra = f" (+{total - len(rows)} more)" if total > len(rows) else ""
     print(
-        f"[WARN] {total} task(s) enabled but need tq retry "
-        f"(failed/interrupted/stopped/...); e.g. {examples}{extra}",
+        f"[WARN] {total} task(s) enabled but need tq retry (failed/interrupted/stopped/...); e.g. {examples}{extra}",
         file=sys.stderr,
     )
 
@@ -171,6 +169,7 @@ def _check_ownership_or_print(row, key: str, *, force: bool) -> str | None:
     """
     import os
     from taskqueue.db import check_ownership
+
     operator = os.environ.get("TQ_OPERATOR")
     started_by = row["started_by"] if row and "started_by" in row.keys() else None
     err = check_ownership(started_by, operator, force=force)
@@ -217,7 +216,46 @@ def last_nonempty_line(path: Path) -> str | None:
     return None
 
 
-def master_mutation(home: Path, path: str, *, force: bool = False, params: dict | None = None) -> tuple[dict | None, str]:
+def offline_sqlite_write_blocked(home: Path) -> str | None:
+    """F-156: refuse offline SQLite writes when a live master lease exists (TOCTOU).
+
+    Returns an error string if blocked, else None. Also blocks when TQ_MASTER is set
+    (F-155) — local DB is not the authority.
+    """
+    import time
+
+    if (os.environ.get("TQ_MASTER") or "").strip():
+        return "TQ_MASTER is set; refusing local SQLite writes"
+    # Re-check PID immediately before the caller opens the DB.
+    if _daemon_running(home) is not None:
+        return "daemon is running; refusing a direct SQLite write"
+    try:
+        from taskqueue.db import open_db
+
+        db = open_db(_db(home), migrate=True)
+        try:
+            row = db.execute("SELECT holder, expires_at FROM master_lease WHERE singleton=1").fetchone()
+        finally:
+            db.close()
+    except Exception:
+        return None
+    if row is None:
+        return None
+    try:
+        exp = int(row["expires_at"])
+    except (TypeError, ValueError):
+        return None
+    if exp > int(time.time()):
+        return (
+            f"master_lease held by {row['holder']!r} until {exp}; "
+            "refusing offline SQLite write (daemon may have just started)"
+        )
+    return None
+
+
+def master_mutation(
+    home: Path, path: str, *, force: bool = False, params: dict | None = None
+) -> tuple[dict | None, str]:
     """POST a write to the master when a daemon runs, so the CLI never writes SQLite under it.
 
     Returns (response, mode): mode "master" (response is the JSON body), "unreachable"
@@ -236,9 +274,15 @@ def master_mutation(home: Path, path: str, *, force: bool = False, params: dict 
     q.update({k: str(v) for k, v in (params or {}).items() if v is not None})
     resp = via_master(home, "POST", path + (("?" + urlencode(q)) if q else ""))
     if resp is not None:
+        if resp.get("unreachable"):
+            print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)
+            return None, "unreachable"
         return resp, "master"
     if _daemon_running(home) is not None:
         print("[ERROR] daemon is running but did not answer; refusing a direct SQLite write.", file=sys.stderr)
         return None, "unreachable"
+    block = offline_sqlite_write_blocked(home)
+    if block:
+        print(f"[ERROR] {block}", file=sys.stderr)
+        return None, "unreachable"
     return None, "offline"
-

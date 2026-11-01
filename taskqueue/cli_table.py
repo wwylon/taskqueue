@@ -3,6 +3,7 @@
 Built from the usage lines in ``taskqueue.cli.__doc__`` (``  tq <cmd> ... Description``), so a
 command documented there is automatically covered by ``tq <cmd> --help`` and ``tq completion``.
 """
+
 from __future__ import annotations
 
 import re
@@ -66,7 +67,7 @@ complete -F _tq_complete tq
         return body
     if shell == "pwsh":
         entries = "\n".join(f"    '{n}' = '{w}'" for n, w in per.items())
-        return f'''$tqWords = @{{
+        return f"""$tqWords = @{{
 {entries}
 }}
 Register-ArgumentCompleter -Native -CommandName tq -ScriptBlock {{
@@ -81,5 +82,5 @@ Register-ArgumentCompleter -Native -CommandName tq -ScriptBlock {{
     [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
   }}
 }}
-'''
+"""
     raise ValueError(f"unsupported shell: {shell!r} (bash, zsh, pwsh)")

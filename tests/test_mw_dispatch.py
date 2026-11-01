@@ -182,11 +182,25 @@ def test_finalize_run_and_task_applies_task_error_fields_in_one_commit(tmp_path:
     tid = seed_queued_task(db, dispatch="remote")
     row = db.execute("SELECT project, task_id FROM tasks LIMIT 1").fetchone()
     proj, tid = row["project"], row["task_id"]
-    db.execute("INSERT INTO runs (project, task_id, status, started_at, log_path) VALUES (?, ?, 'running', '2026-01-01T00:00:00+00:00', 'l')", (proj, tid))
-    db.execute("UPDATE tasks SET status='running', last_error_code='OLD', block_reason='x', cap_auto_retry_count=3 WHERE project=? AND task_id=?", (proj, tid))
+    db.execute(
+        "INSERT INTO runs (project, task_id, status, started_at, log_path) VALUES (?, ?, 'running', '2026-01-01T00:00:00+00:00', 'l')",
+        (proj, tid),
+    )
+    db.execute(
+        "UPDATE tasks SET status='running', last_error_code='OLD', block_reason='x', cap_auto_retry_count=3 WHERE project=? AND task_id=?",
+        (proj, tid),
+    )
     db.commit()
     run_id = db.execute("SELECT run_id FROM runs").fetchone()["run_id"]
     assert finalize_run_and_task(db, run_id, proj, tid, 0, "completed", clear_task_error=True)
-    t = db.execute("SELECT status, last_error_code, block_reason, cap_auto_retry_count FROM tasks WHERE project=? AND task_id=?", (proj, tid)).fetchone()
-    assert (t["status"], t["last_error_code"], t["block_reason"], t["cap_auto_retry_count"]) == ("completed", None, None, 0)
+    t = db.execute(
+        "SELECT status, last_error_code, block_reason, cap_auto_retry_count FROM tasks WHERE project=? AND task_id=?",
+        (proj, tid),
+    ).fetchone()
+    assert (t["status"], t["last_error_code"], t["block_reason"], t["cap_auto_retry_count"]) == (
+        "completed",
+        None,
+        None,
+        0,
+    )
     db.close()

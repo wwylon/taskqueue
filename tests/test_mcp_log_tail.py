@@ -1,4 +1,5 @@
 """MCP log paging must not skip data when a finished run's log is read in pages."""
+
 from __future__ import annotations
 
 import io

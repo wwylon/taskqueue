@@ -25,25 +25,18 @@ def build_report(
         params.append(project)
 
     status_rows = conn.execute(
-        f"SELECT status, COUNT(*) AS n FROM runs "
-        f"WHERE started_at >= ?{proj_sql} GROUP BY status",
+        f"SELECT status, COUNT(*) AS n FROM runs WHERE started_at >= ?{proj_sql} GROUP BY status",
         params,
     ).fetchall()
     by_status = {r["status"] or "unknown": int(r["n"]) for r in status_rows}
 
     err_params: list[Any] = []
-    err_sql = (
-        "SELECT last_error_code, COUNT(*) AS n FROM tasks "
-        "WHERE last_error_code IS NOT NULL"
-    )
+    err_sql = "SELECT last_error_code, COUNT(*) AS n FROM tasks WHERE last_error_code IS NOT NULL"
     if project:
         err_sql += " AND project = ?"
         err_params.append(project)
     err_sql += " GROUP BY last_error_code ORDER BY n DESC LIMIT 20"
-    by_error = {
-        r["last_error_code"]: int(r["n"])
-        for r in conn.execute(err_sql, err_params).fetchall()
-    }
+    by_error = {r["last_error_code"]: int(r["n"]) for r in conn.execute(err_sql, err_params).fetchall()}
 
     dur_row = conn.execute(
         f"SELECT AVG("

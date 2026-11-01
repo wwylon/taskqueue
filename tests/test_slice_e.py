@@ -38,12 +38,14 @@ def test_max_attempts_blocks_admit_but_explicit_retry_resets(tmp_path: Path) -> 
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "t",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "max_attempts": 2,
-        }),
+        yaml.dump(
+            {
+                "task_id": "t",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "max_attempts": 2,
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))

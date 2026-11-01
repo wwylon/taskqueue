@@ -246,7 +246,7 @@ Do **not** expose the scheduler on the public Internet without Tailscale (or equ
 
 ### 4.1 Prerequisites on the worker machine
 
-1. Python **3.12+** recommended (3.10+ minimum) and [`uv`](https://github.com/astral-sh/uv).
+1. Python **3.12+** (required by `pyproject.toml`) and [`uv`](https://github.com/astral-sh/uv).
 2. Git with SSH keys (or HTTPS) that can clone the same repos as `git_url`.
 3. GPU drivers if claiming GPU tasks.
 4. Clone of **taskqueue**:
@@ -274,7 +274,7 @@ $env:TQ_AUTH_TOKEN = "<token-from-master>"   # if auth enabled
 What setup does:
 
 1. `GET /api/worker/projects` on the master.
-2. For each project with `git_url`, clones into a local root (Windows: `~/projects/<name>` if `D:\` exists, else `~/projects/<name>`; under a non-default home, `{home}/projects/<name>`).
+2. For each project with `git_url`, clones into a local root (Windows: `<portfolio-root>\<name>` when `D:\` exists, else `~/projects/<name>`; under a non-default home, `{home}/projects/<name>`).
 3. Runs `uv sync` when `pyproject.toml` is present.
 4. Writes `{home}/projects.yaml` and `{home}/worker.yaml`.
 
@@ -287,6 +287,7 @@ Path: `{TASKQUEUE_HOME}/worker.yaml`
 ```yaml
 master_url: http://100.64.0.1:8765
 worker_id: laptop-B
+# worker_token: <per-worker token>   # optional; CLI --token / TQ_AUTH_TOKEN overrides this
 # pin_worker_version: false   # optional; if true, skip auto wheel upgrade from master
 ```
 
@@ -294,6 +295,7 @@ worker_id: laptop-B
 |-------|----------|---------|
 | `master_url` | yes | Base URL of the master HTTP API (no trailing path) |
 | `worker_id` | yes | Stable id (`[A-Za-z0-9_.-]{1,64}`); defaults to hostname if omitted at setup |
+| `worker_token` | no | Per-worker auth token; overridden by `--token` / `TQ_AUTH_TOKEN` |
 | `pin_worker_version` | no | When true, worker does not auto-upgrade from master’s wheel endpoint |
 
 CLI flags override the file for one run:

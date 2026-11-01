@@ -1,4 +1,5 @@
 """Round 12 Wave B: F-144, F-146–F-149."""
+
 from __future__ import annotations
 
 import json

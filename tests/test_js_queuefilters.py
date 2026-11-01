@@ -1,4 +1,5 @@
 """Behavior tests for components/queuefilters.js (saved filters, selection/bulk bar, retry-all, export)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -17,7 +18,10 @@ def _js(routes: str, body: str) -> str:
 
 
 def test_saved_filters_seed_persist_apply_save_and_delete():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 g.localStorage.removeItem('tq_saved_filters');
 g.tqLoadSavedFilters();
 r.seeds = S.savedFilters.map(f => f.id);
@@ -58,7 +62,9 @@ r.deleted = [S.savedFilters.map(f => f.name), ev.stopped, JSON.parse(g.localStor
 S.savedToday = true; S.queueStatusFilter = 'failed'; S.queuePage = 2;
 g.tqClearQueueFilter();
 r.cleared = [S.queueStatusFilter, S.savedToday, S.queuePage, refreshed];
-"""))
+""",
+        )
+    )
     assert out["seeds"] == ["seed-failed-today", "seed-running", "seed-ci", "seed-ml"] and out["persisted"] == 4
     assert out["loaded"] == ["Mine"] and out["seedLabel"] == "queue.presetCi" and out["fallback"] == 4
     assert out["html"] == [True, True, True] and out["empty"] is True
@@ -70,7 +76,10 @@ r.cleared = [S.queueStatusFilter, S.savedToday, S.queuePage, refreshed];
 
 
 def test_selection_bulk_bar_and_chrome_sync():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 doc.add('queue-bulk-bar'); doc.add('q-select-all'); doc.add('retry-all-failed-btn', { tag: 'button' });
 const rows = [{ project: 'p', task_id: 'a' }, { project: 'p', task_id: 'b' }];
 S.queueExportRows = rows; S.queueSelection.clear();
@@ -93,7 +102,9 @@ S.queueStatusFilter = 'stopped'; S.savedToday = false; g.tqSyncQueueChrome();
 r.restartBtn = [btn.style.display, btn.textContent, btn.title];
 S.queueStatusFilter = 'all'; g.tqSyncQueueChrome();
 r.hiddenBtn = btn.style.display;
-"""))
+""",
+        )
+    )
     assert out["one"] == [False, True, False, True]
     assert out["all"] == [2, True, False] and out["busy"] is True
     assert out["cleared"] == [0, True, "", False] and out["emptyRows"] is False
@@ -102,7 +113,10 @@ r.hiddenBtn = btn.style.display;
 
 
 def test_bulk_action_counts_ok_failed_skipped_and_guards_reentry():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 doc.add('queue-bulk-bar');
 S.queue = [{ project: 'p', task_id: 'a', status: 'running' }, { project: 'p', task_id: 'b', status: 'failed' }, { project: 'p', task_id: 'c', status: 'queued' }];
 const calls = [];
@@ -124,7 +138,9 @@ await g.tqBulkAction('retry');
 r.retry = [calls.slice(), toasts.pop(), S.queueSelection.size];
 S.bulkBusy = true; S.queueSelection.add('p\\0a'); calls.length = 0;
 await g.tqBulkAction('retry'); r.busy = calls.length;
-"""))
+""",
+        )
+    )
     # one request for the stoppable rows (b is failed: skipped client-side)
     assert out["stop"][0] == [["/api/tasks/bulk", {"action": "stop", "tasks": ["p/a", "p/c"]}]]
     assert out["stop"][1] == ["queue.bulkDone", "err"]
@@ -136,7 +152,10 @@ await g.tqBulkAction('retry'); r.busy = calls.length;
 
 
 def test_select_all_matching_selects_every_filtered_task():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 doc.add('queue-bulk-bar');
 S.queue = [{ project: 'p', task_id: 'a', status: 'failed' }];
 S.queueTotal = 3; S.queueStatusFilter = 'failed';
@@ -148,13 +167,18 @@ r.offer = doc.getElementById('queue-bulk-bar').innerHTML.includes('tqSelectAllMa
 await g.tqSelectAllMatching();
 r.size = S.queueSelection.size;
 r.q = q;
-"""))
+""",
+        )
+    )
     assert out["offer"] is True and out["size"] == 3
     assert "status=failed" in out["q"] and "limit=5000" in out["q"]
 
 
 def test_retry_all_failed_queries_filters_confirms_over_500_and_reports():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 doc.add('queue-search').value = ' foo '; doc.add('retry-all-failed-btn', { tag: 'button' });
 const retried = []; g._postJson = async (url, body) => { retried.push([url, body]); return { requeued: (body.task_ids || []).filter(t => !t.endsWith('/bad')), skipped: [] }; };
 let q = null; g._fetchJson = async (url) => { q = url; return { tasks: [{ project: 'p', task_id: 'a' }, { project: 'p', task_id: 'bad' }] }; };
@@ -176,17 +200,33 @@ g._fetchJson = async () => null;
 S.queueStatusFilter = 'failed';
 await g.tqRetryAllFailed(); await g.flush();
 r.unreachable = toasts.pop();
-"""))
+""",
+        )
+    )
     assert out["wrongStatus"] is None
     assert out["confirm"][0] == "queue.retryAllConfirm" and out["confirm"][2] is None or out["confirm"][2] is None
     assert out["query"] == ["status=failed", "limit=5000", "offset=0", "project=p", "search=foo", "tag=gpu", "group=g1"]
-    assert out["done"] == [[["/api/tasks/retry-batch", {"task_ids": ["p/a", "p/bad"]}]], ["queue.retryAllDone", "err"], False, 1, False]
-    assert out["small"][0] is None and out["small"][1] == 1 and out["small"][2] == ["queue.restartAllDone", "ok"] or out["small"][2] == ["queue.restartAllDone", "err"]
+    assert out["done"] == [
+        [["/api/tasks/retry-batch", {"task_ids": ["p/a", "p/bad"]}]],
+        ["queue.retryAllDone", "err"],
+        False,
+        1,
+        False,
+    ]
+    assert (
+        out["small"][0] is None
+        and out["small"][1] == 1
+        and out["small"][2] == ["queue.restartAllDone", "ok"]
+        or out["small"][2] == ["queue.restartAllDone", "err"]
+    )
     assert out["unreachable"] == ["sse.error", "err"]
 
 
 def test_csv_cell_escapes_formulas_and_export_builds_csv_and_json():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 r.cells = [g._csvCell(null), g._csvCell('a,b'), g._csvCell('q"x'), g._csvCell('=1+1'), g._csvCell('-5'), g._csvCell('-x'), g._csvCell('+SUM'), g._csvCell('@a'), g._csvCell('l\\nb')];
 let blobs = [], names = [];
 g.Blob = class { constructor(parts, o) { blobs.push([parts.join(''), o.type]); } };
@@ -199,7 +239,9 @@ r.csv = [blobs[0][1], blobs[0][0].split('\\n')];
 const j = JSON.parse(blobs[1][0]);
 r.json = [blobs[1][1], j[0].project, j[0].started_at, j[0].progress_pct, j[0].priority];
 r.names = names;
-"""))
+""",
+        )
+    )
     assert out["cells"] == ["", '"a,b"', '"q""x"', "'=1+1", "-5", "'-x", "'+SUM", "'@a", '"l\nb"']
     assert out["csv"][0] == "text/csv" and out["csv"][1][0].startswith("project,task_id,status")
     assert out["csv"][1][1] == 'p,t,failed,3,"d,1",,,,0'

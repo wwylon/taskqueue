@@ -33,9 +33,7 @@ def test_f079_vanished_queue_dir_does_not_wipe_tasks(tmp_path: Path, monkeypatch
     db = open_db(tmp_path / "q.db")
     clear_yaml_mtime_cache()
     _sync_project(db, proj)
-    assert db.execute(
-        "SELECT task_id FROM tasks WHERE project='p' AND task_id='keep'"
-    ).fetchone() is not None
+    assert db.execute("SELECT task_id FROM tasks WHERE project='p' AND task_id='keep'").fetchone() is not None
 
     listed = {"done": False}
 
@@ -59,9 +57,7 @@ def test_f079_vanished_queue_dir_does_not_wipe_tasks(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(Path, "is_dir", _is_dir)
     _sync_project(db, proj)
-    row = db.execute(
-        "SELECT task_id FROM tasks WHERE project='p' AND task_id='keep'"
-    ).fetchone()
+    row = db.execute("SELECT task_id FROM tasks WHERE project='p' AND task_id='keep'").fetchone()
     assert row is not None
     db.close()
 
@@ -80,9 +76,7 @@ def test_f080_db_flip_before_kill(tmp_path: Path, monkeypatch) -> None:
     seen: list[str] = []
 
     def _kill(pid, create_time=None, graceful_sec=5.0):
-        row = db.execute(
-            "SELECT status FROM runs WHERE project='p' AND task_id='t'"
-        ).fetchone()
+        row = db.execute("SELECT status FROM runs WHERE project='p' AND task_id='t'").fetchone()
         assert row is not None
         assert row["status"] == "interrupted"
         seen.append("kill")
@@ -175,9 +169,9 @@ def test_p6_hold_credit_only_for_held_task() -> None:
 
     held = ("p", "big")
     assert p6_hold_credit(held, held, 12.0, 4.0) == (12.0, 4.0)
-    assert p6_hold_credit(("p", "small"), held, 12.0, 4.0) == (0.0, 0.0)      # same project
-    assert p6_hold_credit(("other", "big"), held, 12.0, 4.0) == (0.0, 0.0)    # cross-project
-    assert p6_hold_credit(held, None, 12.0, 4.0) == (0.0, 0.0)                # no hold
+    assert p6_hold_credit(("p", "small"), held, 12.0, 4.0) == (0.0, 0.0)  # same project
+    assert p6_hold_credit(("other", "big"), held, 12.0, 4.0) == (0.0, 0.0)  # cross-project
+    assert p6_hold_credit(held, None, 12.0, 4.0) == (0.0, 0.0)  # no hold
 
 
 def test_cas_lease_non_lock_error_not_masked(tmp_path: Path) -> None:
@@ -186,9 +180,7 @@ def test_cas_lease_non_lock_error_not_masked(tmp_path: Path) -> None:
     class Nested:
         def execute(self, sql, *args):
             if "BEGIN IMMEDIATE" in sql:
-                raise sqlite3.OperationalError(
-                    "cannot start a transaction within a transaction"
-                )
+                raise sqlite3.OperationalError("cannot start a transaction within a transaction")
             return db.execute(sql, *args)
 
         def __getattr__(self, name):

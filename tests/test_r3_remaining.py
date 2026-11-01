@@ -20,8 +20,7 @@ def test_master_status_labels_utc_correctly(tmp_path: Path, capsys) -> None:
     db = open_db(tmp_path / "queue.db")
     expires = 1_700_000_000  # fixed epoch
     db.execute(
-        "INSERT OR REPLACE INTO master_lease (singleton, holder, expires_at, epoch) "
-        "VALUES (1, 'host:1:abc', ?, 1)",
+        "INSERT OR REPLACE INTO master_lease (singleton, holder, expires_at, epoch) VALUES (1, 'host:1:abc', ?, 1)",
         (expires,),
     )
     db.commit()

@@ -5,6 +5,7 @@ At claim time, the master mints a per-run capability token scoped to
 TQ_SERVICE_<NAME>_URL and TQ_SERVICE_<NAME>_TOKEN injected into its env.
 Requests to /api/service/<name>/... are validated and forwarded to upstream.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -35,6 +36,7 @@ def mint_service_token(
     body = json.dumps(payload, separators=(",", ":"))
     sig = hmac.new(_BROKER_SECRET, body.encode(), hashlib.sha256).hexdigest()
     import base64
+
     encoded = base64.urlsafe_b64encode(body.encode()).decode()
     return f"{encoded}.{sig}"
 

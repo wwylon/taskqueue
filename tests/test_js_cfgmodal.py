@@ -1,4 +1,5 @@
 """Behavior tests for components/cfgmodal.js (config modal, per-project limits, JSON request helpers)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -16,7 +17,10 @@ def _js(routes: str, body: str) -> str:
 
 
 def test_send_json_returns_data_and_raises_on_http_or_ok_false():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 const seen = [];
 let resp = { ok: true, status: 200, json: async () => ({ ok: true, n: 1 }) };
 g.fetch = async (url, o) => { seen.push([url, o.method, o.headers['Content-Type'], o.body]); return resp; };
@@ -33,7 +37,9 @@ resp = { ok: true, status: 200, json: async () => ({ ok: false }) };
 r.okFalse = await fail();
 resp = { ok: true, status: 200, json: async () => ({ ok: false, error: 'denied' }) };
 r.okFalseMsg = await fail();
-"""))
+""",
+        )
+    )
     assert out["ok"] == {"ok": True, "n": 1}
     assert out["seen"] == ["/x", "POST", "application/json", '{"a":1}']
     assert out["noBody"] is True
@@ -42,7 +48,10 @@ r.okFalseMsg = await fail();
 
 
 def test_open_cfg_fills_fields_defaults_and_builds_project_limit_table():
-    out = run_js(_js("{ '/api/project-limits': { a: { max_tasks: 3, max_ram_gib: 1.5 } } }", """
+    out = run_js(
+        _js(
+            "{ '/api/project-limits': { a: { max_tasks: 3, max_ram_gib: 1.5 } } }",
+            """
 for (const id of ['cfg-cpu', 'cfg-gpu', 'cfg-ram', 'cfg-stop', 'cfg-frozen', 'cfg-max-tasks', 'cfg-limit-policy', 'cfg-max-cpu', 'cfg-max-ram', 'cfg-vram-cap', 'cfg-project-limits', 'cfg-modal']) if (!doc.getElementById(id)) doc.add(id);
 S.cfg = { cpu_limit_pct: 70, max_running_tasks: 4 };
 S.status = { projects: ['a', 'b'] };
@@ -57,14 +66,19 @@ r.closed = doc.getElementById('cfg-modal').classList.has('open');
 S.status = { projects: [] };
 await g.openCfg();
 r.empty = doc.getElementById('cfg-project-limits').innerHTML.includes('config.noProjects');
-"""))
+""",
+        )
+    )
     assert out["vals"] == [70, 100, 80, 30, 600, 4, "ignore"]
     assert out["table"] == [True, True, True, True]
     assert out["open"] is True and out["closed"] is False and out["empty"] is True
 
 
 def test_save_cfg_posts_config_and_project_limits_then_closes_or_alerts():
-    out = run_js(_js("{ '/api/config': { ok: true }, '/api/project-limits/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/config': { ok: true }, '/api/project-limits/': { ok: true } }",
+            """
 for (const id of ['cfg-cpu', 'cfg-gpu', 'cfg-ram', 'cfg-stop', 'cfg-frozen', 'cfg-max-tasks', 'cfg-limit-policy', 'cfg-max-cpu', 'cfg-max-ram', 'cfg-vram-cap', 'cfg-modal']) if (!doc.getElementById(id)) doc.add(id);
 doc.getElementById('cfg-cpu').value = '55'; doc.getElementById('cfg-limit-policy').value = 'stop';
 const cont = doc.getElementById('cfg-project-limits') || doc.add('cfg-project-limits');
@@ -74,6 +88,7 @@ const realQ = g.document.querySelectorAll;
 g.document.querySelectorAll = sel => (sel.startsWith('#cfg-project-limits') ? inputs : realQ.call(g.document, sel));
 const alerts = []; g.openAlert = (m, t) => alerts.push([m, t]);
 let refreshed = 0; g.refresh = () => { refreshed++; };
+g.__tqCfgProjLimitsOk = true;
 doc.getElementById('cfg-modal').classList.add('open');
 g.fetches.length = 0;
 await g.saveCfg();
@@ -86,7 +101,9 @@ g.fetch = async () => ({ ok: false, status: 400, json: async () => ({ error: 'ba
 doc.getElementById('cfg-modal').classList.add('open');
 await g.saveCfg();
 r.err = [alerts[0], doc.getElementById('cfg-modal').classList.has('open'), refreshed];
-"""))
+""",
+        )
+    )
     assert out["urls"] == ["/api/config", "/api/project-limits/a", "/api/project-limits/b%20d"]
     assert out["cfg"]["cpu_limit_pct"] == 55 and out["cfg"]["limit_decrease_policy"] == "stop"
     assert out["limits"] == {"max_tasks": 2, "min_tasks": 1}

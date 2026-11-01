@@ -1,4 +1,5 @@
 """Characterization of the terminal-status decision for a reaped local run."""
+
 from __future__ import annotations
 
 import pytest
@@ -6,7 +7,11 @@ import pytest
 from taskqueue import errors as tqerr
 from taskqueue.daemon import decide_terminal_status as d
 from taskqueue.models import (
-    STATUS_COMPLETED, STATUS_FAILED, STATUS_INTERRUPTED, STATUS_STOPPED, STATUS_SUSPENDED,
+    STATUS_COMPLETED,
+    STATUS_FAILED,
+    STATUS_INTERRUPTED,
+    STATUS_STOPPED,
+    STATUS_SUSPENDED,
 )
 
 SUSP = 75

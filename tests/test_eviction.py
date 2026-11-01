@@ -107,8 +107,12 @@ def test_evicted_stop_reason_attributed_to_tq():
     stop_reason = "evicted"
     stop_requested = True
     if stop_reason in (
-        "wall_clock_cap", "ram_hard", "vram_hard",
-        "frozen", "frozen_restart", "evicted",
+        "wall_clock_cap",
+        "ram_hard",
+        "vram_hard",
+        "frozen",
+        "frozen_restart",
+        "evicted",
     ):
         stopped_by = "tq"
     elif stop_requested:

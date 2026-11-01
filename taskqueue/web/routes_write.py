@@ -1,4 +1,5 @@
 """Handler mixin (extracted from make_handler)."""
+
 from __future__ import annotations
 
 # Broad shared namespace so method bodies keep working with minimal churn.
@@ -37,6 +38,7 @@ from typing import Any
 from taskqueue._db_tasks import get_task_status
 from taskqueue.dt_utils import iso_utc
 
+
 class BulkOpError(Exception):
     """A bulk group/suite operation refused for safety (carries the HTTP status and JSON body)."""
 
@@ -66,6 +68,7 @@ class WriteRoutes:
         come from the query string (?operator=NAME&force=1) -- this is
         self-reported like TQ_OPERATOR on the CLI, not real auth."""
         from taskqueue.ownership import ownership_from_qs
+
         return ownership_from_qs(self._wconn(), proj, task_id, qs)
 
     def _post_config(self) -> None:
@@ -163,10 +166,11 @@ class WriteRoutes:
         """POST /api/remove/<project>/<task_id>[?operator=&force=1] — unregister a task (runs kept)."""
         from taskqueue.db import remove_task
 
-        proj, task_id = self._split2(path[len("/api/remove/"):])
-        if self._rconn().execute(
-            "SELECT 1 FROM tasks WHERE project = ? AND task_id = ?", (proj, task_id)
-        ).fetchone() is None:
+        proj, task_id = self._split2(path[len("/api/remove/") :])
+        if (
+            self._rconn().execute("SELECT 1 FROM tasks WHERE project = ? AND task_id = ?", (proj, task_id)).fetchone()
+            is None
+        ):
             self._json({"ok": False, "error": f"task not found: {proj}/{task_id}"}, status=404)
             return
         own_err = self._ownership_gate(proj, task_id, qs)
@@ -190,7 +194,9 @@ class WriteRoutes:
             "SELECT COUNT(*) FROM tasks WHERE project = ? AND status = 'running'", (project,)
         ).fetchone()[0]
         if running and (qs.get("force") or ["0"])[0] not in ("1", "true"):
-            self._json({"ok": False, "error": f"{running} task(s) running in {project}; stop them or force"}, status=409)
+            self._json(
+                {"ok": False, "error": f"{running} task(s) running in {project}; stop them or force"}, status=409
+            )
             return
         n_tasks = conn.execute("DELETE FROM tasks WHERE project = ?", (project,)).rowcount
         n_runs = conn.execute("DELETE FROM runs WHERE project = ?", (project,)).rowcount
@@ -199,7 +205,7 @@ class WriteRoutes:
         self._json({"ok": True, "tasks": n_tasks, "runs": n_runs})
 
     def _post_priority(self, path: str, qs: dict) -> None:
-        rest = path[len("/api/priority/"):]
+        rest = path[len("/api/priority/") :]
         # Single parse: project/task_id/N
         try:
             proj, rem = self._split2(rest)
@@ -221,7 +227,7 @@ class WriteRoutes:
         self._json({"ok": True})
 
     def _post_mark_processed(self, path: str) -> None:
-        proj, task_id = self._split2(path[len("/api/mark-processed/"):])
+        proj, task_id = self._split2(path[len("/api/mark-processed/") :])
         now = iso_utc(datetime.now(UTC))
         cur = self._wconn().execute(
             "UPDATE tasks SET processed_at = ? WHERE project = ? AND task_id = ?",
@@ -235,10 +241,11 @@ class WriteRoutes:
         self._json({"ok": True})
 
     def _post_stop(self, path: str, qs: dict) -> None:
-        proj, task_id = self._split2(path[len("/api/stop/"):])
-        if self._rconn().execute(
-            "SELECT 1 FROM tasks WHERE project = ? AND task_id = ?", (proj, task_id)
-        ).fetchone() is None:
+        proj, task_id = self._split2(path[len("/api/stop/") :])
+        if (
+            self._rconn().execute("SELECT 1 FROM tasks WHERE project = ? AND task_id = ?", (proj, task_id)).fetchone()
+            is None
+        ):
             self._json({"ok": False, "error": f"task not found: {proj}/{task_id}"}, status=404)
             return
         own_err = self._ownership_gate(proj, task_id, qs)
@@ -250,10 +257,14 @@ class WriteRoutes:
             # R9: operator-supplied reason on the latest run (shown in notifications and history).
             from taskqueue.db import set_run_stop_reason
 
-            run_row = self._rconn().execute(
-                "SELECT run_id FROM runs WHERE project=? AND task_id=? ORDER BY run_id DESC LIMIT 1",
-                (proj, task_id),
-            ).fetchone()
+            run_row = (
+                self._rconn()
+                .execute(
+                    "SELECT run_id FROM runs WHERE project=? AND task_id=? ORDER BY run_id DESC LIMIT 1",
+                    (proj, task_id),
+                )
+                .fetchone()
+            )
             if run_row:
                 set_run_stop_reason(self._wconn(), run_row["run_id"], reason)
         self._json(self._stop_one(proj, task_id))
@@ -298,7 +309,10 @@ class WriteRoutes:
         same ``overridable_args`` allowlist as ``args_override`` on the retry route.
         """
         from taskqueue.db import (
-            check_arg_overrides, clear_args_override, retry_task, set_args_override,
+            check_arg_overrides,
+            clear_args_override,
+            retry_task,
+            set_args_override,
         )
 
         try:
@@ -307,9 +321,7 @@ class WriteRoutes:
             self._json({"ok": False, "error": "invalid run id"}, status=400)
             return
         conn = self._wconn()
-        run = conn.execute(
-            "SELECT project, task_id, args_json FROM runs WHERE run_id = ?", (run_id,)
-        ).fetchone()
+        run = conn.execute("SELECT project, task_id, args_json FROM runs WHERE run_id = ?", (run_id,)).fetchone()
         if run is None:
             self._json({"ok": False, "error": "run not found"}, status=404)
             return
@@ -416,14 +428,11 @@ class WriteRoutes:
                 item.update(ok=False, error=str(exc))
             results.append(item)
         failed = sum(1 for r in results if not r.get("ok"))
-        self._json({"ok": failed == 0, "action": action, "total": len(results),
-                    "failed": failed, "results": results})
+        self._json({"ok": failed == 0, "action": action, "total": len(results), "failed": failed, "results": results})
 
     # ------------------------------------------------------------------
 
-    def _group_rows(
-        self, conn: Any, grp_name: str, project: str | None, statuses: Any
-    ) -> list[Any]:
+    def _group_rows(self, conn: Any, grp_name: str, project: str | None, statuses: Any) -> list[Any]:
         """Rows of a group (optionally project-scoped) in ``statuses``.
 
         The empty group name means "ungrouped" and is only meaningful per project: unscoped it
@@ -510,11 +519,12 @@ class WriteRoutes:
         retried = 0
         home = Path(self._db_path).parent
         for row in rows:
-            if retry_task(conn, row["project"], row["task_id"], home=home,
-                          force_enable=include_completed):
+            if retry_task(conn, row["project"], row["task_id"], home=home, force_enable=include_completed):
                 retried += 1
         self._audit(
-            "group-retry", project or "", grp_name,
+            "group-retry",
+            project or "",
+            grp_name,
             f"n={retried} completed={include_completed}",
         )
         return {"ok": True, "retried": retried}
@@ -591,9 +601,7 @@ class WriteRoutes:
         if extra.get("downstream") or extra.get("enable_downstream"):
             from taskqueue.db import retry_task_with_downstream
 
-            result = retry_task_with_downstream(
-                conn, project, task_id, home=Path(self._db_path).parent
-            )
+            result = retry_task_with_downstream(conn, project, task_id, home=Path(self._db_path).parent)
             requeued = result["requeued"]
             if not requeued:
                 row = get_task_status(conn, project, task_id)
@@ -603,8 +611,7 @@ class WriteRoutes:
                     self._json(
                         {
                             "ok": False,
-                            "error": f"cannot retry task with status '{row['status']}' "
-                            "(and no retryable downstream)",
+                            "error": f"cannot retry task with status '{row['status']}' (and no retryable downstream)",
                             "requeued": [],
                             "skipped": result["skipped"],
                             "enabled": extra.get("_enabled") or [],
@@ -626,6 +633,7 @@ class WriteRoutes:
         override_written = False
         if isinstance(override, list):
             from taskqueue.db import check_arg_overrides, set_args_override
+
             full_row = get_task(conn, project, task_id)
             if full_row is None:
                 self._json({"ok": False, "error": "task not found"}, status=404)
@@ -638,6 +646,7 @@ class WriteRoutes:
             override_written = True
         home = Path(self._db_path).parent
         from taskqueue._db_tasks import run_summary
+
         runs_before = run_summary(conn, project, task_id)["run_number"]
         ok = retry_task(conn, project, task_id, home=home)
         if not ok:
@@ -654,6 +663,7 @@ class WriteRoutes:
         if not ok:
             if override_written:
                 from taskqueue.db import clear_args_override
+
                 clear_args_override(conn, project, task_id)  # don't leak into a later run
             skip = retry_skip_reason(conn, project, task_id)
             row = get_task_status(conn, project, task_id)
@@ -771,14 +781,14 @@ class WriteRoutes:
             self._json({"ok": False, "error": f"project {project} not registered"}, status=404)
             return
         from taskqueue.db import parse_task_yaml, upsert_task
+
         upsert_task(
             self._wconn(),
-            parse_task_yaml(
-                path, proj, allow_remote_notify=bool(get_config(self._wconn()).get("notify_allow_remote"))
-            ),
+            parse_task_yaml(path, proj, allow_remote_notify=bool(get_config(self._wconn()).get("notify_allow_remote"))),
         )
         payload: dict = {"ok": True, "applied": applied}
         from taskqueue._cli_helpers import _ENABLED_TERMINAL_STATUSES
+
         if updates.get("enabled") is True and prior_status in _ENABLED_TERMINAL_STATUSES:
             payload["warning"] = (
                 f"{project}/{task_id} is enabled but status={prior_status} — "
@@ -799,17 +809,13 @@ class WriteRoutes:
         if data is None:
             return
         wanted = data.get("projects")
-        if wanted is not None and (
-            not isinstance(wanted, list) or not all(isinstance(x, str) for x in wanted)
-        ):
+        if wanted is not None and (not isinstance(wanted, list) or not all(isinstance(x, str) for x in wanted)):
             self._json({"ok": False, "error": "projects must be a list of names"}, status=400)
             return
         known = self._projects_ref()
         unknown = [n for n in (wanted or []) if n not in known]
         if unknown:
-            self._json(
-                {"ok": False, "error": f"Unknown project(s): {', '.join(unknown)}"}, status=404
-            )
+            self._json({"ok": False, "error": f"Unknown project(s): {', '.join(unknown)}"}, status=404)
             return
         force = bool(data.get("force"))
         conn = self._wconn()
@@ -829,19 +835,22 @@ class WriteRoutes:
             total_deleted += deleted
         # F-119: report work done this call (not COUNT(*) of all tasks).
         # Keep ``total`` / flat project ints for older CLI parsers = upserted count.
-        self._json({
-            "ok": True,
-            "total": total_upserted,
-            "deleted": total_deleted,
-            "projects": {name: v["upserted"] for name, v in per.items()},
-            "projects_detail": per,
-        })
+        self._json(
+            {
+                "ok": True,
+                "total": total_upserted,
+                "deleted": total_deleted,
+                "projects": {name: v["upserted"] for name, v in per.items()},
+                "projects_detail": per,
+            }
+        )
 
     def _cli_archive(self) -> None:
         """POST /api/cli/archive — export old finished tasks to JSONL and drop them from the queue.
 
         Body (all optional): ``projects`` (names), ``older_than_days`` (default 30),
-        ``statuses`` (default ["completed"]), ``dry_run`` (bool).
+        ``statuses`` (default ["completed"]), ``dry_run`` (bool),
+        ``max_completed_runs`` (int; omit for no limit).
         """
         from taskqueue.archive import DEFAULT_STATUSES, archive_tasks
 
@@ -850,12 +859,19 @@ class WriteRoutes:
             return
         wanted = data.get("projects")
         statuses = data.get("statuses") or list(DEFAULT_STATUSES)
+        max_completed_runs = data.get("max_completed_runs")
         try:
             days = float(data.get("older_than_days", 30))
         except (TypeError, ValueError):
             days = -1.0
+        if max_completed_runs is not None:
+            try:
+                max_completed_runs = int(max_completed_runs)
+            except (TypeError, ValueError):
+                max_completed_runs = -1
         if (
             days < 0
+            or (max_completed_runs is not None and max_completed_runs < 0)
             or not isinstance(statuses, list)
             or not all(isinstance(x, str) for x in statuses)
             or (wanted is not None and (not isinstance(wanted, list) or not all(isinstance(x, str) for x in wanted)))
@@ -875,6 +891,7 @@ class WriteRoutes:
             statuses=tuple(statuses),
             only_projects=wanted or None,
             dry_run=bool(data.get("dry_run")),
+            max_completed_runs=max_completed_runs,
         )
         if result["archived"] and not result["dry_run"]:
             self._audit("archive", detail=f"{result['archived']} task(s)")
@@ -1000,6 +1017,7 @@ class WriteRoutes:
     def _task_save_yaml(self, project: str, task_id: str) -> None:
         """W3.5: PUT /api/tasks/<project>/<task_id>/yaml — overwrite the task's YAML file."""
         import yaml as _yaml
+
         # F-014: cap body at 1 MiB to prevent OOM / DoS
         _MAX_YAML = 1024 * 1024
         try:
@@ -1056,7 +1074,9 @@ class WriteRoutes:
         who = f"{op} via {via}" if op else f"via {via}"
         return f"{who} ({client})" if client else who
 
-    def _audit(self, action: str, project: str | None = None, target: str | None = None, detail: str | None = None) -> None:
+    def _audit(
+        self, action: str, project: str | None = None, target: str | None = None, detail: str | None = None
+    ) -> None:
         actor = (self.headers.get("X-TQ-Operator") or "").strip() or "web"
         write_audit(self._wconn(), actor, action, project, target, detail)
 

@@ -23,100 +23,24 @@ from taskqueue.config import (
 from taskqueue import __version__ as _WORKER_VERSION
 from taskqueue.db import SCHEMA_VERSION as _WORKER_SCHEMA
 
-_AUTH_TOKEN: str = ""
+# F-208: HTTP + auth live in worker_http (re-exported for existing imports).
+from taskqueue.worker_http import (  # noqa: E402
+    set_auth_token,
+    auth_token,
+    _auth_headers,
+    post_json as _post,
+    get_json as _get,
+)
 
-
-def set_auth_token(token: str | None) -> None:
-    global _AUTH_TOKEN
-    _AUTH_TOKEN = (token or os.environ.get("TQ_AUTH_TOKEN") or "").strip()
-
-
-def _auth_headers(extra: dict | None = None) -> dict:
-    from taskqueue.auth import client_auth_headers
-
-    return client_auth_headers(_AUTH_TOKEN, extra=extra)
-
-
-def _post(url: str, data: dict, *, timeout: float = 30) -> dict | None:
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(data).encode("utf-8"),
-        headers=_auth_headers({"Content-Type": "application/json"}),
-        method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            _post._auth_fail_streak = 0
-            return json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        if e.code in (401, 403):
-            # Count consecutive auth failures to distinguish transient proxy 403s from
-            # a permanently invalid token.  Only exit after repeated failures.
-            _post._auth_fail_streak = getattr(_post, "_auth_fail_streak", 0) + 1
-            if _post._auth_fail_streak >= 3:
-                print(
-                    f"[worker] FATAL: authentication rejected by master (HTTP {e.code}) "
-                    f"{_post._auth_fail_streak} times in a row. Check TQ_AUTH_TOKEN. Exiting.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            print(
-                f"[worker] auth error HTTP {e.code} (streak {_post._auth_fail_streak}/3); "
-                "will retry next cycle",
-                file=sys.stderr,
-            )
-            return None
-        _post._auth_fail_streak = 0
-        print(f"[worker] API error (POST {url}): {e}", file=sys.stderr)
-        return None
-    except Exception as e:
-        print(f"[worker] API error (POST {url}): {e}", file=sys.stderr)
-        return None
-
-def _get(url: str, timeout: float = 10) -> dict | None:
-    try:
-        req = urllib.request.Request(url, headers=_auth_headers(), method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        print(f"[worker] API error (GET {url}): {e}", file=sys.stderr)
-        return None
-
-
-PENDING_FINALIZE_DIR = "pending_finalize"
-
-
-def pending_finalize_dir(home: Path) -> Path:
-    return Path(home) / PENDING_FINALIZE_DIR
-
-
-def write_pending_finalize(home: Path, payload: dict) -> Path:
-    """F-056: persist finalize payload before the HTTP attempt."""
-    d = pending_finalize_dir(home)
-    d.mkdir(parents=True, exist_ok=True)
-    dest = d / f"{payload['run_id']}.json"
-    tmp = dest.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload), encoding="utf-8")
-    tmp.replace(dest)
-    return dest
-
-
-def pending_finalize_is_ack(resp: dict | None) -> bool:
-    """True if the master accepted finalize or the attempt is gone (do not retry)."""
-    if not resp:
-        return False
-    if resp.get("ok"):
-        return True
-    err = str(resp.get("error") or "").lower()
-    return any(
-        s in err
-        for s in (
-            "already finalized",
-            "not running",
-            "run not owned",
-            "finalize_token mismatch",
-        )
-    )
+# F-208: outbox helpers live in worker_outbox (re-exported for existing imports).
+from taskqueue.worker_outbox import (  # noqa: E402
+    PENDING_FINALIZE_DIR,
+    pending_finalize_dir,
+    pending_finalize_is_ack,
+    pending_finalize_is_permanent_reject,
+    quarantine_pending_finalize,
+    write_pending_finalize,
+)
 
 
 def post_finalize(
@@ -155,9 +79,16 @@ def flush_pending_finalize(
         except Exception:
             remaining += 1
             continue
-        if pending_finalize_is_ack(post_finalize(master_url, payload, post_fn=post_fn)):
+        resp = post_finalize(master_url, payload, post_fn=post_fn)
+        if pending_finalize_is_ack(resp):
             p.unlink(missing_ok=True)
             _flush_pending_last_err = 0.0  # reset on success
+        elif pending_finalize_is_permanent_reject(resp):
+            quarantine_pending_finalize(home, p, str((resp or {}).get("error") or "rejected"))
+            print(
+                f"[worker] quarantined pending finalize {p.name}: {(resp or {}).get('error')}",
+                file=sys.stderr,
+            )
         else:
             remaining += 1
             failed_count += 1
@@ -214,7 +145,7 @@ def get_sys_info() -> dict:
 
     from taskqueue.resources import _detect_gpus
 
-    ram = psutil.virtual_memory().total / (1024 ** 3)
+    ram = psutil.virtual_memory().total / (1024**3)
     cores = psutil.cpu_count(logical=True) or 1
 
     gpus = _detect_gpus()
@@ -259,6 +190,7 @@ def get_sys_info() -> dict:
     python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
 
     import os as _os
+
     return {
         "os": platform.system().lower(),
         "arch": platform.machine().lower(),
@@ -283,6 +215,7 @@ def get_live_load() -> dict:
     gpu_free_list: list[dict] = []
     try:
         from taskqueue.resources import _detect_gpus
+
         gpus = _detect_gpus()
         vram_total = round(sum(float(g.get("vram_gib", 0.0)) for g in gpus), 2)
         vram_used = round(sum(float(g.get("vram_used_gib", 0.0)) for g in gpus), 2)
@@ -311,8 +244,8 @@ def get_live_load() -> dict:
     except Exception:
         cpu_used = 0.0
     result: dict = {
-        "ram_used_gib": round(ram.used / (1024 ** 3), 2),
-        "ram_total_gib": round(ram.total / (1024 ** 3), 2),
+        "ram_used_gib": round(ram.used / (1024**3), 2),
+        "ram_total_gib": round(ram.total / (1024**3), 2),
         "vram_used_gib": vram_used,
         "vram_total_gib": vram_total,
         "cpu_used": round(cpu_used, 2),
@@ -392,8 +325,7 @@ def _check_worker_upgrade(
     # Verify SHA-256.
     if actual_sha != master_sha:
         print(
-            f"[worker] Upgrade aborted: SHA-256 mismatch (got {actual_sha[:16]}…, "
-            f"expected {master_sha[:16]}…)",
+            f"[worker] Upgrade aborted: SHA-256 mismatch (got {actual_sha[:16]}…, expected {master_sha[:16]}…)",
             file=sys.stderr,
         )
         new_wheel.unlink(missing_ok=True)
@@ -458,8 +390,11 @@ def _load_worker_conf(home: Path) -> tuple[bool, str | None]:
     if conf_p.is_file():
         try:
             import yaml as _yaml
+
             _wconf = _yaml.safe_load(conf_p.read_text(encoding="utf-8")) or {}
-            return bool(_wconf.get("pin_worker_version", False)), (str(_wconf.get("worker_token") or "").strip() or None)
+            return bool(_wconf.get("pin_worker_version", False)), (
+                str(_wconf.get("worker_token") or "").strip() or None
+            )
         except Exception:
             pass
     return False, None
@@ -497,25 +432,33 @@ def _recover_journal(home: Path, worker_id: str) -> None:
                 print(f"[worker] Journal: replaying finalize run {_run_id} exit={_exit_code}", file=sys.stderr)
                 _pf_path = pending_finalize_dir(home) / f"{_run_id}.json"
                 if not _pf_path.is_file():
-                    write_pending_finalize(home, {
-                        "run_id": _run_id,
-                        "worker_id": worker_id,
-                        "session_id": str(uuid.uuid4()),
-                        "status": "failed" if _exit_code not in (0,) else "completed",
-                        "exit_code": _exit_code,
-                    })
+                    write_pending_finalize(
+                        home,
+                        {
+                            "run_id": _run_id,
+                            "worker_id": worker_id,
+                            "session_id": str(uuid.uuid4()),
+                            "status": "failed" if _exit_code not in (0,) else "completed",
+                            "exit_code": _exit_code,
+                        },
+                    )
                 gc_journal(home, _run_id)
             else:
                 print(f"[worker] Journal: run {_run_id} has no exit (crashed mid-run)", file=sys.stderr)
                 _pf_path = pending_finalize_dir(home) / f"{_run_id}.json"
                 if not _pf_path.is_file():
-                    write_pending_finalize(home, {
-                        "run_id": _run_id,
-                        "worker_id": worker_id,
-                        "session_id": str(uuid.uuid4()),
-                        "status": "unknown",
-                        "exit_code": -1,
-                    })
+                    # F-194: master FINALIZE_STATUSES rejects "unknown" → permanent
+                    # outbox wedge. Use interrupted (accepted + retriable).
+                    write_pending_finalize(
+                        home,
+                        {
+                            "run_id": _run_id,
+                            "worker_id": worker_id,
+                            "session_id": str(uuid.uuid4()),
+                            "status": "interrupted",
+                            "exit_code": -1,
+                        },
+                    )
 
 
 def run_worker(  # noqa: C901
@@ -525,13 +468,16 @@ def run_worker(  # noqa: C901
     *,
     auth_token: str | None = None,
 ) -> None:
-    set_auth_token(auth_token)
     master_url = master_url.rstrip("/")
 
     _pin_version, _worker_token = _load_worker_conf(home)
-    # C1: use per-worker token if available, else fall back to shared auth_token
-    if _worker_token:
+    # F-206: CLI --token / TQ_AUTH_TOKEN beat worker.yaml (docs already claim this).
+    if auth_token:
+        set_auth_token(auth_token)
+    elif _worker_token:
         set_auth_token(_worker_token)
+    else:
+        set_auth_token(None)
 
     sys_info, session_id = _registration_info(worker_id, _worker_token)
     _worker_instance_id = sys_info["worker_instance_id"]
@@ -591,13 +537,20 @@ def run_worker(  # noqa: C901
         # master already accepted for this run.
         seq = _log_seqs.get(run_id, int(time.time() * 1000)) + 1
         _log_seqs[run_id] = seq
-        resp = _post(f"{master_url}/api/worker/log-chunk", {
+        payload = {
             "run_id": run_id,
             "worker_id": worker_id,
             "session_id": session_id,
             "seq": seq,
             "chunk_b64": base64.b64encode(text.encode("utf-8")).decode(),
-        })
+        }
+        resp = None
+        # F-206: bounded retry — seq is idempotent on the master.
+        for _attempt in range(3):
+            resp = _post(f"{master_url}/api/worker/log-chunk", payload)
+            if resp is not None:
+                break
+            time.sleep(0.5 * (2**_attempt))
         # ds2 §1.7: honor stop piggybacked on log-chunk (not only heartbeat).
         stop_ids = resp.get("stop_run_ids") if resp else None
         if stop_ids:
@@ -616,13 +569,14 @@ def run_worker(  # noqa: C901
         slots=slots,
     )
 
-
     _recover_journal(home, worker_id)
 
     print(f"[worker] Starting worker '{worker_id}' session={session_id}...")
-    print(f"[worker] System Info: OS={sys_info['os']}, Arch={sys_info['arch']}, RAM={sys_info['ram_gib']}G, Cores={sys_info['cpu_cores']}, VRAM={sys_info['gpu_vram_gib']}G")
+    print(
+        f"[worker] System Info: OS={sys_info['os']}, Arch={sys_info['arch']}, RAM={sys_info['ram_gib']}G, Cores={sys_info['cpu_cores']}, VRAM={sys_info['gpu_vram_gib']}G"
+    )
     print(f"[worker] Master Coordinator: {master_url}")
-    if _AUTH_TOKEN:
+    if auth_token():
         print("[worker] Auth token: set")
 
     def heartbeat_loop():
@@ -665,22 +619,28 @@ def run_worker(  # noqa: C901
             for target in targets:
                 _stop_slot(target)
         if resp and resp.get("sync_requested"):
-            # F-107: run sync in a background thread so the heartbeat is not blocked
-            # during git pull + uv sync (which can take tens of seconds).
-            import threading as _threading
-            _t = _threading.Thread(target=_do_worker_sync, args=(home,), daemon=True, name="tq-worker-sync")
-            _t.start()
+            # F-206: defer git/uv sync while tasks are running (code under feet).
+            if _slot_count() > 0:
+                print("[worker] sync deferred until idle (tasks running)", file=sys.stderr)
+            else:
+                import threading as _threading
+
+                _t = _threading.Thread(target=_do_worker_sync, args=(home,), daemon=True, name="tq-worker-sync")
+                _t.start()
         if resp and resp.get("file_sync_requested"):
-            import threading as _threading
-            _t = _threading.Thread(
-                target=_do_worker_file_sync,
-                args=(home, master_url),
-                daemon=True,
-                name="tq-worker-file-sync",
-            )
-            _t.start()
+            if _slot_count() == 0:
+                import threading as _threading
+
+                _t = _threading.Thread(
+                    target=_do_worker_file_sync,
+                    args=(home, master_url),
+                    daemon=True,
+                    name="tq-worker-file-sync",
+                )
+                _t.start()
         # R-012: if heartbeats fail, stop children before the master reclaims the lease.
         from taskqueue.fencing import should_stop_for_lost_lease
+
         hb_ok = bool(resp and resp.get("ok"))
         if hb_ok:
             ttl = resp.get("lease_ttl_sec")
@@ -719,6 +679,7 @@ def run_worker(  # noqa: C901
                     file=sys.stderr,
                 )
         from taskqueue.config import WORKER_HEARTBEAT_SEC
+
         time.sleep(WORKER_HEARTBEAT_SEC)
 
     h_thread = threading.Thread(target=heartbeat_loop, daemon=True)
@@ -736,10 +697,12 @@ def run_worker(  # noqa: C901
                     sl["stop_flag"][0] = True
         elif kind == "sync":
             import threading as _threading
+
             _t = _threading.Thread(target=_do_worker_sync, args=(home,), daemon=True, name="tq-worker-sync")
             _t.start()
         elif kind == "file_sync":
             import threading as _threading
+
             _t = _threading.Thread(
                 target=_do_worker_file_sync,
                 args=(home, master_url),
@@ -750,15 +713,21 @@ def run_worker(  # noqa: C901
 
     def command_loop() -> None:
         """G1: long-poll /api/worker/commands for sub-second command delivery."""
+        wait_sec = 25
         while True:
             try:
+                t0 = time.monotonic()
+                # F-206: client timeout must exceed server wait (was 10 vs 25 → spam).
                 resp = _get(
-                    f"{master_url}/api/worker/commands"
-                    f"?worker_id={worker_id}&session_id={session_id}&wait=25"
+                    f"{master_url}/api/worker/commands?worker_id={worker_id}&session_id={session_id}&wait={wait_sec}",
+                    timeout=float(wait_sec + 10),
                 )
                 if resp and isinstance(resp.get("commands"), list):
                     for cmd in resp["commands"]:
                         _dispatch_command(cmd)
+                    # Fast empty return under long-poll budget starvation: do not hot-spin.
+                    if not resp["commands"] and (time.monotonic() - t0) < 1.0:
+                        time.sleep(1.0)
                 elif resp is None:
                     time.sleep(2)  # master unreachable: do not hot-spin
             except Exception as _e:
@@ -807,7 +776,8 @@ def run_worker(  # noqa: C901
                 # W7.5: check for available upgrade when idle
                 if not _pin_version and _slot_count() == 0:
                     _check_worker_upgrade(
-                        master_url, home,
+                        master_url,
+                        home,
                         pin_version=_pin_version,
                         active_run=_slot_count() > 0,
                     )
@@ -859,7 +829,13 @@ def run_worker(  # noqa: C901
                 if not single.get("task"):
                     continue
                 _run_id = int(single["run_id"])
-                _slot = {"stop_flag": [False], "control_file": [None], "proc": [None], "lease_expires_at": [None], "created_at": [time.time()]}
+                _slot = {
+                    "stop_flag": [False],
+                    "control_file": [None],
+                    "proc": [None],
+                    "lease_expires_at": [None],
+                    "created_at": [time.time()],
+                }
                 _ttl = single.get("lease_ttl_sec")
                 if _ttl is not None:
                     try:
@@ -877,7 +853,13 @@ def run_worker(  # noqa: C901
             continue
 
         run_id = int(task_resp["run_id"])
-        slot = {"stop_flag": [False], "control_file": [None], "proc": [None], "lease_expires_at": [None], "created_at": [time.time()]}
+        slot = {
+            "stop_flag": [False],
+            "control_file": [None],
+            "proc": [None],
+            "lease_expires_at": [None],
+            "created_at": [time.time()],
+        }
         ttl = task_resp.get("lease_ttl_sec")
         if ttl is not None:
             try:
@@ -914,10 +896,7 @@ def _do_worker_file_sync(home: Path, master_url: str) -> None:
                 force=True,
             )
             if result.get("ok"):
-                print(
-                    f"[worker] file-sync {name}: "
-                    f"fetched={result.get('fetched', 0)} skipped={result.get('skipped')}"
-                )
+                print(f"[worker] file-sync {name}: fetched={result.get('fetched', 0)} skipped={result.get('skipped')}")
             else:
                 print(
                     f"[worker] file-sync {name}: {result.get('error', 'failed')}",
@@ -954,6 +933,7 @@ def _do_worker_sync_locked(home: Path) -> None:
             continue
         try:
             from taskqueue.win_console import hide_console_check_output_kwargs
+
             _nt = hide_console_check_output_kwargs()
             result = subprocess.run(
                 ["git", "pull", "--ff-only"],
@@ -1005,8 +985,7 @@ def _install_windows_service(home: Path, worker_id: str) -> None:
     python_exe = sys.executable
     script = f'"{python_exe}" -m taskqueue.cli worker run --home "{home}" --id "{worker_id}"'
     task_name = f"tq-worker-{worker_id}"
-    cmd = ["schtasks", "/create", "/tn", task_name, "/tr", script,
-           "/sc", "onstart", "/ru", "SYSTEM", "/f"]
+    cmd = ["schtasks", "/create", "/tn", task_name, "/tr", script, "/sc", "onstart", "/ru", "SYSTEM", "/f"]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
@@ -1087,12 +1066,14 @@ def setup_worker(
         print(f"  - {name} (git: {p['git_url'] or 'none'})")
 
     from taskqueue.config import registry_path
+
     reg_p = registry_path(home)
     reg_p.parent.mkdir(parents=True, exist_ok=True)
 
     existing = {}
     if reg_p.exists():
         import yaml
+
         try:
             raw = yaml.safe_load(reg_p.read_text(encoding="utf-8")) or {}
             existing = raw.get("projects") or {}
@@ -1122,6 +1103,7 @@ def setup_worker(
             print(f"[setup] Cloning '{name}' from {git_url}...")
             try:
                 from taskqueue.win_console import hide_console_check_output_kwargs
+
                 _nt = hide_console_check_output_kwargs()
                 subprocess.run(["git", "clone", git_url, str(local_root)], check=True, **_nt)
             except Exception as e:
@@ -1132,6 +1114,7 @@ def setup_worker(
                 print(f"[setup] Running 'uv sync' in {local_root}...")
                 try:
                     from taskqueue.win_console import hide_console_check_output_kwargs
+
                     _nt = hide_console_check_output_kwargs()
                     subprocess.run(["uv", "sync"], cwd=str(local_root), **_nt)
                 except Exception as e:
@@ -1144,18 +1127,21 @@ def setup_worker(
         }
 
     import yaml
+
     # Keep projects registered only on this worker; the master list adds/updates, never prunes.
     merged = {**{k: v for k, v in existing.items() if k not in new_projects}, **new_projects}
     reg_p.write_text(yaml.dump({"projects": merged}, default_flow_style=False), encoding="utf-8")
     print(f"[setup] Successfully wrote projects configuration to: {reg_p}")
 
     import secrets as _secrets
+
     # C1: preserve existing worker_token if present; generate one on first setup
     worker_yaml_p = home / "worker.yaml"
     existing_token: str | None = None
     if worker_yaml_p.is_file():
         try:
             import yaml as _yaml2
+
             _existing_conf = _yaml2.safe_load(worker_yaml_p.read_text(encoding="utf-8")) or {}
             existing_token = str(_existing_conf.get("worker_token") or "").strip() or None
         except Exception:

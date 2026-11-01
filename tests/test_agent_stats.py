@@ -1,4 +1,5 @@
 """Aggregation: tq agents / GET /api/agent-usage / MCP agent_usage_summary."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -36,8 +37,9 @@ def seeded(tmp_path: Path):
     db = open_db(tqconfig.db_path(tmp_path))
     for _ in range(3):
         ut.RECORDER.record("mcp", "wait_for_task", client="mcp/cursor 1", operator="ada", project="p", ms=100)
-    ut.RECORDER.record("mcp", "wait_for_task", client="mcp/cursor 1", operator="ada", project="p", ms=300,
-                       error_code="wait.timeout")
+    ut.RECORDER.record(
+        "mcp", "wait_for_task", client="mcp/cursor 1", operator="ada", project="p", ms=300, error_code="wait.timeout"
+    )
     ut.RECORDER.record("cli", "tq list", client="tq-cli/1", operator="bob", ms=10)
     ut.RECORDER.flush(db)
     _task(db, "a", "completed", "mcp", "ada", "mcp/cursor 1", wall=10)

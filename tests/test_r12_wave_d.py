@@ -1,4 +1,5 @@
 """Round 12 Wave D: durable webhook enqueue, MCP wait clamp, shared resources parse."""
+
 from __future__ import annotations
 
 import queue
@@ -17,11 +18,13 @@ def test_f145_queue_full_dead_letters(tmp_path: Path) -> None:
     home = tmp_path / "home"
     home.mkdir()
     open_db(tqconfig.db_path(home)).close()
-    with mock.patch.object(notify, "_ensure_webhook_worker"), \
-         mock.patch.object(notify, "_WEBHOOK_QUEUE") as q, \
-         mock.patch.object(notify, "validate_notify_url", return_value="http://127.0.0.1:9/hook"), \
-         mock.patch.object(notify, "_send_toast"), \
-         mock.patch.object(notify, "append_notify_event"):
+    with (
+        mock.patch.object(notify, "_ensure_webhook_worker"),
+        mock.patch.object(notify, "_WEBHOOK_QUEUE") as q,
+        mock.patch.object(notify, "validate_notify_url", return_value="http://127.0.0.1:9/hook"),
+        mock.patch.object(notify, "_send_toast"),
+        mock.patch.object(notify, "append_notify_event"),
+    ):
         q.put_nowait.side_effect = queue.Full()
         notify.emit_task_notify(
             home,

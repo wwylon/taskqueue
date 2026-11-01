@@ -1,4 +1,5 @@
 """XSS regression: inline handler arguments must be JS-string-escaped, not just HTML-escaped."""
+
 from __future__ import annotations
 
 import re
@@ -7,7 +8,9 @@ from pathlib import Path
 APP_JS = Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "app.js"
 
 
-_INLINE = re.compile(r"""[\s"'`]on(?:click|dblclick|change|input|keydown|keyup|submit|contextmenu|mouse[a-z]+|focus|blur)=["'$]""")
+_INLINE = re.compile(
+    r"""[\s"'`]on(?:click|dblclick|change|input|keydown|keyup|submit|contextmenu|mouse[a-z]+|focus|blur)=["'$]"""
+)
 
 
 def test_no_inline_event_handler_attributes() -> None:

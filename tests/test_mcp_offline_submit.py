@@ -18,9 +18,7 @@ def test_offline_submit_persists_into_queue_dir(tmp_path: Path, monkeypatch) -> 
     monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
     yaml_text = "task_id: t1\ncommand: echo hi\n"
     r1 = mcp_server._submit_task_nowait(home, {"project": "p", "yaml_text": yaml_text})
-    r2 = mcp_server._submit_task_nowait(
-        home, {"project": "p", "yaml_text": "task_id: t2\ncommand: echo hi\n"}
-    )
+    r2 = mcp_server._submit_task_nowait(home, {"project": "p", "yaml_text": "task_id: t2\ncommand: echo hi\n"})
     assert r1["ok"], r1
     assert r2["ok"], r2
     files = sorted(qdir.glob("submitted_*.yaml"))

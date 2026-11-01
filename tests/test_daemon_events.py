@@ -141,9 +141,7 @@ def test_orphan_requeue_sets_infra_orphan(tmp_path: Path) -> None:
 
     n = requeue_orphaned_running(db, reason="orphan")
     assert n == 1
-    run = db.execute(
-        "SELECT stop_reason, last_error_code, stopped_by, status FROM runs WHERE project='p'"
-    ).fetchone()
+    run = db.execute("SELECT stop_reason, last_error_code, stopped_by, status FROM runs WHERE project='p'").fetchone()
     assert run["stop_reason"] == "orphan"
     assert run["last_error_code"] == tqerr.INFRA_ORPHAN
     assert run["stopped_by"] == "tq"
@@ -155,7 +153,10 @@ def test_finish_run_persists_stop_reason(tmp_path: Path) -> None:
     db = open_db(tmp_path / "queue.db")
     rid = insert_run(db, "p", "t", str(tmp_path / "t.log"))
     finish_run(
-        db, rid, 15, "interrupted",
+        db,
+        rid,
+        15,
+        "interrupted",
         last_error_code=tqerr.RUN_CAP,
         stopped_by="tq",
         stop_reason="wall_clock_cap",
@@ -175,7 +176,10 @@ def test_finish_run_preserves_cli_stop_reason(tmp_path: Path) -> None:
     db.execute("UPDATE runs SET stop_reason = ? WHERE run_id = ?", ("user said so", rid))
     db.commit()
     finish_run(
-        db, rid, 15, "interrupted",
+        db,
+        rid,
+        15,
+        "interrupted",
         stopped_by="user",
         stop_reason="stop_requested",
     )

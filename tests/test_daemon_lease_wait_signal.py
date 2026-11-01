@@ -1,4 +1,5 @@
 """SIGTERM while waiting for the master lease must exit run_daemon cleanly."""
+
 from __future__ import annotations
 
 import signal

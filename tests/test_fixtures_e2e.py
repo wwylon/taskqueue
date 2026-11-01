@@ -94,9 +94,7 @@ def test_dummy_ask_cpu_blocked_by_budget(tmp_path: Path) -> None:
     budget = ResourceBudget(system, cfg)
     # Monkeypatch seed ram so fits only checks CPU
     budget.ram_reserved = 0.0
-    res = yaml.safe_load((FIXTURES / "experiments/operator_queue/dummy-ask-cpu.yaml").read_text())[
-        "resources"
-    ]
+    res = yaml.safe_load((FIXTURES / "experiments/operator_queue/dummy-ask-cpu.yaml").read_text())["resources"]
     ok, reason = budget.fits(float(res["cpu_cores"]), 0.0, float(res.get("ram_gib", 0)))
     assert ok is False
     set_task_error(db, "tqdemo", "dummy-ask-cpu", tqerr.BLOCK_RESOURCES, block_reason=reason)

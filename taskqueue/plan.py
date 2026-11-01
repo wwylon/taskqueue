@@ -41,12 +41,18 @@ def build_plan(
     limit: int = 20,
 ) -> dict[str, Any]:
     from taskqueue.db import (
-        blocked_projects, get_all_project_limits, get_config, get_queued_tasks,
-        get_running_tasks, unmet_dependency_label,
+        blocked_projects,
+        get_all_project_limits,
+        get_config,
+        get_queued_tasks,
+        get_running_tasks,
+        unmet_dependency_label,
     )
     from taskqueue.resources import ResourceBudget, detect_system, sort_queued_fairshare
     from taskqueue.scheduler import (
-        build_task_status_map, declared_resources, occupancy_from_running_rows,
+        build_task_status_map,
+        declared_resources,
+        occupancy_from_running_rows,
     )
 
     cfg = get_config(conn) if cfg is None else cfg
@@ -63,9 +69,10 @@ def build_plan(
         for r in conn.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
     }
     queued = sort_queued_fairshare(
-        get_queued_tasks(conn, limit=max(limit * 4, 64), status_map=status_map,
-                         skip_projects=paused),
-        dict(occ["gpu_running_by_proj"]), usage, float(cfg.get("fairshare_weight", 1e-6)),
+        get_queued_tasks(conn, limit=max(limit * 4, 64), status_map=status_map, skip_projects=paused),
+        dict(occ["gpu_running_by_proj"]),
+        usage,
+        float(cfg.get("fairshare_weight", 1e-6)),
     )
     limits = get_all_project_limits(conn)
     gpu_budget = _gpu_budgets(conn, limits)
@@ -90,7 +97,7 @@ def build_plan(
                 entry.update(
                     verdict="blocked",
                     reason=f"project max_gpu_hours_day={b['limit_hours']:g} reached "
-                           f"({b['used_hours']:.2f} h used today, UTC)",
+                    f"({b['used_hours']:.2f} h used today, UTC)",
                 )
                 entries.append(entry)
                 continue

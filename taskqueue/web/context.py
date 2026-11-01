@@ -1,4 +1,5 @@
 """Shared runtime context for the HTTP Handler."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -29,6 +30,4 @@ class HandlerContext:
     tls: threading.local = field(default_factory=threading.local)
     # G1: per-worker command queues for low-latency command delivery.
     pending_commands: dict[str, deque] = field(default_factory=dict)
-    commands_condition: threading.Condition = field(
-        default_factory=threading.Condition
-    )
+    commands_condition: threading.Condition = field(default_factory=threading.Condition)

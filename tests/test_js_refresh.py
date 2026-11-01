@@ -1,4 +1,5 @@
 """Behavior tests for core/refresh.js (status pill/health, scoped status, refresh cycle, offline, SSE messages)."""
+
 from __future__ import annotations
 
 import json
@@ -6,15 +7,30 @@ import json
 from tests.test_js_app import run_js
 from tests.test_js_smoke import EV
 
-HEALTH = {"level": "amber", "icons": {"level": {"amber": "A!"}, "parts": {"fail": "F"}},
-          "parts": [{"kind": "fail", "count": 2}, {"kind": "frozen", "count": 1}],
-          "counts": {"new_failed": 2}, "new_failed": ["p/a"], "interrupted": []}
+HEALTH = {
+    "level": "amber",
+    "icons": {"level": {"amber": "A!"}, "parts": {"fail": "F"}},
+    "parts": [{"kind": "fail", "count": 2}, {"kind": "frozen", "count": 1}],
+    "counts": {"new_failed": 2},
+    "new_failed": ["p/a"],
+    "interrupted": [],
+}
 DASH = {
-    "status": {"running": [{"project": "a", "task_id": "x", "run_id": 1}], "config": {"max_running_tasks": 4},
-               "status_counts": {"running": 1, "queued": 2, "failed": 3, "completed": 4}, "projects": ["a", "b"],
-               "version": "9.9", "schema_version": 7, "git_sha": "abc", "health": HEALTH, "alert_firing": 2},
+    "status": {
+        "running": [{"project": "a", "task_id": "x", "run_id": 1}],
+        "config": {"max_running_tasks": 4},
+        "status_counts": {"running": 1, "queued": 2, "failed": 3, "completed": 4},
+        "projects": ["a", "b"],
+        "version": "9.9",
+        "schema_version": 7,
+        "git_sha": "abc",
+        "health": HEALTH,
+        "alert_firing": 2,
+    },
     "queue": {"tasks": [{"project": "a", "task_id": "q1", "status": "queued", "priority": 1}], "total": 42},
-    "history": None, "workers": None, "tags": {"tags": ["gpu"], "tag_projects": {"gpu": ["a"]}},
+    "history": None,
+    "workers": None,
+    "tags": {"tags": ["gpu"], "tag_projects": {"gpu": ["a"]}},
 }
 
 
@@ -45,7 +61,7 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["title"] == "A! tq 1/3/2 proj"
     assert out["pill"][0] == "status-pill pill-ok" and "status.nRunning" in out["pill"][1]
     assert out["health"][0] == "health-pill health-amber" and out["health"][1].startswith("A! F2")
-    assert "F1" not in out["health"][1]                    # frozen projects are not shown in the pill
+    assert "F1" not in out["health"][1]  # frozen projects are not shown in the pill
     assert out["health"][2:] == [False, False, True]
     assert out["badge"] == ["2", False]
     assert out["version"] == "tq v9.9 · db v7 · abc"

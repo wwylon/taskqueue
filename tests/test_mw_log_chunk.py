@@ -80,9 +80,7 @@ def test_log_chunk_renews_lease(tmp_path: Path, monkeypatch) -> None:
     worker = seed_worker(db, session_id="sess-1")
     claim = _claim(home / "queue.db", worker)
     run_id = claim["run_id"]
-    before = db.execute("SELECT lease_expires_at FROM runs WHERE run_id=?", (run_id,)).fetchone()[
-        "lease_expires_at"
-    ]
+    before = db.execute("SELECT lease_expires_at FROM runs WHERE run_id=?", (run_id,)).fetchone()["lease_expires_at"]
     http_request(
         HandlerClass,
         "POST",
@@ -94,9 +92,7 @@ def test_log_chunk_renews_lease(tmp_path: Path, monkeypatch) -> None:
             "chunk_b64": base64.b64encode(b"ping\n").decode("ascii"),
         },
     )
-    after = db.execute("SELECT lease_expires_at FROM runs WHERE run_id=?", (run_id,)).fetchone()[
-        "lease_expires_at"
-    ]
+    after = db.execute("SELECT lease_expires_at FROM runs WHERE run_id=?", (run_id,)).fetchone()["lease_expires_at"]
     assert after >= before
     db.close()
 
@@ -175,10 +171,15 @@ def test_log_chunk_busy_db_503_then_retry_same_seq_is_applied(tmp_path: Path, mo
     worker = seed_worker(db, session_id="sess-1")
     claim = _claim(home / "queue.db", worker)
     run_id = claim["run_id"]
-    monkeypatch.setattr(HandlerClass, "_open_write_conn", lambda self, timeout=10.0: open_write_conn(home / "queue.db", 0.05))
+    monkeypatch.setattr(
+        HandlerClass, "_open_write_conn", lambda self, timeout=10.0: open_write_conn(home / "queue.db", 0.05)
+    )
 
     body = {
-        "run_id": run_id, "worker_id": "w1", "session_id": "sess-1", "seq": 9_100_000_000_000,
+        "run_id": run_id,
+        "worker_id": "w1",
+        "session_id": "sess-1",
+        "seq": 9_100_000_000_000,
         "chunk_b64": base64.b64encode(b"gamma (40.0%)\n").decode("ascii"),
     }
     blocker = open_write_conn(home / "queue.db", 1.0)
@@ -194,5 +195,7 @@ def test_log_chunk_busy_db_503_then_retry_same_seq_is_applied(tmp_path: Path, mo
     code, data = http_request(HandlerClass, "POST", "/api/worker/log-chunk", body)
     assert code == 200 and data.get("ok") is True and not data.get("duplicate")
     assert "gamma" in Path(claim["log_path"]).read_text(encoding="utf-8")
-    assert float(db.execute("SELECT progress_pct FROM runs WHERE run_id=?", (run_id,)).fetchone()["progress_pct"]) == 40.0
+    assert (
+        float(db.execute("SELECT progress_pct FROM runs WHERE run_id=?", (run_id,)).fetchone()["progress_pct"]) == 40.0
+    )
     db.close()

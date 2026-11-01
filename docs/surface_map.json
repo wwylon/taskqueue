@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "capabilities": {
+    "submit": {
+      "mcp": ["submit_task", "submit_matrix", "list_projects"],
+      "cli": ["add", "submit", "clone", "validate", "sync"]
+    },
+    "admit": {
+      "mcp": ["capacity", "why_not_running"],
+      "cli": ["plan", "why", "force", "priority", "pause", "resume", "freeze", "unfreeze", "locks", "fair-share", "deps"]
+    },
+    "run": {
+      "mcp": ["enqueue_task", "retry_task", "retry_tasks", "patch_task", "stop_task"],
+      "cli": ["start", "stop-daemon", "restart", "retry", "stop", "suspend", "patch", "reverify", "remove", "group", "suite", "tag"]
+    },
+    "wait_notify": {
+      "mcp": ["wait_for_task", "drain_notifications"],
+      "cli": ["wait", "watch", "tail", "result", "logs"]
+    },
+    "diagnose": {
+      "mcp": ["diagnose", "task_result", "report", "explain_error"],
+      "cli": ["diagnose", "explain", "metrics", "report", "hygiene", "diff", "health"]
+    },
+    "workers": {
+      "mcp": [],
+      "cli": ["worker", "projects", "resync", "bundle", "master-status", "master-migrate"]
+    },
+    "auth": {
+      "mcp": [],
+      "cli": ["token", "config", "mcp"]
+    },
+    "observe": {
+      "mcp": ["my_tasks", "attention_list", "task_health", "queue_status", "progress_snapshot", "log_tail", "agent_usage_summary"],
+      "cli": ["status", "list", "describe", "top", "capacity", "my-tasks", "agents", "doctor", "log", "detect", "usage"]
+    },
+    "admin": {
+      "mcp": [],
+      "cli": ["archive", "prune", "export", "import", "migrate", "completion", "sleep", "wake"]
+    }
+  }
+}

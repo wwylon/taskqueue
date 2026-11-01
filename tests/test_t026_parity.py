@@ -142,9 +142,7 @@ def test_t026_local_remote_same_decision(name, row, ctx, expect_ok):
     got_local = _decide(row, local, ctx, cpu=cpu, ram=ram, gpu=gpu)
     got_remote = _decide(row, remote, ctx, cpu=cpu, ram=ram, gpu=gpu)
     assert got_local.ok == expect_ok, f"local {name}: {got_local}"
-    assert got_remote.ok == got_local.ok, (
-        f"parity {name}: local={got_local} remote={got_remote}"
-    )
+    assert got_remote.ok == got_local.ok, f"parity {name}: local={got_local} remote={got_remote}"
 
 
 def test_t026_dispatch_local_only_differs():

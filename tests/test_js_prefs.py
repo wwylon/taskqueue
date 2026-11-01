@@ -1,4 +1,5 @@
 """Behavior tests for components/prefs.js (theme, font size, language selector, popup)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js

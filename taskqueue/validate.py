@@ -68,16 +68,18 @@ def _cap_warnings(conn, project_name: str, task, yaml_path: Path, *, cap_warn_mu
     try:
         median = _get_historical_median_sec(conn, project_name, task.task_id)
         if median and task.wall_clock_cap_sec > cap_warn_multiplier * median:
-            warnings.append({
-                "project": project_name,
-                "task_id": task.task_id,
-                "path": str(yaml_path),
-                "warning": (
-                    f"wall_clock_cap_sec={task.wall_clock_cap_sec} is "
-                    f"{task.wall_clock_cap_sec / median:.1f}× the historical median "
-                    f"({median:.0f}s) — consider reducing"
-                ),
-            })
+            warnings.append(
+                {
+                    "project": project_name,
+                    "task_id": task.task_id,
+                    "path": str(yaml_path),
+                    "warning": (
+                        f"wall_clock_cap_sec={task.wall_clock_cap_sec} is "
+                        f"{task.wall_clock_cap_sec / median:.1f}× the historical median "
+                        f"({median:.0f}s) — consider reducing"
+                    ),
+                }
+            )
     except Exception:
         pass
     return warnings
@@ -119,17 +121,21 @@ def fix_home(home: Path) -> dict[str, Any]:
 
                 changes = fix_legacy_yaml_file(yaml_path, project_name=name)
                 if changes:
-                    fixed.append({
+                    fixed.append(
+                        {
+                            "project": name,
+                            "path": str(yaml_path),
+                            "changes": changes,
+                        }
+                    )
+            except Exception as exc:
+                errors.append(
+                    {
                         "project": name,
                         "path": str(yaml_path),
-                        "changes": changes,
-                    })
-            except Exception as exc:
-                errors.append({
-                    "project": name,
-                    "path": str(yaml_path),
-                    "error": str(exc),
-                })
+                        "error": str(exc),
+                    }
+                )
     return {"fixed": fixed, "errors": errors, "files_rewritten": len(fixed)}
 
 
@@ -148,11 +154,13 @@ def validate_file(
             return {
                 "projects": 1,
                 "ok": 0,
-                "errors": [{
-                    "project": result["project"],
-                    "path": result["path"],
-                    "error": result["error"],
-                }],
+                "errors": [
+                    {
+                        "project": result["project"],
+                        "path": result["path"],
+                        "error": result["error"],
+                    }
+                ],
                 "warnings": [],
                 "fixed": [],
                 "valid": False,
@@ -171,16 +179,21 @@ def validate_file(
         ok_count += 1
         warnings.extend(
             _cap_warnings(
-                conn, project_name, task, yaml_path,
+                conn,
+                project_name,
+                task,
+                yaml_path,
                 cap_warn_multiplier=cap_warn_multiplier,
             )
         )
     except Exception as exc:
-        errors.append({
-            "project": project_name,
-            "path": str(yaml_path),
-            "error": str(exc),
-        })
+        errors.append(
+            {
+                "project": project_name,
+                "path": str(yaml_path),
+                "error": str(exc),
+            }
+        )
     if conn:
         conn.close()
     return {
@@ -214,30 +227,35 @@ def validate_home(
     ok_count = 0
     for name, project in projects.items():
         if not project.queue_dir.is_dir():
-            errors.append({
-                "project": name,
-                "path": str(project.queue_dir),
-                "error": "queue_dir missing",
-            })
+            errors.append(
+                {
+                    "project": name,
+                    "path": str(project.queue_dir),
+                    "error": "queue_dir missing",
+                }
+            )
             continue
         for yaml_path in iter_queue_files(project.queue_dir):
             try:
-                task = parse_task_yaml(
-                    yaml_path, project, allow_remote_notify=allow_remote
-                )
+                task = parse_task_yaml(yaml_path, project, allow_remote_notify=allow_remote)
                 ok_count += 1
                 warnings.extend(
                     _cap_warnings(
-                        conn, name, task, yaml_path,
+                        conn,
+                        name,
+                        task,
+                        yaml_path,
                         cap_warn_multiplier=cap_warn_multiplier,
                     )
                 )
             except Exception as exc:
-                errors.append({
-                    "project": name,
-                    "path": str(yaml_path),
-                    "error": str(exc),
-                })
+                errors.append(
+                    {
+                        "project": name,
+                        "path": str(yaml_path),
+                        "error": str(exc),
+                    }
+                )
     if conn:
         conn.close()
     return {

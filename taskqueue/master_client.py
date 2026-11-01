@@ -61,8 +61,9 @@ def _auth_headers(home: Path) -> dict[str, str]:
     return client_auth_headers(token)
 
 
-def post_json(base_url: str, path: str, body: dict[str, Any] | None = None, *,
-              token: str = "", timeout: float = 10.0) -> dict[str, Any]:
+def post_json(
+    base_url: str, path: str, body: dict[str, Any] | None = None, *, token: str = "", timeout: float = 10.0
+) -> dict[str, Any]:
     """POST JSON to an explicit master URL (worker admin commands). Raises on network errors.
 
     Unlike ``via_master`` this does not look up a local daemon: the caller names the master.
@@ -98,8 +99,9 @@ def api_request(
     """POST/GET JSON. Returns parsed dict, or None if the daemon is unreachable."""
     url = master_url(home) + (path if path.startswith("/") else "/" + path)
     data = None if body is None else json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method=method.upper(),
-                                 headers={**identity_headers(), **_auth_headers(home)})
+    req = urllib.request.Request(
+        url, data=data, method=method.upper(), headers={**identity_headers(), **_auth_headers(home)}
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
@@ -169,6 +171,15 @@ def via_master(
             "ok": False,
             "error": "master is running but did not answer (timeout/connection error); "
             "not falling back to direct SQLite writes - retry shortly",
+            "unreachable": True,
+        }
+    # F-155: explicit TQ_MASTER is authoritative — never fall back to a different
+    # local SQLite when that endpoint is unreachable.
+    if resp is None and (os.environ.get("TQ_MASTER") or "").strip():
+        return {
+            "ok": False,
+            "error": "TQ_MASTER is set but the remote master did not answer; "
+            "not falling back to local SQLite writes - fix TQ_MASTER or retry",
             "unreachable": True,
         }
     return resp

@@ -61,7 +61,7 @@ def test_markdown_table():
 
 def test_markdown_fenced_code():
     html = markdown_to_html("## Install\n\n```powershell\nuv sync\ntq doctor\n```\n")
-    assert "<pre><code class=\"language-powershell\">" in html
+    assert '<pre><code class="language-powershell">' in html
     assert "uv sync\ntq doctor" in html
     assert "```" not in html
     assert "<h2>Install</h2>" in html

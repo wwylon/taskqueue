@@ -97,9 +97,7 @@ def test_kill_process_tree_kills_descendants(tmp_path: Path) -> None:
         )
         assert result == "killed"
         deadline = time.time() + 5
-        while time.time() < deadline and (
-            parent.is_running() or psutil.pid_exists(child_pid)
-        ):
+        while time.time() < deadline and (parent.is_running() or psutil.pid_exists(child_pid)):
             time.sleep(0.05)
         assert not parent.is_running()
         assert not psutil.pid_exists(child_pid)
@@ -148,9 +146,7 @@ def test_requeue_reaps_orphan_pid(tmp_path: Path) -> None:
         while time.monotonic() < deadline and child.is_running():
             time.sleep(0.05)
         assert not child.is_running()
-        row = db.execute(
-            "SELECT status FROM runs WHERE run_id = ?", (run_id,)
-        ).fetchone()
+        row = db.execute("SELECT status FROM runs WHERE run_id = ?", (run_id,)).fetchone()
         assert row["status"] == "interrupted"
     finally:
         try:

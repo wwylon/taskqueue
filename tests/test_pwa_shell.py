@@ -44,8 +44,12 @@ def test_js_modules_served_and_in_offline_shell(tmp_path):
         assert http_request(handler, "GET", bad)[0] == 404, bad
 
 
-def test_index_loads_module_entry_before_app_js():
+def test_index_loads_module_entry_without_classic_app_js():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "index.html").read_text(encoding="utf-8")
-    assert html.index('type="module" src="/static/js/main.js"') < html.index('defer src="/static/app.js"')
+    assert 'type="module" src="/static/js/main.js"' in html
+    assert 'defer src="/static/app.js"' not in html
+    assert "tqBootApp" in (Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js" / "main.js").read_text(
+        encoding="utf-8"
+    )

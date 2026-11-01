@@ -42,6 +42,7 @@ def _clear_lease(db) -> None:
 # F-056
 # ---------------------------------------------------------------------------
 
+
 def test_finalize_retries_when_post_returns_none(tmp_path: Path) -> None:
     """The old loop returned after the first `_post()` because it never raises."""
     calls: list[dict] = []
@@ -124,6 +125,7 @@ def test_already_finalized_is_ack() -> None:
 # ---------------------------------------------------------------------------
 # F-057
 # ---------------------------------------------------------------------------
+
 
 def test_holds_master_lease_missing_and_expired(tmp_path: Path) -> None:
     db = open_db(tmp_path / "q.db")

@@ -1,4 +1,5 @@
 """Run anomaly flag: History rows carry `anomalies`, and a completed outlier fires run_anomaly."""
+
 from pathlib import Path
 
 from taskqueue.db import open_db
@@ -17,9 +18,7 @@ def _add_run(db, project, task, ram, status="completed"):
 
 
 def _fired(db):
-    return db.execute(
-        "SELECT fire_count FROM system_alerts WHERE key='run_anomaly'"
-    ).fetchone()["fire_count"]
+    return db.execute("SELECT fire_count FROM system_alerts WHERE key='run_anomaly'").fetchone()["fire_count"]
 
 
 def test_history_flags_outlier_and_alert_fires(tmp_path: Path):

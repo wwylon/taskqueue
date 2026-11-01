@@ -46,6 +46,4 @@ def test_filter_admits_when_slack_remains() -> None:
 
 def test_filter_noop_without_global_cap_or_with_force() -> None:
     assert filter_project_min(FilterContext(n_running=9, g_max_tasks=0, min_reserved_others=2)).ok
-    assert filter_project_min(
-        FilterContext(n_running=2, g_max_tasks=3, min_reserved_others=1, force=True)
-    ).ok
+    assert filter_project_min(FilterContext(n_running=2, g_max_tasks=3, min_reserved_others=1, force=True)).ok

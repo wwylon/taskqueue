@@ -50,6 +50,7 @@ def test_stop_request_cooperative_then_stop(monkeypatch):
 def test_wall_clock_cap(monkeypatch):
     _patch_task(monkeypatch, _Row(stop_requested=0, wall_clock_cap_sec=5))
     import taskqueue.db as db
+
     seen = []
     monkeypatch.setattr(db, "request_stop", lambda conn, p, t: seen.append((p, t)))
     run = FakeRun(elapsed=9)
@@ -88,7 +89,8 @@ def test_hard_ram_pressure_stops_victim_and_freezes_admission(monkeypatch):
     monkeypatch.setattr(daemon, "ram_used_gib", lambda: 98.0)
     monkeypatch.setattr(daemon, "_split_dying", lambda ar, attr: (dict(ar), 0.0))
     monkeypatch.setattr(
-        daemon, "pick_victim",
+        daemon,
+        "pick_victim",
         lambda conn, items, needed_gib, resource: (items[0][0], [(items[0][0], 1.0)]),
     )
     errs = []
@@ -101,9 +103,7 @@ def test_hard_ram_pressure_stops_victim_and_freezes_admission(monkeypatch):
 
 def test_no_pressure_returns_none(monkeypatch):
     monkeypatch.setattr(daemon, "ram_used_gib", lambda: 10.0)
-    out = daemon._enforce_hard_pressure(
-        object(), {}, {"ram_total_gib": 100.0}, {("p", "t"): PressureRun(ram=1.0)}, 5.0
-    )
+    out = daemon._enforce_hard_pressure(object(), {}, {"ram_total_gib": 100.0}, {("p", "t"): PressureRun(ram=1.0)}, 5.0)
     assert out is None
 
 
@@ -151,9 +151,7 @@ def test_heartbeat_frozen_run_stopped_when_configured(monkeypatch):
     monkeypatch.setattr(daemon, "_note_block", lambda *a, **k: notes.append(a[1:4]))
     run = HbRun(idle=10_000.0)
     runs = {("p", "t"): run}
-    daemon._heartbeat_and_sanity(
-        object(), None, {"frozen_action": "stop"}, runs, 600.0, set(1 for _ in ())
-    )
+    daemon._heartbeat_and_sanity(object(), None, {"frozen_action": "stop"}, runs, 600.0, set(1 for _ in ()))
     assert run.db_updates == 1
     assert run.stopped and run.stop_reason == "frozen"
     assert notes
@@ -176,6 +174,7 @@ class UsageRun:
 
 def _usage_conn():
     import sqlite3
+
     c = sqlite3.connect(":memory:")
     c.row_factory = sqlite3.Row
     c.execute(
@@ -209,6 +208,7 @@ def test_usage_skipped_while_host_sleeping():
 
 def test_hardware_refresher_updates_in_place_and_backs_off(monkeypatch):
     import threading
+
     calls = []
 
     def fake_detect():
@@ -235,14 +235,16 @@ def test_heartbeat_line_only_on_progress_change_or_every_few_minutes(monkeypatch
     run = HbRun(idle=1.0)
     runs = {("p", "t"): run}
     beat = lambda: daemon._heartbeat_and_sanity(object(), None, {}, runs, 600.0, set())  # noqa: E731
-    beat(); beat(); beat()
-    assert capsys.readouterr().out.count(">> p/t") == 1   # unchanged progress: one line, not three
+    beat()
+    beat()
+    beat()
+    assert capsys.readouterr().out.count(">> p/t") == 1  # unchanged progress: one line, not three
     run.progress_pct = 42.0
     beat()
-    assert capsys.readouterr().out.count(">> p/t") == 1   # progress moved: logged again
+    assert capsys.readouterr().out.count(">> p/t") == 1  # progress moved: logged again
     run._hb_last_print -= daemon.HEARTBEAT_LOG_SEC
     beat()
-    assert capsys.readouterr().out.count(">> p/t") == 1   # periodic line after HEARTBEAT_LOG_SEC
+    assert capsys.readouterr().out.count(">> p/t") == 1  # periodic line after HEARTBEAT_LOG_SEC
 
 
 def test_registry_reload_is_visible_through_the_web_reference():

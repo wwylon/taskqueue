@@ -1,4 +1,5 @@
 """Behavior tests for static/js/views/*.js (run through Node with app.js globals stubbed)."""
+
 from __future__ import annotations
 
 import re
@@ -32,8 +33,9 @@ globalThis.document = { getElementById: id => els[id] || null, querySelectorAll:
 
 
 def _run(code: str):
-    r = subprocess.run([NODE, "--input-type=module", "-e", STUBS + code], capture_output=True, text=True,
-                       encoding="utf-8", timeout=30)
+    r = subprocess.run(
+        [NODE, "--input-type=module", "-e", STUBS + code], capture_output=True, text=True, encoding="utf-8", timeout=30
+    )
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
@@ -136,8 +138,10 @@ def test_alerts_view_orders_rows_and_patch_sends_flag():
     r = out["rows"]
     assert r.index("alerts.sys.any_failure") < r.index("alerts.sys.all_done") and "bogus" not in r
     assert "DETAIL" in out["hist"] and out["n"] == 3
-    assert out["sent"] == [["PATCH", "/api/alerts/system/all_done", {"enabled": 1}],
-                           ["PATCH", "/api/alerts/system/all_done", {"windows_toast": 0}]]
+    assert out["sent"] == [
+        ["PATCH", "/api/alerts/system/all_done", {"enabled": 1}],
+        ["PATCH", "/api/alerts/system/all_done", {"windows_toast": 0}],
+    ]
 
 
 def test_usage_view_range_type_toggle_and_summary():
@@ -193,7 +197,10 @@ const rows = [
 
 
 def _history_setup(extra: str = "") -> str:
-    return _HISTORY_STUBS + _HISTORY_ROWS + rf"""
+    return (
+        _HISTORY_STUBS
+        + _HISTORY_ROWS
+        + rf"""
     els['history-tbody'] = {{ innerHTML: '' }};
     els['history-mobile-cards'] = {{ innerHTML: '' }};
     els['history-pagination'] = {{ innerHTML: '', textContent: '' }};
@@ -201,10 +208,12 @@ def _history_setup(extra: str = "") -> str:
     const {{ S }} = await import({_imp("core/state.js")});
     S.history = rows; S.historyTotal = rows.length;
     {extra}"""
+    )
 
 
 def test_history_view_sorts_filters_and_escapes():
-    out = _run(_history_setup(r"""
+    out = _run(
+        _history_setup(r"""
     m.renderHistory();
     const byRun = els['history-tbody'].innerHTML;
     S.historySort = { field: 'run_id', dir: 1 };
@@ -222,9 +231,12 @@ def test_history_view_sorts_filters_and_escapes():
     const mobileRows = els['history-tbody'].innerHTML;
     console.log(JSON.stringify({ byRun, asc, failedOnly, masterOnly, cards: els['history-mobile-cards'].innerHTML, desktopCards, mobileRows,
       prev: S.prevHistoryStr.length > 10, sortCalls,
-      anom: m._anomalyBadge(rows[1]), noAnom: m._anomalyBadge(rows[0]) }));"""))
+      anom: m._anomalyBadge(rows[1]), noAnom: m._anomalyBadge(rows[0]) }));""")
+    )
+
     def ids(h):
         return [int(x) for x in __import__("re").findall(r'<td class="mob-hide mono">#(\d+)</td>', h)]
+
     assert ids(out["byRun"]) == [3, 2, 1] and ids(out["asc"]) == [1, 2, 3]
     assert ids(out["failedOnly"]) == [3] and ids(out["masterOnly"]) == [1]
     assert re.search(r'<span class="proj-tag"[^>]*>b/</span>&lt;t3&gt;', out["byRun"])
@@ -236,30 +248,42 @@ def test_history_view_sorts_filters_and_escapes():
 
 
 def test_history_view_pagination_and_filter_actions():
-    out = _run(_history_setup(r"""
+    out = _run(
+        _history_setup(r"""
     S.historyTotal = 50;
+    S.historyOffset = 0;
+    S.historyPageSize = 20;
+    S.history = new Array(20).fill(0).map((_, i) => ({ run_id: i + 1, status: 'completed', project: 'a', task_id: 't' }));
     m.renderHistory();
     const more = els['history-pagination'].innerHTML;
     m.loadMoreHistory();
-    const limit = S.historyLimit;
+    const offset = S.historyOffset;
     S.historyTotal = 3;
+    S.historyOffset = 0;
+    S.history = [{ run_id: 1, status: 'completed', project: 'a', task_id: 't' }];
     m.renderHistory();
-    const done = els['history-pagination'].textContent;
+    const done = els['history-pagination'].innerHTML;
     const cls = [];
     const mk = () => ({ classList: { add: c => cls.push(c) } });
     document.querySelectorAll = () => [{ classList: { remove: () => cls.push('rm') } }];
     m.setHistoryFilter('failed', mk());
-    console.log(JSON.stringify({ more, limit, done, refreshed, filter: S.historyStatusFilter, cls }));"""))
-    assert "loadMoreHistory" in out["more"] and "3 / 50" in out["more"]
-    assert out["limit"] == 40 and out["refreshed"] == 1 and out["done"] == "3 runs"
+    console.log(JSON.stringify({ more, offset, done, refreshed, filter: S.historyStatusFilter, cls }));""")
+    )
+    assert "loadMoreHistory" in out["more"] and "1–20 / 50" in out["more"]
+    # loadMoreHistory + setHistoryFilter (server-side status) both call refresh().
+    assert out["offset"] == 20 and out["refreshed"] == 2 and "1–1 / 3" in out["done"]
     assert out["filter"] == "failed" and out["cls"] == ["rm", "active"]
 
 
 def test_history_log_toggles_track_expanded_state_in_s():
-    out = _run(_history_setup(r"""
+    out = _run(
+        _history_setup(
+            r"""
     const mkEl = () => ({ classList: { add() {}, remove() {} }, style: {}, scrollIntoView() {}, textContent: '' });
     els['h-log-row-9'] = mkEl(); els['h-logbtn-9'] = mkEl(); els['hc-log-wrap-9'] = mkEl(); els['hc-logbtn-9'] = mkEl();
-    const lp = await import(""" + _imp("components/logpanel.js") + r""");
+    const lp = await import("""
+            + _imp("components/logpanel.js")
+            + r""");
     await lp.toggleHistoryLog(9, 'h-log-row-9', true);
     const openA = JSON.stringify(S.expandedLogs);
     await lp.toggleHistoryLog(9, 'h-log-row-9', true);
@@ -267,21 +291,25 @@ def test_history_log_toggles_track_expanded_state_in_s():
     await lp.toggleHistoryCardLog(9, false);
     const wrapOpen = els['hc-log-wrap-9'].style.display;
     await lp.toggleHistoryCardLog(9, false);
-    console.log(JSON.stringify({ openA, closedA, wrapOpen, wrapClosed: els['hc-log-wrap-9'].style.display, btn: els['hc-logbtn-9'].textContent, fetched }));"""))
+    console.log(JSON.stringify({ openA, closedA, wrapOpen, wrapClosed: els['hc-log-wrap-9'].style.display, btn: els['hc-logbtn-9'].textContent, fetched }));"""
+        )
+    )
     assert out["openA"] == '{"h:9":{"content":"","isRunning":true}}' and out["closedA"] == "{}"
     assert out["wrapOpen"] == "block" and out["wrapClosed"] == "none" and out["btn"] == "btn.log"
     assert out["fetched"] == [[9, "h-log-pre-9"], [9, "hc-log-pre-9"]]
 
 
 def test_history_run_history_panel_toggle_caches_html():
-    out = _run(_history_setup(r"""
+    out = _run(
+        _history_setup(r"""
     globalThis._loadTaskRunHistoryHtml = async (p, t) => '<b>' + p + '/' + t + '</b>';
     const mk = () => ({ classList: { add() {}, remove() {} }, style: {}, innerHTML: '', textContent: '' });
     els['hc-hist-wrap-a-t1'] = mk(); els['hc-histbtn-a-t1'] = mk(); els['hc-hist-content-a-t1'] = mk();
     await m.toggleHistoryCardHist('a', 't1');
     const opened = [JSON.stringify(S.expandedHistory), els['hc-hist-content-a-t1'].innerHTML, els['hc-hist-wrap-a-t1'].style.display];
     await m.toggleHistoryCardHist('a', 't1');
-    console.log(JSON.stringify({ opened, closed: JSON.stringify(S.expandedHistory), disp: els['hc-hist-wrap-a-t1'].style.display }));"""))
+    console.log(JSON.stringify({ opened, closed: JSON.stringify(S.expandedHistory), disp: els['hc-hist-wrap-a-t1'].style.display }));""")
+    )
     assert out["opened"] == ['{"a/t1":"<b>a/t1</b>"}', "<b>a/t1</b>", "block"]
     assert out["closed"] == "{}" and out["disp"] == "none"
 
@@ -302,7 +330,9 @@ globalThis.mkEl = () => ({ innerHTML: '', value: '', hidden: false, style: {}, t
 
 
 def test_queue_view_search_sort_and_pure_helpers():
-    out = _run(_QUEUE_STUBS + rf"""
+    out = _run(
+        _QUEUE_STUBS
+        + rf"""
     for (const id of ['queue-search', 'queue-search-clear']) els[id] = mkEl();
     const m = await import({_imp("views/queue.js")});
     const {{ S }} = await import({_imp("core/state.js")});
@@ -324,7 +354,8 @@ def test_queue_view_search_sort_and_pure_helpers():
       pct: [m._progressPct({{ progress_pct: 40, status: 'running' }}), m._progressPct({{ progress_pct: 40, status: 'completed' }}),
             m._progressPct({{ progress_pct: 100, status: 'queued' }}), m._progressPct({{ progress_pct: 'x', status: 'failed' }}),
             m._progressPct({{ progress_pct: 55, status: 'failed' }}), m._progressPct(null)],
-      bar: m._lastRunProgressHtml({{ status: 'failed<' }}, 33.3) }}));""")
+      bar: m._lastRunProgressHtml({{ status: 'failed<' }}, 33.3) }}));"""
+    )
     d = out["afterDebounce"]
     assert d["searching"] and d["refreshed"] == 1 and d["urlSyncs"] == [{"replace": True}] and d["page"] == 0
     assert d["still"] is False and d["hidden"] is False
@@ -335,7 +366,9 @@ def test_queue_view_search_sort_and_pure_helpers():
 
 
 def test_queue_view_render_empty_state_filters_and_flash():
-    out = _run(_QUEUE_STUBS + rf"""
+    out = _run(
+        _QUEUE_STUBS
+        + rf"""
     for (const id of ['queue-all-tasks-heading', 'queue-today-note', 'queue-empty', 'queue-tbody', 'queue-mobile-cards',
                       'queue-pagination']) els[id] = mkEl();
     const m = await import({_imp("views/queue.js")});
@@ -357,7 +390,8 @@ def test_queue_view_render_empty_state_filters_and_flash():
     m._reapplyQueueFlash();
     const reapplied = row.classList.has('qrow-flash');
     clearTimeout(S.queueFlashTimer);
-    console.log(JSON.stringify({{ empty, w1, flashed, reapplied, cols: m.QUEUE_COLS }}));""")
+    console.log(JSON.stringify({{ empty, w1, flashed, reapplied, cols: m.QUEUE_COLS }}));"""
+    )
     assert out["empty"]["head"] == "All tasks (0 of 2)" and out["empty"]["emptyShown"] and out["empty"]["rows"] == 0
     assert out["empty"]["sort"] == ["q", "status", 1]
     assert out["w1"] == ["t2"]
@@ -408,7 +442,8 @@ def test_dashboard_view_stats_cache_history_toggle_and_workers_table():
 
 
 def test_history_search_all_logs_renders_matches():
-    out = _run(_history_setup(r"""
+    out = _run(
+        _history_setup(r"""
     globalThis.tqAct = a => JSON.stringify(a).replace(/"/g, '&quot;');
     els['history-search'] = { value: ' oom ' };
     els['history-logsearch'] = { innerHTML: '', textContent: '', hidden: true };
@@ -420,7 +455,8 @@ def test_history_search_all_logs_renders_matches():
     const html = els['history-logsearch'].innerHTML;
     const shown = !els['history-logsearch'].hidden;
     m.openLogSearchRun(7);
-    console.log(JSON.stringify({ urls, html, shown, q: els['history-search'].value }));"""))
+    console.log(JSON.stringify({ urls, html, shown, q: els['history-search'].value }));""")
+    )
     assert out["urls"] == ["/api/log-search?q=oom"] and out["shown"]
     assert "t&lt;1&gt;" in out["html"] and "CUDA &lt;oom&gt;" in out["html"] and "openLogSearchRun" in out["html"]
     assert out["q"] == "#7"

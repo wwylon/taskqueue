@@ -6,6 +6,7 @@ when the job handle is closed (KILL_ON_JOB_CLOSE).
 Linux/macOS: starts the child in a new session (new pgid) so kill(-pgid)
 reaches all descendants.
 """
+
 from __future__ import annotations
 
 import os
@@ -123,6 +124,7 @@ def terminate_guarded(
         # Try graceful first
         try:
             import ctypes as _ctypes
+
             _ctypes.windll.kernel32.GenerateConsoleCtrlEvent(0, proc.pid)  # CTRL_C_EVENT
         except Exception:
             pass
@@ -135,6 +137,7 @@ def terminate_guarded(
         if guard:
             try:
                 import ctypes as _ctypes
+
                 _ctypes.WinDLL("kernel32").CloseHandle(guard)
             except Exception:
                 pass
@@ -174,6 +177,7 @@ def close_guard(guard: Any) -> None:
     if sys.platform == "win32":
         try:
             import ctypes as _ctypes
+
             _ctypes.WinDLL("kernel32").CloseHandle(guard)
         except Exception:
             pass

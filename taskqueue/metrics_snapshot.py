@@ -45,14 +45,15 @@ def _history_rows(conn: sqlite3.Connection, run_id: int, samples: int) -> list[d
     out: list[dict[str, Any]] = []
     for r in reversed(rows):
         keys = r.keys()
-        out.append({
-            "ts": r["ts"],
-            "cpu_pct": _round_or_none(r["cpu_pct"], 1),
-            "ram_gib": _round_or_none(r["ram_gib"], 2),
-            "vram_gib": _round_or_none(r["vram_gib"], 2),
-            "gpu_util_pct": _round_or_none(r["gpu_util_pct"], 1)
-            if "gpu_util_pct" in keys else None,
-        })
+        out.append(
+            {
+                "ts": r["ts"],
+                "cpu_pct": _round_or_none(r["cpu_pct"], 1),
+                "ram_gib": _round_or_none(r["ram_gib"], 2),
+                "vram_gib": _round_or_none(r["vram_gib"], 2),
+                "gpu_util_pct": _round_or_none(r["gpu_util_pct"], 1) if "gpu_util_pct" in keys else None,
+            }
+        )
     return out
 
 
@@ -83,7 +84,7 @@ def _try_http_overlay(home: Path, project: str, task_id: str) -> dict[str, Any] 
             cfg = get_config(db)
         finally:
             db.close()
-        port = int(cfg.get("port") or 8765)
+        port = int(cfg.get("web_port") or cfg.get("port") or 8765)
         token = str(cfg.get("auth_token") or "")
         url = f"http://127.0.0.1:{port}/api/status"
         req = urllib.request.Request(url)

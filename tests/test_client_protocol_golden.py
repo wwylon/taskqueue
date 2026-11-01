@@ -1,4 +1,5 @@
 """Shared client protocol golden fixtures (Python client + runner regex)."""
+
 from __future__ import annotations
 
 import json

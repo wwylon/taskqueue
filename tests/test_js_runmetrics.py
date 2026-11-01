@@ -1,4 +1,5 @@
 """Behavior tests for components/runmetrics.js (ETA, usage chips, gauge model and in-place dashboard patching)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -16,18 +17,21 @@ def _js(body: str) -> str:
 
 
 def test_eta_and_cpu_format():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 r.eta = [g._etaRemainingSec({ elapsed_sec: 100 }, null, 50), g._etaRemainingSec({ elapsed_sec: 100, prior_elapsed_sec: 100 }, 100, 25),
          g._etaRemainingSec({}, 0, 50), g._etaRemainingSec({ elapsed_sec: 5 }, 5, 0), g._etaRemainingSec({ elapsed_sec: 5 }, 5, null)];
 S.cpuTotalCores = 8; r.cores = [g.fmtCpu(250), g.fmtCpu(12.5)];
 S.cpuTotalCores = 0; r.pct = g.fmtCpu(36.6);
-"""))
+""")
+    )
     assert out["eta"] == [100, 600, None, None, None]
     assert out["cores"] == ["20.0 cores", "1.0 cores"] and out["pct"] == "37%"
 
 
 def test_identity_and_structure_keys_ignore_live_fields():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const t = { project: 'p', task_id: 't', run_id: 1, status: 'running', idle_sec: 1, progress_pct: 5, current_cpu_pct: 10 };
 const a = g._runningIdentity([t], { frozen_threshold_sec: 100 });
 r.sameOnLive = a === g._runningIdentity([{ ...t, current_cpu_pct: 99, progress_pct: 50, idle_sec: 2 }], { frozen_threshold_sec: 100 });
@@ -39,13 +43,15 @@ const k = g._gaugeStructureKey(s, { cpu_limit_pct: 50 });
 r.keySame = k === g._gaugeStructureKey({ system: { cpu_total_cores: 4, ram_total_gib: 16, ram_used_gib: 9 } }, { cpu_limit_pct: 50 });
 r.keyDiff = k !== g._gaugeStructureKey(s, { cpu_limit_pct: 60 });
 r.keyNull = typeof g._gaugeStructureKey(null, null);
-"""))
+""")
+    )
     assert out["sameOnLive"] and out["frozen"] and out["pctKnown"]
     assert out["empty"] == "[]" and out["keySame"] and out["keyDiff"] and out["keyNull"] == "string"
 
 
 def test_gpu_badge_log_chips_and_usage_html():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 r.gpu = [g._gpuBadgeHtml(null), g._gpuBadgeHtml({}), g._gpuBadgeHtml({ requires_gpu: true }), g._gpuBadgeHtml({ requires_gpu: true, resources: { gpu_vram_gib: 8 } })];
 r.noChips = g._logChipsHtml({ log: {} }, null);
 const t = { run_id: 7, project: 'p', task_id: 't', log: { warnings: 2, errors: 1, other: 3 } };
@@ -62,7 +68,8 @@ r.peaks = ['CPU pk', 'RAM pk', 'VRAM pk', 'GPU avg'].map(x => peaks.includes(x))
 r.vram0 = g._usageHtml({ run_id: 1, requires_gpu: true }).includes('0.0 GiB');
 r.pending = g._usageHtml({ run_id: 7 }).includes('status.usagePending');
 r.idle = g._usageHtml({ run_id: 99 }).includes('—');
-"""))
+""")
+    )
     assert out["gpu"][:2] == ["", ""] and "GPU</span>" in out["gpu"][2] and "GPU 8G" in out["gpu"][3]
     assert out["noChips"] == ""
     assert out["plain"] == [True, True, True, False]
@@ -72,7 +79,8 @@ r.idle = g._usageHtml({ run_id: 99 }).includes('—');
 
 
 def test_gauge_model_and_patch_dashboard_live():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 S.cfg = { cpu_limit_pct: 50, ram_limit_pct: 50, gpu_limit_pct: 100 };
 S.status = { queued_count: 3, daemon_rss_mb: 100, daemon_cpu_pct: 2,
   system: { cpu_total_cores: 8, ram_total_gib: 32, ram_used_gib: 28, gpu_vram_total_gib: 24, gpu_name: 'RTX' },
@@ -96,7 +104,8 @@ const T = s => els[s].textContent;
 r.text = [T(sels[1]), T(sels[2]), els[sels[3]].style.width, T(sels[4]), T(sels[5]), els[sels[2]].style.color];
 r.run = [T(sels[6]), T(sels[7]), els[sels[8]].style.width, T(sels[9]), T(sels[10]), T(sels[11]), sparks];
 S.status = { running: [] }; g._updateRunningTimes(); r.noRunning = sparks;
-"""))
+""")
+    )
     assert out["model"] == [4, 3, 3, 87.5, "var(--fail)"] and out["green"] == "var(--ok)"
     assert out["text"] == ["3 / 4", "28.0 / 16 GiB", "87.5%", "3", "100 MB", "var(--fail)"]
     assert out["run"][0] == "1m01s"

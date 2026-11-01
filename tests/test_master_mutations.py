@@ -1,4 +1,5 @@
 """Project pause/resume and task/project removal go through the master when a daemon runs."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,7 +34,9 @@ def test_cli_uses_master_refuses_when_unreachable_and_falls_back_offline(tmp_pat
     (tmp_path / "projects.yaml").write_text(f"projects:\n  p:\n    root: {tmp_path.as_posix()}\n", encoding="utf-8")
     open_db(tmp_path / "queue.db").close()
     calls = []
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True})
+    monkeypatch.setattr(
+        "taskqueue.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True}
+    )
     assert _cli_project.cmd_pause(tmp_path, "p") == 0 and calls == ["/api/project/pause/p"]
 
     monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
@@ -85,8 +88,12 @@ def test_stop_records_requester_and_daemon_logs_it(tmp_path: Path, capsys) -> No
     seed_queued_task(db, project="p", task_id="t", dispatch="local")
     db.execute("UPDATE tasks SET status='running'")
     db.commit()
-    status, _ = http_request(H, "POST", "/api/stop/p/t",
-                             extra_headers={"X-TQ-Operator": "ada", "X-TQ-Via": "mcp", "X-TQ-Client": "mcp/cursor 1.0"})
+    status, _ = http_request(
+        H,
+        "POST",
+        "/api/stop/p/t",
+        extra_headers={"X-TQ-Operator": "ada", "X-TQ-Via": "mcp", "X-TQ-Client": "mcp/cursor 1.0"},
+    )
     assert status == 200
     home = Path(H._db_path).parent
     data = json.loads(control_path(home, "p", "t").read_text(encoding="utf-8"))

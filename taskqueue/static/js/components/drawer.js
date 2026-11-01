@@ -280,7 +280,7 @@ export async function tqDrawerLoadHistory() {
   if (!t || !body || S.drawerTab !== 'history') return;
   const live = latest('drawer-history');
   try {
-    const resp = await fetch(`/api/tasks/${encodeURIComponent(t.project)}/${encodeURIComponent(t.task_id)}/runs`);
+    const resp = await fetch(`/api/tasks/${encodeURIComponent(t.project)}/${encodeURIComponent(t.task_id)}/runs?limit=5`);
     if (!resp.ok) throw new Error('Error ' + resp.status);
     const data = await resp.json();
     if (!live() || S.drawerTask !== t || S.drawerTab !== 'history') return;

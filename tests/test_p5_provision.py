@@ -44,34 +44,26 @@ def _init_repo(root: Path) -> str:
 
 
 def test_package_hash_stable_across_callers() -> None:
-    a = compute_package_hash(
-        provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p1", env_hash="e1"
-    )
-    b = compute_package_hash(
-        provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p1", env_hash="e1"
-    )
+    a = compute_package_hash(provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p1", env_hash="e1")
+    b = compute_package_hash(provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p1", env_hash="e1")
     assert a == b
-    c = compute_package_hash(
-        provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p2", env_hash="e1"
-    )
+    c = compute_package_hash(provider=PROVIDER_GIT_PATCH, commit="abc", patch_hash="p2", env_hash="e1")
     assert a != c
 
 
 def test_resolve_code_provider(tmp_path: Path) -> None:
     repo = tmp_path / "r"
     _init_repo(repo)
-    assert resolve_code_provider(
-        raw_provider=None, bundle_hash=None, project_root=repo
-    ) == PROVIDER_GIT_PATCH
-    assert resolve_code_provider(
-        raw_provider="bundle", bundle_hash="deadbeef", project_root=repo
-    ) == PROVIDER_BUNDLE
-    assert resolve_code_provider(
-        raw_provider=None, bundle_hash="deadbeef", project_root=tmp_path / "notgit"
-    ) == PROVIDER_BUNDLE
-    assert resolve_code_provider(
-        raw_provider=None, bundle_hash=None, project_root=tmp_path / "notgit"
-    ) == PROVIDER_PROJECT_ROOT
+    assert resolve_code_provider(raw_provider=None, bundle_hash=None, project_root=repo) == PROVIDER_GIT_PATCH
+    assert resolve_code_provider(raw_provider="bundle", bundle_hash="deadbeef", project_root=repo) == PROVIDER_BUNDLE
+    assert (
+        resolve_code_provider(raw_provider=None, bundle_hash="deadbeef", project_root=tmp_path / "notgit")
+        == PROVIDER_BUNDLE
+    )
+    assert (
+        resolve_code_provider(raw_provider=None, bundle_hash=None, project_root=tmp_path / "notgit")
+        == PROVIDER_PROJECT_ROOT
+    )
 
 
 def test_capture_git_package_identical_on_master_and_worker(tmp_path: Path) -> None:

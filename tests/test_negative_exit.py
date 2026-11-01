@@ -1,4 +1,5 @@
 """negative_exit_codes: an expected "no" is completed (tq.run.negative), not failed; dependents choose."""
+
 from __future__ import annotations
 
 import sys
@@ -17,8 +18,9 @@ from tests.test_queue import _project, _yaml
 
 def test_yaml_validation(tmp_path: Path) -> None:
     proj = _project("p", tmp_path)
-    ok = parse_task_yaml(_yaml(tmp_path, "p", "g", command="x", negative_exit_codes=[3, 3, 4],
-                               on_dependency_negative="cancel"), proj)
+    ok = parse_task_yaml(
+        _yaml(tmp_path, "p", "g", command="x", negative_exit_codes=[3, 3, 4], on_dependency_negative="cancel"), proj
+    )
     assert ok.negative_exit_codes == (3, 4) and ok.on_dependency_negative == "cancel"
     for bad in ({"negative_exit_codes": [0]}, {"negative_exit_codes": "3"}, {"on_dependency_negative": "skip"}):
         with pytest.raises(ValueError):
@@ -30,11 +32,19 @@ def test_gate_exit_3_completes_negative_and_cancels_opted_in_dependent(tmp_path:
     proj = _project("p", tmp_path)
     gate = tmp_path / "gate.py"
     gate.write_text("raise SystemExit(3)\n", encoding="utf-8")
-    upsert_task(db, parse_task_yaml(_yaml(tmp_path, "p", "gate", command=sys.executable, args=[str(gate)],
-                                          negative_exit_codes=[3]), proj))
+    upsert_task(
+        db,
+        parse_task_yaml(
+            _yaml(tmp_path, "p", "gate", command=sys.executable, args=[str(gate)], negative_exit_codes=[3]), proj
+        ),
+    )
     for tid, mode in (("follow_run", "run"), ("follow_cancel", "cancel")):
-        upsert_task(db, parse_task_yaml(_yaml(tmp_path, "p", tid, command="x", depends_on=["gate"],
-                                              on_dependency_negative=mode), proj))
+        upsert_task(
+            db,
+            parse_task_yaml(
+                _yaml(tmp_path, "p", tid, command="x", depends_on=["gate"], on_dependency_negative=mode), proj
+            ),
+        )
     run = ActiveRun(conn=db, task_row=get_task(db, "p", "gate"), log_dir=tmp_path / "logs", cwd=tmp_path)
     assert run.start(use_resume=False) is None
     wait_until(run.poll, timeout=30, interval=0.05)

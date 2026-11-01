@@ -1,4 +1,5 @@
 """Behavior tests for components/sparks.js (gauge sparklines and the run-metrics canvas chart)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -82,7 +83,9 @@ r.caption = fresh._sparkCaption('ram');
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["caption"] == "4.0 → 7.0 GiB · 2m"  # stale (1h old) and malformed samples dropped, 4 and 6 kept, 7 appended; 3 points span 2 min
+    assert (
+        out["caption"] == "4.0 → 7.0 GiB · 2m"
+    )  # stale (1h old) and malformed samples dropped, 4 and 6 kept, 7 appended; 3 points span 2 min
 
 
 def test_draw_sparks_fills_svg_and_caption_hosts():

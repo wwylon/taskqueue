@@ -1,4 +1,5 @@
 """Worker credential enforcement (register / rotate / deregister) and SSE semaphore release."""
+
 from __future__ import annotations
 
 import threading
@@ -31,7 +32,9 @@ def test_rotate_requires_old_hash(tmp_path: Path) -> None:
     code, _ = http_request(h, "POST", path, {"worker_id": "w1", "new_credential_hash": "ccc"})
     assert code == 403
     code, _ = http_request(
-        h, "POST", path,
+        h,
+        "POST",
+        path,
         {"worker_id": "w1", "old_credential_hash": "zzz", "new_credential_hash": "ccc"},
     )
     assert code == 403
@@ -101,9 +104,7 @@ def test_log_chunk_rejects_bad_run_id_and_oversize(tmp_path: Path) -> None:
     p = "/api/worker/log-chunk"
     code, _ = http_request(h, "POST", p, {"run_id": "abc", "worker_id": "w", "chunk_b64": "aGk="})
     assert code == 400
-    code, _ = http_request(
-        h, "POST", p, {"run_id": 1, "worker_id": "w", "chunk_b64": "A" * (8 * 1024 * 1024 + 1)}
-    )
+    code, _ = http_request(h, "POST", p, {"run_id": 1, "worker_id": "w", "chunk_b64": "A" * (8 * 1024 * 1024 + 1)})
     assert code == 413
 
 

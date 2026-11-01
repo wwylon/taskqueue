@@ -58,12 +58,14 @@ def test_exit_75_marks_suspended(tmp_path: Path, monkeypatch) -> None:
     )
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "suspend_me",
-            "command": sys.executable,
-            "args": [str(script)],
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "suspend_me",
+                "command": sys.executable,
+                "args": [str(script)],
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))
@@ -78,6 +80,7 @@ def test_exit_75_marks_suspended(tmp_path: Path, monkeypatch) -> None:
     assert run.start(use_resume=False) is None
     write_control_action(home, "p", "suspend_me", "suspend")
     import time
+
     wait_until(run.poll, timeout=30, interval=0.05)
     assert run.poll()
     assert run._exit_code == EXIT_SUSPENDED

@@ -43,9 +43,7 @@ def stamp_provenance(
     by = (by or "").strip()[:64] or None
     client = (client or "").strip()[:64] or None
     guard = (
-        "submitted_via IS NULL"
-        if via in ("yaml", "daemon")
-        else "(submitted_via IS NULL OR submitted_via = 'yaml')"
+        "submitted_via IS NULL" if via in ("yaml", "daemon") else "(submitted_via IS NULL OR submitted_via = 'yaml')"
     )
     try:
         for tid in task_ids:
@@ -61,6 +59,7 @@ def stamp_provenance(
 
 
 # --- task reads ---
+
 
 def _raw_failed_run_count(conn: sqlite3.Connection, project: str, task_id: str) -> int:
     row = conn.execute(
@@ -82,16 +81,16 @@ def run_summary(conn: sqlite3.Connection, project: str, task_id: str) -> dict:
         (project, task_id),
     ).fetchone()
     n = int(row["n"] or 0) if row else 0
-    out: dict = {"run_number": n, "last_run_id": None,
-                 "last_run_started_at": None, "last_run_finished_at": None}
+    out: dict = {"run_number": n, "last_run_id": None, "last_run_started_at": None, "last_run_finished_at": None}
     if n and row["last_id"] is not None:
         r = conn.execute(
             "SELECT run_id, started_at, finished_at FROM runs WHERE run_id = ?",
             (row["last_id"],),
         ).fetchone()
         if r:
-            out.update(last_run_id=r["run_id"], last_run_started_at=r["started_at"],
-                       last_run_finished_at=r["finished_at"])
+            out.update(
+                last_run_id=r["run_id"], last_run_started_at=r["started_at"], last_run_finished_at=r["finished_at"]
+            )
     return out
 
 
@@ -106,20 +105,17 @@ def run_counts(conn: sqlite3.Connection, pairs: list[tuple[str, str]]) -> dict[t
     for project, tids in by_project.items():
         ids = sorted(tids)
         for i in range(0, len(ids), 400):
-            chunk = ids[i:i + 400]
+            chunk = ids[i : i + 400]
             ph = ",".join("?" * len(chunk))
             for r in conn.execute(
-                f"SELECT task_id, COUNT(*) AS n FROM runs WHERE project = ? AND task_id IN ({ph}) "
-                "GROUP BY task_id",
+                f"SELECT task_id, COUNT(*) AS n FROM runs WHERE project = ? AND task_id IN ({ph}) GROUP BY task_id",
                 [project, *chunk],
             ):
                 out[(project, r["task_id"])] = int(r["n"])
     return out
 
 
-def prior_run_seconds(
-    conn: sqlite3.Connection, project: str, task_id: str, run_id: int | None
-) -> float:
+def prior_run_seconds(conn: sqlite3.Connection, project: str, task_id: str, run_id: int | None) -> float:
     """Wall time of earlier runs of this task that the run ``run_id`` resumed.
 
     Counts runs before ``run_id`` and after the task's last completed run, so a restarted task's
@@ -150,8 +146,9 @@ def bulk_prior_run_seconds(
     chunk = 400
     for i in range(0, len(keys), chunk):
         part = keys[i : i + chunk]
-        tokens = [f"{p}/{t}" for p, t in part]
-        placeholders = ",".join("(?)" for _ in part)
+        # F-205: tuple IN keeps idx_runs_project_task usable (avoid concat).
+        placeholders = ",".join("(?, ?)" for _ in part)
+        flat = [v for pair in part for v in pair]
         rows = conn.execute(
             "SELECT project, task_id, run_id, status,"
             " COALESCE(wall_sec,"
@@ -159,9 +156,9 @@ def bulk_prior_run_seconds(
             "       THEN MAX(0, (julianday(finished_at) - julianday(started_at)) * 86400.0)"
             "       ELSE 0 END) AS wall"
             " FROM runs"
-            f" WHERE (project || '/' || task_id) IN ({placeholders})"
+            f" WHERE (project, task_id) IN ({placeholders})"
             " ORDER BY project, task_id, run_id",
-            tokens,
+            flat,
         ).fetchall()
         by_task: dict[tuple[str, str], list[Any]] = {}
         for r in rows:
@@ -190,7 +187,11 @@ def bulk_prior_run_seconds(
 
 
 def failed_attempt_count(
-    conn: sqlite3.Connection, project: str, task_id: str, *, baseline: int | None = None,
+    conn: sqlite3.Connection,
+    project: str,
+    task_id: str,
+    *,
+    baseline: int | None = None,
 ) -> int:
     """Failed runs since the last explicit retry; pass *baseline* from a loaded task row to skip a query."""
     row = conn.execute(
@@ -238,30 +239,73 @@ def failed_attempt_counts_bulk(
 
 # --- task upsert / sync ---
 
+
 def _yaml_num_from_source(yaml_source: str) -> "int | None":
     import re as _re
+
     m = _re.match(r"^(\d+)", Path(yaml_source).name) if yaml_source else None
     return int(m.group(1)) if m else None
 
 
 # Column order here IS the parameter order of _upsert_task_params.
 _UPSERT_TASK_COLUMNS = (
-    "project", "task_id", "yaml_source", "yaml_num", "priority", "status", "command", "args",
-    "resume_args", "wall_clock_cap_sec", "ledger_subdir", "requires_paths",
-    "resources", "exclusive", "exclusive_project", "description", "enabled", "depends_on",
-    "depends_on_any", "enqueued_at", "updated_at", "dispatch", "requires", "bundle_hash",
-    "code_provider", "max_attempts", "notify_url", "tags", "suite", "env", "idempotent",
-    "execution_semantics", "metadata", "grp", "artifacts", "artifacts_required",
-    "on_complete", "on_fail", "transfer", "requires_services", "overridable_args",
-    "hung_task_k", "schedule", "rearm_on", "teardown", "auto_retry_on_cap", "max_auto_retries",
-    "data", "min_trust", "task_class", "on_dependency_failure", "negative_exit_codes",
+    "project",
+    "task_id",
+    "yaml_source",
+    "yaml_num",
+    "priority",
+    "status",
+    "command",
+    "args",
+    "resume_args",
+    "wall_clock_cap_sec",
+    "ledger_subdir",
+    "requires_paths",
+    "resources",
+    "exclusive",
+    "exclusive_project",
+    "description",
+    "enabled",
+    "depends_on",
+    "depends_on_any",
+    "enqueued_at",
+    "updated_at",
+    "dispatch",
+    "requires",
+    "bundle_hash",
+    "code_provider",
+    "max_attempts",
+    "notify_url",
+    "tags",
+    "suite",
+    "env",
+    "idempotent",
+    "execution_semantics",
+    "metadata",
+    "grp",
+    "artifacts",
+    "artifacts_required",
+    "on_complete",
+    "on_fail",
+    "transfer",
+    "requires_services",
+    "overridable_args",
+    "hung_task_k",
+    "schedule",
+    "rearm_on",
+    "teardown",
+    "auto_retry_on_cap",
+    "max_auto_retries",
+    "data",
+    "min_trust",
+    "task_class",
+    "on_dependency_failure",
+    "negative_exit_codes",
     "on_dependency_negative",
 )
 # Not refreshed from YAML on conflict: identity, live status (CASE below), first-enqueue time.
 _UPSERT_KEEP = frozenset({"project", "task_id", "status", "enqueued_at"})
-_UPSERT_SET = ",\n            ".join(
-    f"{c} = excluded.{c}" for c in _UPSERT_TASK_COLUMNS if c not in _UPSERT_KEEP
-)
+_UPSERT_SET = ",\n            ".join(f"{c} = excluded.{c}" for c in _UPSERT_TASK_COLUMNS if c not in _UPSERT_KEEP)
 _UPSERT_TASK_SQL = f"""
         INSERT INTO tasks ({", ".join(_UPSERT_TASK_COLUMNS)})
         VALUES ({", ".join("?" * len(_UPSERT_TASK_COLUMNS))})
@@ -280,12 +324,14 @@ _UPSERT_TASK_SQL = f"""
 
 def _upsert_task_params(task: QueueTask) -> tuple:
     yaml_num = _yaml_num_from_source(task.yaml_source)
-    resources = json.dumps({
-        "cpu_cores": task.resources.cpu_cores,
-        "ram_gib": task.resources.ram_gib,
-        "gpu_vram_gib": task.resources.gpu_vram_gib,
-        "locks": list(task.resources.locks),
-    })
+    resources = json.dumps(
+        {
+            "cpu_cores": task.resources.cpu_cores,
+            "ram_gib": task.resources.ram_gib,
+            "gpu_vram_gib": task.resources.gpu_vram_gib,
+            "locks": list(task.resources.locks),
+        }
+    )
     now = _now()
     return (
         task.project,
@@ -366,6 +412,7 @@ def _upsert_task_no_commit(conn: sqlite3.Connection, task: "QueueTask") -> None:
 
 # --- task reads ---
 
+
 def get_queued_tasks(
     conn: sqlite3.Connection,
     *,
@@ -391,10 +438,7 @@ def get_queued_tasks(
     marks = ",".join("?" for _ in statuses)
     # F-128: omit env/yaml_source/args_override/metadata on the hot admit scan.
     base = admit_task_select_sql(conn)
-    sql = (
-        f"{base} WHERE status IN ({marks}) AND enabled = 1 "
-        "ORDER BY priority DESC, enqueued_at ASC"
-    )
+    sql = f"{base} WHERE status IN ({marks}) AND enabled = 1 ORDER BY priority DESC, enqueued_at ASC"
     if limit is not None and int(limit) > 0:
         n = int(limit)
         if status_map is None:
@@ -408,9 +452,10 @@ def get_queued_tasks(
         scanned = 0
         for row in cur:
             scanned += 1
-            if row["project"] not in skip and unmet_dependency_label(
-                conn, row["project"], row["task_id"], status_map=status_map, row=row
-            ) is None:
+            if (
+                row["project"] not in skip
+                and unmet_dependency_label(conn, row["project"], row["task_id"], status_map=status_map, row=row) is None
+            ):
                 extra.append(row)
                 if len(extra) >= n:
                     break
@@ -420,10 +465,7 @@ def get_queued_tasks(
 
 def count_queued_tasks(conn: sqlite3.Connection, project: str | None = None) -> int:
     """Count enabled queued/stopped tasks — cheap alternative to len(get_queued_tasks())."""
-    sql = (
-        "SELECT COUNT(*) AS n FROM tasks "
-        "WHERE status IN ('queued', 'stopped') AND enabled = 1"
-    )
+    sql = "SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued', 'stopped') AND enabled = 1"
     params: list = []
     if project:
         sql += " AND project = ?"
@@ -433,9 +475,7 @@ def count_queued_tasks(conn: sqlite3.Connection, project: str | None = None) -> 
 
 
 def count_online_workers(conn: sqlite3.Connection) -> int:
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM workers WHERE status = 'online'"
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) AS n FROM workers WHERE status = 'online'").fetchone()
     return int(row["n"] if row else 0)
 
 
@@ -457,21 +497,15 @@ def get_all_tasks(conn: sqlite3.Connection, project: str | None = None) -> list[
             "SELECT * FROM tasks WHERE project = ? ORDER BY priority DESC, enqueued_at ASC",
             (project,),
         ).fetchall()
-    return conn.execute(
-        "SELECT * FROM tasks ORDER BY priority DESC, enqueued_at ASC"
-    ).fetchall()
+    return conn.execute("SELECT * FROM tasks ORDER BY priority DESC, enqueued_at ASC").fetchall()
 
 
 def get_task(conn: sqlite3.Connection, project: str, task_id: str) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT * FROM tasks WHERE project = ? AND task_id = ?", (project, task_id)
-    ).fetchone()
+    return conn.execute("SELECT * FROM tasks WHERE project = ? AND task_id = ?", (project, task_id)).fetchone()
 
 
 def get_task_status(conn: sqlite3.Connection, project: str, task_id: str) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT status FROM tasks WHERE project = ? AND task_id = ?", (project, task_id)
-    ).fetchone()
+    return conn.execute("SELECT status FROM tasks WHERE project = ? AND task_id = ?", (project, task_id)).fetchone()
 
 
 def check_ownership(started_by: str | None, operator: str | None, *, force: bool = False) -> str | None:
@@ -492,21 +526,16 @@ def check_ownership(started_by: str | None, operator: str | None, *, force: bool
     if operator and operator == started_by:
         return None
     return (
-        f"owned by operator '{started_by}' (you are "
-        f"'{operator or '(unset TQ_OPERATOR)'}') -- pass --force to override"
+        f"owned by operator '{started_by}' (you are '{operator or '(unset TQ_OPERATOR)'}') -- pass --force to override"
     )
 
 
 # --- task status mutations ---
 
-_TERMINAL_STATUSES = frozenset(
-    {"completed", "failed", "interrupted", "stopped", "suspended", "unknown", "cancelled"}
-)
+_TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted", "stopped", "suspended", "unknown", "cancelled"})
 
 # Statuses accepted by retry_task / suite retry / group retry (incl. completed).
-RETRYABLE_STATUSES = frozenset(
-    {"failed", "interrupted", "suspended", "stopped", "completed", "unknown", "cancelled"}
-)
+RETRYABLE_STATUSES = frozenset({"failed", "interrupted", "suspended", "stopped", "completed", "unknown", "cancelled"})
 
 
 def set_task_status(conn: sqlite3.Connection, project: str, task_id: str, status: str) -> None:
@@ -575,7 +604,8 @@ def claim_and_insert_local_run(
         )
         run_id = int(cur.lastrowid or 0)
         conn.execute(
-            "UPDATE tasks SET last_run_id = ? WHERE project = ? AND task_id = ?",
+            "UPDATE tasks SET last_run_id = ?, total_run_count = COALESCE(total_run_count, 0) + 1 "
+            "WHERE project = ? AND task_id = ?",
             (run_id, project, task_id),
         )
         if clear_args_override:
@@ -611,10 +641,10 @@ def set_task_error(
     """
     if code and not block_reason:
         from taskqueue.errors import describe
+
         block_reason = describe(code) or code
     conn.execute(
-        "UPDATE tasks SET last_error_code = ?, block_reason = ?, updated_at = ? "
-        "WHERE project = ? AND task_id = ?",
+        "UPDATE tasks SET last_error_code = ?, block_reason = ?, updated_at = ? WHERE project = ? AND task_id = ?",
         (code, block_reason, _now(), project, task_id),
     )
     if commit:
@@ -686,9 +716,20 @@ def request_stop_with_control(
     task_id: str,
     action: str = "suspend",
     requested_by: str | None = None,
-) -> Path:
-    """Cooperative stop: control file + stop_requested (CLI and HTTP)."""
-    path = write_control_action(home, project, task_id, action, requested_by=requested_by)
+) -> Path | None:
+    """Cooperative stop: control file + stop_requested (CLI and HTTP).
+
+    F-198: only write a control file while the task is running. A stale
+    ``suspend`` file left after stop-of-non-running would make the next
+    client-polled run exit 75 immediately.
+    """
+    row = get_task(conn, project, task_id)
+    status = str(row["status"]) if row is not None else ""
+    path: Path | None = None
+    if status == "running":
+        path = write_control_action(home, project, task_id, action, requested_by=requested_by)
+    else:
+        clear_control_file(home, project, task_id)
     request_stop(conn, project, task_id)
     return path
 
@@ -722,9 +763,7 @@ def retry_skip_reason(conn: sqlite3.Connection, project: str, task_id: str) -> s
 _STICKY_PREFLIGHT_CODES = frozenset({"tq.run.preflight", "tq.block.requires_paths"})
 
 
-def _requeue_row(
-    conn: sqlite3.Connection, project: str, task_id: str, *, require_enabled: bool
-) -> bool:
+def _requeue_row(conn: sqlite3.Connection, project: str, task_id: str, *, require_enabled: bool) -> bool:
     """UPDATE one retryable task back to ``queued`` (no commit). True if changed.
 
     ``require_enabled=False`` also re-enables a disabled task (group restart).
@@ -744,7 +783,7 @@ def _requeue_row(
     sticky_reason = None
     if prior is not None:
         code = (prior["last_error_code"] or "") if hasattr(prior, "keys") else (prior[0] or "")
-        reason = (prior["block_reason"] if hasattr(prior, "keys") else prior[1])
+        reason = prior["block_reason"] if hasattr(prior, "keys") else prior[1]
         if code in _STICKY_PREFLIGHT_CODES:
             sticky_code, sticky_reason = code, reason
     cur = conn.execute(
@@ -788,6 +827,7 @@ def retry_task(
     invalidate_running_dependents(conn, project, task_id, home=home)
     try:
         from taskqueue.sched_wake import wake_scheduler
+
         wake_scheduler()
     except Exception:
         pass
@@ -864,6 +904,7 @@ def retry_tasks_batch(
     if requeued:
         try:
             from taskqueue.sched_wake import wake_scheduler
+
             wake_scheduler()
         except Exception:
             pass
@@ -904,8 +945,7 @@ def apply_cap_auto_retry(conn: sqlite3.Connection, project: str, task_id: str) -
         count = 0
     if max_r > 0 and count >= max_r:
         conn.execute(
-            "UPDATE tasks SET block_reason = ?, updated_at = ? "
-            "WHERE project = ? AND task_id = ?",
+            "UPDATE tasks SET block_reason = ?, updated_at = ? WHERE project = ? AND task_id = ?",
             ("cap_auto_retries exhausted", _now(), project, task_id),
         )
         conn.commit()
@@ -944,12 +984,16 @@ def unmet_dependency_label(
         return None
 
     def _status(dep_proj: str, dep_id: str) -> str | None:
-        if status_map is not None:
-            return status_map.get((dep_proj, dep_id))
+        if status_map is not None and (dep_proj, dep_id) in status_map:
+            return status_map[(dep_proj, dep_id)]
+        # F-205: map miss on admit backfill must hit the DB, not "(not found)".
         dep_row = get_task(conn, dep_proj, dep_id)
         if dep_row is None:
             return None
-        return str(dep_row["status"] or "")
+        st = str(dep_row["status"] or "")
+        if status_map is not None:
+            status_map[(dep_proj, dep_id)] = st
+        return st
 
     for dep_proj, dep_id, label in row_dep_refs(row, "depends_on", project):
         st = _status(dep_proj, dep_id)
@@ -970,9 +1014,7 @@ def unmet_dependency_label(
     return None
 
 
-def collect_running_dependents(
-    conn: sqlite3.Connection, project: str, task_id: str
-) -> list[tuple[str, str]]:
+def collect_running_dependents(conn: sqlite3.Connection, project: str, task_id: str) -> list[tuple[str, str]]:
     """Running tasks whose AND/OR deps include ``project/task_id`` and are now unmet.
 
     For ``depends_on`` (AND): any match is enough to include the dependent.
@@ -1068,9 +1110,7 @@ def invalidate_running_dependents(
     stopped: list[tuple[str, str]] = []
     label = f"{project}/{task_id}"
     for dep_proj, dep_tid in collect_running_dependents(conn, project, task_id):
-        if stop_running_for_unmet_deps(
-            conn, dep_proj, dep_tid, unmet_label=label, home=home
-        ):
+        if stop_running_for_unmet_deps(conn, dep_proj, dep_tid, unmet_label=label, home=home):
             stopped.append((dep_proj, dep_tid))
     return stopped
 
@@ -1085,28 +1125,32 @@ def revalidate_running_dependencies(
     Returns ``[(project, task_id, unmet_label), ...]`` for tasks newly (or again)
     marked for stop.
     """
-    # Wave B1: one status map for the whole revalidate pass.
-    status_map = {
-        (str(r["project"]), str(r["task_id"])): str(r["status"])
-        for r in conn.execute("SELECT project, task_id, status FROM tasks").fetchall()
-    }
+    # F-205: scope the status map to running tasks + their dep peers (not full table).
+    # Inline the peer collection to avoid importing scheduler (cycle with admit).
+    from taskqueue.deprefs import row_dep_refs
+    from taskqueue.queries import _fetch_status_map
+
+    running = get_running_tasks(conn)
+    needed: set[tuple[str, str]] = set()
+    for row in running:
+        owner = str(row["project"])
+        needed.add((owner, str(row["task_id"])))
+        for col in ("depends_on", "depends_on_any"):
+            needed.update((p, t) for p, t, _ in row_dep_refs(row, col, owner))
+    status_map = _fetch_status_map(conn, needed) if needed else {}
     out: list[tuple[str, str, str]] = []
-    for row in get_running_tasks(conn):
+    for row in running:
         proj = str(row["project"])
         tid = str(row["task_id"])
         unmet = unmet_dependency_label(conn, proj, tid, status_map=status_map, row=row)
         if unmet is None:
             continue
-        if stop_running_for_unmet_deps(
-            conn, proj, tid, unmet_label=unmet, home=home
-        ):
+        if stop_running_for_unmet_deps(conn, proj, tid, unmet_label=unmet, home=home):
             out.append((proj, tid, unmet))
     return out
 
 
-def collect_downstream_task_ids(
-    conn: sqlite3.Connection, project: str, task_id: str
-) -> list[str]:
+def collect_downstream_task_ids(conn: sqlite3.Connection, project: str, task_id: str) -> list[str]:
     """Same-project task_ids that transitively ``depends_on`` / ``depends_on_any`` ``task_id``."""
     rows = conn.execute(
         "SELECT task_id, depends_on, depends_on_any FROM tasks WHERE project = ?",
@@ -1158,9 +1202,7 @@ def retry_task_with_downstream(
     return {"requeued": requeued, "skipped": skipped}
 
 
-def collect_ancestors_to_root(
-    conn: sqlite3.Connection, project: str, task_id: str, *, root: str
-) -> set[str] | None:
+def collect_ancestors_to_root(conn: sqlite3.Connection, project: str, task_id: str, *, root: str) -> set[str] | None:
     """Task ids on paths from ``root`` to ``task_id`` within the project DAG.
 
     Returns None if ``task_id`` is unreachable from ``root`` (root not among ancestors).
@@ -1214,9 +1256,7 @@ def lock_occupancy(conn: sqlite3.Connection) -> dict[str, dict]:
         key = f"{row['project']}/{row['task_id']}"
         for lk in locks:
             name = str(lk)
-            slot = out.setdefault(
-                name, {"holder": None, "holder_started_at": None, "waiters": []}
-            )
+            slot = out.setdefault(name, {"holder": None, "holder_started_at": None, "waiters": []})
             if slot["holder"] is None:
                 slot["holder"] = key
                 slot["holder_started_at"] = row["started_at"]
@@ -1235,9 +1275,7 @@ def lock_occupancy(conn: sqlite3.Connection) -> dict[str, dict]:
         key = f"{row['project']}/{row['task_id']}"
         for lk in locks:
             name = str(lk)
-            slot = out.setdefault(
-                name, {"holder": None, "holder_started_at": None, "waiters": []}
-            )
+            slot = out.setdefault(name, {"holder": None, "holder_started_at": None, "waiters": []})
             if key not in slot["waiters"] and key != slot.get("holder"):
                 slot["waiters"].append(key)
     return out
@@ -1274,18 +1312,20 @@ def lock_contention_summary(conn: sqlite3.Connection) -> list[dict]:
         if headroom is not None and headroom < 0:
             headroom = 0
         below_limit = bool(max_tasks is not None and headroom is not None and headroom > 0)
-        out.append({
-            "lock": lock_name,
-            "holder": holder,
-            "holder_started_at": info.get("holder_started_at"),
-            "waiter_count": len(waiters),
-            "waiters_sample": waiters[:5],
-            "project": holder_proj or None,
-            "running": running,
-            "max_tasks": max_tasks,
-            "headroom": headroom,
-            "below_project_limit": below_limit,
-        })
+        out.append(
+            {
+                "lock": lock_name,
+                "holder": holder,
+                "holder_started_at": info.get("holder_started_at"),
+                "waiter_count": len(waiters),
+                "waiters_sample": waiters[:5],
+                "project": holder_proj or None,
+                "running": running,
+                "max_tasks": max_tasks,
+                "headroom": headroom,
+                "below_project_limit": below_limit,
+            }
+        )
     return out
 
 

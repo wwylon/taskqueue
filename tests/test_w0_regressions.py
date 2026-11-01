@@ -1,4 +1,5 @@
 """W0 emergency-fix regression tests."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -15,22 +16,17 @@ from taskqueue._db_runs import get_recent_runs, reclaim_expired_leases
 # W0.1: missing indexes
 # ---------------------------------------------------------------------------
 
+
 def test_runs_indexes_exist(tmp_path):
     db = open_db(tmp_path / "q.db")
-    idx = {
-        row[1]
-        for row in db.execute("PRAGMA index_list(runs)").fetchall()
-    }
+    idx = {row[1] for row in db.execute("PRAGMA index_list(runs)").fetchall()}
     assert "idx_runs_project_task" in idx, "missing idx_runs_project_task"
     assert "idx_runs_status_worker" in idx, "missing idx_runs_status_worker"
 
 
 def test_tasks_indexes_exist(tmp_path):
     db = open_db(tmp_path / "q.db")
-    idx = {
-        row[1]
-        for row in db.execute("PRAGMA index_list(tasks)").fetchall()
-    }
+    idx = {row[1] for row in db.execute("PRAGMA index_list(tasks)").fetchall()}
     assert "idx_tasks_updated_at" in idx, "missing idx_tasks_updated_at"
     assert "idx_tasks_priority_enqueued" in idx, "missing idx_tasks_priority_enqueued"
     assert "idx_tasks_grp" in idx, "missing idx_tasks_grp"
@@ -41,8 +37,10 @@ def test_tasks_indexes_exist(tmp_path):
 # W0.3: history project filter works before LIMIT
 # ---------------------------------------------------------------------------
 
+
 def _seed_runs(db, project: str, count: int) -> None:
     import time
+
     for i in range(count):
         db.execute(
             "INSERT INTO runs (project, task_id, started_at, status) VALUES (?,?,?,?)",
@@ -73,6 +71,7 @@ def test_history_no_filter_returns_global_limit(tmp_path):
 # W0.4: migration failures are loud
 # ---------------------------------------------------------------------------
 
+
 def test_migration_failure_raises(tmp_path, monkeypatch):
     """open_db must raise, not swallow, a migration exception."""
     import taskqueue.db as tqdb
@@ -81,6 +80,7 @@ def test_migration_failure_raises(tmp_path, monkeypatch):
 
     class _BadConn:
         """Wraps a real conn but raises on the first ALTER TABLE."""
+
         def __init__(self, real):
             self._real = real
             self._hit = False
@@ -114,6 +114,7 @@ def test_migration_failure_raises(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # W0.6: active_runs SSE safety (no RuntimeError on concurrent mutation)
 # ---------------------------------------------------------------------------
+
 
 def test_active_runs_list_wrap():
     """Iterating list(d.values()) while d is mutated must not raise RuntimeError."""
@@ -149,6 +150,7 @@ def test_active_runs_list_wrap():
 # ---------------------------------------------------------------------------
 # W0.7: stop_requested cleared on reclaim
 # ---------------------------------------------------------------------------
+
 
 def test_stop_requested_cleared_on_reclaim(tmp_path):
     from datetime import UTC, datetime, timedelta

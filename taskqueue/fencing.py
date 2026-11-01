@@ -9,12 +9,14 @@ SEM_CHECKPOINTABLE = "checkpointable"
 SEM_NON_IDEMPOTENT = "non_idempotent"
 SEM_AT_MOST_ONCE = "at_most_once"
 
-VALID_EXECUTION_SEMANTICS = frozenset({
-    SEM_IDEMPOTENT,
-    SEM_CHECKPOINTABLE,
-    SEM_NON_IDEMPOTENT,
-    SEM_AT_MOST_ONCE,
-})
+VALID_EXECUTION_SEMANTICS = frozenset(
+    {
+        SEM_IDEMPOTENT,
+        SEM_CHECKPOINTABLE,
+        SEM_NON_IDEMPOTENT,
+        SEM_AT_MOST_ONCE,
+    }
+)
 
 
 def resolve_execution_semantics(
@@ -26,10 +28,7 @@ def resolve_execution_semantics(
     s = (raw or "").strip().lower()
     if s:
         if s not in VALID_EXECUTION_SEMANTICS:
-            raise ValueError(
-                f"execution_semantics must be one of "
-                f"{sorted(VALID_EXECUTION_SEMANTICS)}, got {raw!r}"
-            )
+            raise ValueError(f"execution_semantics must be one of {sorted(VALID_EXECUTION_SEMANTICS)}, got {raw!r}")
         return s
     return SEM_IDEMPOTENT if idempotent else SEM_NON_IDEMPOTENT
 

@@ -17,32 +17,57 @@ from typing import Any
 
 from taskqueue.jsonutil import json_list
 
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 33
 
 # Wave D6: keep-set for prune is _CORE_CONFIG_KEYS ∪ VALID_CONFIG_KEYS.
 # New tunables MUST be registered in taskqueue.config.VALID_CONFIG_KEYS (and
 # optionally _DEFAULT_CONFIG for a seeded default). Never add a config key
 # only to _DEFAULT_CONFIG — seed will prune it on the next open_db.
 _CORE_CONFIG_KEYS = (
-    "cpu_limit_pct", "gpu_limit_pct", "ram_limit_pct", "ram_hard_limit_pct", "graceful_stop_sec",
-    "scheduler_interval_sec", "heartbeat_sec", "frozen_threshold_sec", "web_port",
-    "bind_host", "auth_token", "prevent_sleep", "suspend_grace_sec",
-    "schema_version", "priority_higher_wins", "notify_allow_remote",
-    "max_running_tasks", "gpu_vram_limit_gib",
-    "max_cpu_cores", "max_ram_gib",
-    "fairshare_halflife_days", "fairshare_weight",
-    "max_queued_tasks_per_project", "hung_task_k",
+    "cpu_limit_pct",
+    "gpu_limit_pct",
+    "ram_limit_pct",
+    "ram_hard_limit_pct",
+    "graceful_stop_sec",
+    "scheduler_interval_sec",
+    "heartbeat_sec",
+    "frozen_threshold_sec",
+    "web_port",
+    "bind_host",
+    "auth_token",
+    "prevent_sleep",
+    "suspend_grace_sec",
+    "schema_version",
+    "priority_higher_wins",
+    "notify_allow_remote",
+    "max_running_tasks",
+    "gpu_vram_limit_gib",
+    "max_cpu_cores",
+    "max_ram_gib",
+    "fairshare_halflife_days",
+    "fairshare_weight",
+    "max_queued_tasks_per_project",
+    "hung_task_k",
     # F-034: these were missing and got pruned on every restart
-    "notify_on_attention", "toast_notifications",
+    "notify_on_attention",
+    "toast_notifications",
     # Also in VALID_CONFIG_KEYS (string / enum). Listed here so _seed_config
     # does not prune them on restart (F-034).
-    "notify_url", "frozen_action", "limit_decrease_policy",
+    "notify_url",
+    "frozen_action",
+    "limit_decrease_policy",
     # Admission-control columns — must be listed here or
     # _seed_config prunes them on every restart (F-034).
-    "default_task_ram_gib", "resource_predict_runs",
-    "admit_max_per_tick", "admit_settle_sec", "max_concurrent_unknown",
-    "settle_window_sec", "stop_max_per_tick", "recovery_cooldown_sec",
-    "admission_shadow_mode", "scavenger_preempt_cooldown_sec",
+    "default_task_ram_gib",
+    "resource_predict_runs",
+    "admit_max_per_tick",
+    "admit_settle_sec",
+    "max_concurrent_unknown",
+    "settle_window_sec",
+    "stop_max_per_tick",
+    "recovery_cooldown_sec",
+    "admission_shadow_mode",
+    "scavenger_preempt_cooldown_sec",
     # P6: reservation + backfill
     "reservation_max_ticks",
     # P7: live CPU gating
@@ -54,10 +79,14 @@ _CORE_CONFIG_KEYS = (
     "clock_jump_max_requeue",
     "clock_jump_requeue_window_sec",
     # PC-1: remote best-fit placement
-    "placement_mode", "placement_age_sec", "placement_shadow_mode",
+    "placement_mode",
+    "placement_age_sec",
+    "placement_shadow_mode",
     "placement_prefer_last_worker",
     # F-075: heartbeat warnings + local concurrency cap (docs say `tq config set`)
-    "gpu_util_warn_pct", "ram_settle_sec", "ram_leak_warn_gib_per_hour",
+    "gpu_util_warn_pct",
+    "ram_settle_sec",
+    "ram_leak_warn_gib_per_hour",
     "max_concurrent_tasks",
     # admission candidate window (was in VALID_CONFIG_KEYS but missing here — pruned on restart)
     "admit_candidate_window",
@@ -111,6 +140,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     submitted_via       TEXT,
     submitted_by        TEXT,
     client_info         TEXT,
+    total_run_count     INTEGER NOT NULL DEFAULT 0,
+    completed_run_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (project, task_id)
 );
 
@@ -176,6 +207,8 @@ CREATE INDEX IF NOT EXISTS idx_runs_project_task ON runs(project, task_id, run_i
 CREATE INDEX IF NOT EXISTS idx_runs_status_worker ON runs(status, worker_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority_enqueued ON tasks(priority DESC, enqueued_at ASC);
+CREATE INDEX IF NOT EXISTS idx_tasks_admission
+    ON tasks(status, enabled, priority DESC, enqueued_at ASC);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project);
 
 CREATE TABLE IF NOT EXISTS project_usage (
@@ -407,9 +440,7 @@ def _migration_lock(db_path: Path):
                     break
                 except OSError:
                     if time.monotonic() > deadline:
-                        raise TimeoutError(
-                            f"schema migration lock {lock_path} held >180s by another process"
-                        )
+                        raise TimeoutError(f"schema migration lock {lock_path} held >180s by another process")
                     time.sleep(0.1)
             yield
         finally:
@@ -425,15 +456,19 @@ def _migration_lock(db_path: Path):
 
 
 def open_db(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
-    """Open the queue DB (migrations are serialized by a lock file)."""
+    """Open the queue DB (migrations are serialized by a lock file).
+
+    F-204: ``migrate=False`` still upgrades an outdated schema, but always under
+    the migration lock (never race the daemon's migrator).
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    if not migrate:
-        return _open_db_impl(db_path, migrate=False)
     # Hot path: an up-to-date schema needs no lock, executescript or ALTER probes.
     if db_path.exists():
         conn = _open_if_current(db_path)
         if conn is not None:
             return conn
+    # Outdated / missing version: always take the lock, even for migrate=False
+    # callers (CLI/MCP reads) so concurrent ALTER probes cannot corrupt the DB.
     with _migration_lock(db_path):
         return _open_db_impl(db_path, migrate=True)
 
@@ -466,9 +501,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     if not migrate:
         try:
-            row = conn.execute(
-                "SELECT value FROM config WHERE key='schema_version'"
-            ).fetchone()
+            row = conn.execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
             stored = json.loads(row["value"]) if row else None
             if stored == SCHEMA_VERSION:
                 conn.execute("PRAGMA journal_mode=WAL")
@@ -516,6 +549,9 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
             conn.execute("ALTER TABLE runs ADD COLUMN estimated_ram_gib REAL")
         if "estimated_vram_gib" not in columns:
             conn.execute("ALTER TABLE runs ADD COLUMN estimated_vram_gib REAL")
+        # F-150: durable remote log-chunk sequence (survives daemon restart).
+        if "last_log_seq" not in columns:
+            conn.execute("ALTER TABLE runs ADD COLUMN last_log_seq INTEGER")
 
         # Resource history — GPU util samples (nullable for older rows)
         rh_cols = {row["name"] for row in conn.execute("PRAGMA table_info(resource_history)").fetchall()}
@@ -527,9 +563,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         if "force_run" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN force_run INTEGER NOT NULL DEFAULT 0")
         if "exclusive_project" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN exclusive_project INTEGER NOT NULL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN exclusive_project INTEGER NOT NULL DEFAULT 0")
         if "dispatch" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN dispatch TEXT NOT NULL DEFAULT 'local'")
         if "requires" not in task_columns:
@@ -562,9 +596,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
             conn.execute("ALTER TABLE tasks ADD COLUMN idempotent INTEGER NOT NULL DEFAULT 0")
         if "execution_semantics" not in task_columns:
             # R-011: explicit attempt recovery policy (default non_idempotent)
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN execution_semantics TEXT NOT NULL DEFAULT 'non_idempotent'"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN execution_semantics TEXT NOT NULL DEFAULT 'non_idempotent'")
         if "metadata" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
         if "grp" not in task_columns:
@@ -601,45 +633,29 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         if "yaml_num" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN yaml_num INTEGER")
         if "auto_retry_on_cap" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN auto_retry_on_cap INTEGER NOT NULL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN auto_retry_on_cap INTEGER NOT NULL DEFAULT 0")
         if "max_auto_retries" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN max_auto_retries INTEGER NOT NULL DEFAULT 20"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN max_auto_retries INTEGER NOT NULL DEFAULT 20")
         if "min_trust" not in task_columns:
             # C2: minimum worker trust tier required for this task
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN min_trust TEXT NOT NULL DEFAULT ''"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN min_trust TEXT NOT NULL DEFAULT ''")
         if "task_class" not in task_columns:
             # T-204: scheduling class (normal | scavenger)
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN task_class TEXT NOT NULL DEFAULT 'normal'"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN task_class TEXT NOT NULL DEFAULT 'normal'")
         if "on_dependency_failure" not in task_columns:
             # T-206: block (default) | cancel dependents of a failed dependency
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN on_dependency_failure TEXT NOT NULL DEFAULT 'block'"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN on_dependency_failure TEXT NOT NULL DEFAULT 'block'")
         if "negative_exit_codes" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN negative_exit_codes TEXT NOT NULL DEFAULT '[]'")
         if "on_dependency_negative" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN on_dependency_negative TEXT NOT NULL DEFAULT 'run'")
         if "cap_auto_retry_count" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN cap_auto_retry_count INTEGER NOT NULL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN cap_auto_retry_count INTEGER NOT NULL DEFAULT 0")
         if "retry_attempt_baseline" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN retry_attempt_baseline INTEGER NOT NULL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN retry_attempt_baseline INTEGER NOT NULL DEFAULT 0")
         # T-202 / T-203: OR-deps + spawner lineage (runtime column; not wiped by sync)
         if "depends_on_any" not in task_columns:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN depends_on_any TEXT NOT NULL DEFAULT '[]'"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN depends_on_any TEXT NOT NULL DEFAULT '[]'")
         if "spawned_by" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN spawned_by TEXT")
         # D1: content-addressed data transfer block
@@ -657,6 +673,30 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
                 "  WHERE runs.project = tasks.project AND runs.task_id = tasks.task_id"
                 ")"
             )
+        # Hygiene / scale: denormalized run counts (avoids full runs GROUP BY on tq list)
+        if "total_run_count" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN total_run_count INTEGER NOT NULL DEFAULT 0")
+        if "completed_run_count" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN completed_run_count INTEGER NOT NULL DEFAULT 0")
+        # One-shot backfill when either column was just added or still all zeros with runs present.
+        need_backfill = conn.execute(
+            "SELECT 1 FROM tasks t WHERE EXISTS ("
+            "  SELECT 1 FROM runs r WHERE r.project = t.project AND r.task_id = t.task_id"
+            ") AND COALESCE(t.total_run_count, 0) = 0 LIMIT 1"
+        ).fetchone()
+        if need_backfill:
+            conn.execute(
+                "UPDATE tasks SET "
+                "total_run_count = ("
+                "  SELECT COUNT(*) FROM runs r "
+                "  WHERE r.project = tasks.project AND r.task_id = tasks.task_id"
+                "), "
+                "completed_run_count = ("
+                "  SELECT COUNT(*) FROM runs r "
+                "  WHERE r.project = tasks.project AND r.task_id = tasks.task_id "
+                "  AND r.status = 'completed'"
+                ")"
+            )
 
         # I-15: index for fast tag filtering
         # tags is a JSON string matched with LIKE/json: this index never helped and costs writes.
@@ -667,6 +707,9 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_grp ON tasks(grp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project, status)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_admission ON tasks(status, enabled, priority DESC, enqueued_at ASC)"
+        )
 
         # resource_history already created in _SCHEMA above (W5.6: removed duplicate block)
 
@@ -704,8 +747,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         # A1: Migrate requires_paths from absolute to relative (normalize separators)
         try:
             rows = conn.execute(
-                "SELECT task_id, project, requires_paths FROM tasks "
-                "WHERE requires_paths LIKE '%\\\\%'"
+                "SELECT task_id, project, requires_paths FROM tasks WHERE requires_paths LIKE '%\\\\%'"
             ).fetchall()
             for row in rows:
                 paths = json_list(row["requires_paths"])
@@ -754,18 +796,15 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         )
 
         # F-058: fencing epoch for master_lease (daemon incarnation identity)
-        lease_cols = [
-            row["name"] for row in conn.execute("PRAGMA table_info(master_lease)").fetchall()
-        ]
+        lease_cols = [row["name"] for row in conn.execute("PRAGMA table_info(master_lease)").fetchall()]
         if lease_cols and "epoch" not in lease_cols:
-            conn.execute(
-                "ALTER TABLE master_lease ADD COLUMN epoch INTEGER NOT NULL DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE master_lease ADD COLUMN epoch INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     except Exception:
         # W0.4: migration failures must surface loudly — a silently-ignored failed
         # ALTER is worse than a crash because the DB appears valid while columns are missing.
         import logging as _logging
+
         _logging.getLogger(__name__).exception("open_db: migration failed — check schema")
         raise
     _seed_config(conn)
@@ -775,6 +814,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
         seed_system_alerts(conn)
     except Exception:
         import logging as _logging
+
         _logging.getLogger(__name__).exception("open_db: system_alerts seed failed")
         raise
     # Only write schema_version when it differs — avoids a write on every CLI
@@ -793,6 +833,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
 
 def _seed_config(conn: sqlite3.Connection) -> None:
     from taskqueue.config import VALID_CONFIG_KEYS as _VCK
+
     _keep = set(_CORE_CONFIG_KEYS) | set(_VCK.keys())
     # Read-only pre-check: skip all writes if the DB is already fully seeded and
     # contains no stale keys.  This matters for CLI commands (tq status, tq list,
@@ -811,7 +852,8 @@ def _seed_config(conn: sqlite3.Connection) -> None:
     existing = {r["key"] for r in conn.execute("SELECT key FROM config").fetchall()}
     needs_insert = any(k not in existing for k in _DEFAULT_CONFIG) or "schema_version" not in existing
     stale = {
-        k for k in existing
+        k
+        for k in existing
         if k not in _keep
         and not k.startswith("project_paused_")
         and not k.startswith("project_limit_")

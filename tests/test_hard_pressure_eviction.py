@@ -1,4 +1,5 @@
 """Hard RAM/VRAM eviction: caps, dying runs, VRAM path, no-victim case."""
+
 from taskqueue import daemon
 from tests.test_daemon_tick_helpers import PressureRun
 
@@ -53,9 +54,7 @@ def test_no_victim_returns_none(monkeypatch):
     monkeypatch.setattr(daemon, "pick_victim", lambda *a, **k: (None, []))
     run = PressureRun(ram=30.0)
     cfg = {"ram_hard_limit_pct": 95, "ram_limit_pct": 80}
-    out = daemon._enforce_hard_pressure(
-        object(), cfg, {"ram_total_gib": 100.0}, {("p", "t"): run}, 0.0
-    )
+    out = daemon._enforce_hard_pressure(object(), cfg, {"ram_total_gib": 100.0}, {("p", "t"): run}, 0.0)
     assert out is None and not run.stopped
 
 

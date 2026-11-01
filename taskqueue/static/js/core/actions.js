@@ -15,8 +15,7 @@ import { escHtml } from '../util/format.js';
 export const EVENTS = ['click', 'change', 'input', 'keydown', 'keyup', 'submit', 'contextmenu', 'mouseenter', 'mouseleave'];
 // mouseenter/mouseleave do not bubble: listen in the capture phase and act only on the element itself.
 const DIRECT = new Set(['mouseenter', 'mouseleave']);
-// Registry of delegated actions. Entries here win over window.<name>, so a view module can register
-// its handlers without exposing a global; unregistered names still fall back to window (app.js globals).
+// Registry of delegated actions (F-207: registry only — unknown names log and skip; no window[fn]).
 const ACTIONS = new Map();
 export function registerActions(map) { for (const k of Object.keys(map)) ACTIONS.set(k, map[k]); }
 export function hasAction(name) { return ACTIONS.has(name); }
@@ -52,7 +51,8 @@ function _runOne(el, ev, type) {
   const calls = _parse(el.getAttribute(`data-${type}`));
   if (!Array.isArray(calls)) return false;
   for (const call of calls) {
-    const fn = typeof call[0] === 'string' ? (ACTIONS.get(call[0]) || window[call[0]]) : null;
+    // F-207: registry only — no window[fn] fallback (all actions registered from main.js).
+    const fn = typeof call[0] === 'string' ? ACTIONS.get(call[0]) : null;
     if (typeof fn !== 'function') { console.error('[tq] unknown action', call[0]); continue; }
     let r;
     try { r = fn.apply(window, call.slice(1).map(a => _resolve(a, el, ev))); }

@@ -19,8 +19,6 @@ from typing import Any
 import psutil
 
 
-
-
 def child_stdio_kwargs() -> dict[str, Any]:
     """Popen stdio for task processes: merged stdout/stderr, decoded as UTF-8 (never the
     OS code page, which crashes the reader on bytes like 0x81), undecodable bytes replaced."""
@@ -32,6 +30,7 @@ def child_stdio_kwargs() -> dict[str, Any]:
         "errors": "replace",
         "bufsize": 1,
     }
+
 
 def verify_bundle_sha(path: Path, expected: str) -> None:
     """Raise ValueError when a downloaded bundle's SHA-256 differs from its content-addressed id.
@@ -90,6 +89,7 @@ class _LogBatcher:
         if buf:
             self._flush_fn("".join(buf))
 
+
 from taskqueue.config import load_projects
 from taskqueue.worker import _auth_headers
 
@@ -100,6 +100,8 @@ def _transfer_headers(finalize_token: Any = None, extra: dict | None = None) -> 
     if finalize_token:
         h["X-TQ-Finalize-Token"] = str(finalize_token)
     return h
+
+
 from taskqueue.worker_journal import append_entry, gc_journal
 
 
@@ -146,6 +148,7 @@ class WorkerSlot:
         master_url = self.master_url
         try:
             from taskqueue.project_sync import pull_from_master
+
             sync_result = pull_from_master(
                 home=home,
                 master_url=master_url,
@@ -157,9 +160,7 @@ class WorkerSlot:
                 if sync_result.get("skipped"):
                     print(f"[worker] sync {proj_name}: up to date")
                 else:
-                    print(
-                        f"[worker] sync {proj_name}: fetched {sync_result.get('fetched', 0)} file(s)"
-                    )
+                    print(f"[worker] sync {proj_name}: fetched {sync_result.get('fetched', 0)} file(s)")
             elif sync_result.get("error"):
                 print(
                     f"[worker] sync {proj_name}: {sync_result.get('error')}",
@@ -168,7 +169,9 @@ class WorkerSlot:
         except Exception as sync_exc:
             print(f"[worker] sync {proj_name} failed: {sync_exc}", file=sys.stderr)
 
-    def _materialize_workspace(self, resp: dict, task: dict, proj_name: str, project: Any, run_id: int) -> tuple[Path, Any]:
+    def _materialize_workspace(
+        self, resp: dict, task: dict, proj_name: str, project: Any, run_id: int
+    ) -> tuple[Path, Any]:
         """Per-attempt code workspace (git_patch / bundle), else project.root. Raises on failure."""
         home = self.home
         master_url = self.master_url
@@ -185,6 +188,7 @@ class WorkerSlot:
             package_from_bundle,
             prepare_attempt_workspace,
         )
+
         pkg = code_package_from_dict(resp.get("code_package"))
         if pkg and pkg.provider == PROVIDER_GIT_PATCH:
             overlay = None
@@ -192,10 +196,7 @@ class WorkerSlot:
                 dest = overlay_path(home, pkg.project or proj_name, pkg.patch_hash)
                 if not dest.is_file():
                     dest.parent.mkdir(parents=True, exist_ok=True)
-                    overlay_url = (
-                        f"{master_url}/api/package/"
-                        f"{pkg.project or proj_name}/{pkg.patch_hash}"
-                    )
+                    overlay_url = f"{master_url}/api/package/{pkg.project or proj_name}/{pkg.patch_hash}"
                     req = urllib.request.Request(overlay_url, headers=_auth_headers())
                     with urllib.request.urlopen(req, timeout=120) as oresp:
                         dest.write_bytes(oresp.read())
@@ -207,9 +208,7 @@ class WorkerSlot:
                 fetch_overlay=overlay,
             )
             work_root = prepare_attempt_workspace(home, run_id, cache)
-            print(
-                f"[worker] git_patch workspace {pkg.package_hash[:12]} → {work_root}"
-            )
+            print(f"[worker] git_patch workspace {pkg.package_hash[:12]} → {work_root}")
         elif bundle_hash or (pkg and pkg.provider == PROVIDER_BUNDLE):
             bh = (pkg.bundle_hash if pkg else None) or bundle_hash
             pkg = pkg or package_from_bundle(proj_name, str(bh))
@@ -234,25 +233,20 @@ class WorkerSlot:
                     extract_dir.mkdir()
                     bundle_url = f"{master_url}/api/bundle/{proj_name}/{bh}"
                     req = urllib.request.Request(bundle_url, headers=_auth_headers())
-                    with urllib.request.urlopen(req, timeout=120) as bresp, open(
-                        tar_path, "wb"
-                    ) as out:
+                    with urllib.request.urlopen(req, timeout=120) as bresp, open(tar_path, "wb") as out:
                         out.write(bresp.read())
                     verify_bundle_sha(tar_path, str(bh))
                     with tarfile.open(tar_path, "r:gz") as tar:
                         safe_extract(tar, extract_dir)
                     shutil.move(str(extract_dir), str(local_bundle_dir))
-            cache = materialize_bundle_package(
-                home, pkg, extracted_bundle_dir=local_bundle_dir
-            )
+            cache = materialize_bundle_package(home, pkg, extracted_bundle_dir=local_bundle_dir)
             work_root = prepare_attempt_workspace(home, run_id, cache)
-            print(
-                f"[worker] bundle workspace {pkg.package_hash[:12]} → {work_root} "
-                "(not unpacked onto project.root)"
-            )
+            print(f"[worker] bundle workspace {pkg.package_hash[:12]} → {work_root} (not unpacked onto project.root)")
         return work_root, pkg
 
-    def _push_transfers(self, task: dict, work_root: Path, proj_name: str, run_id: int, finalize_token: Any) -> list[Any]:
+    def _push_transfers(
+        self, task: dict, work_root: Path, proj_name: str, run_id: int, finalize_token: Any
+    ) -> list[Any]:
         """W7.6 pre-task transfer (direction=push: master to worker). Returns all transfer specs."""
         master_url = self.master_url
         transfer_specs: list[Any] = []
@@ -269,11 +263,9 @@ class WorkerSlot:
                 continue
             try:
                 from urllib.parse import quote, urlencode
+
                 q = urlencode({"run_id": str(run_id)})
-                url = (
-                    f"{master_url}/api/transfer/get/"
-                    f"{quote(proj_name, safe='')}/{quote(src, safe='/')}?{q}"
-                )
+                url = f"{master_url}/api/transfer/get/{quote(proj_name, safe='')}/{quote(src, safe='/')}?{q}"
                 req = urllib.request.Request(url, headers=_transfer_headers(finalize_token))
                 with urllib.request.urlopen(req, timeout=60) as tresp:
                     data = tresp.read()
@@ -300,6 +292,7 @@ class WorkerSlot:
 
         if data_block and isinstance(data_block.get("inputs"), list):
             import shutil as _shutil
+
             run_cache = Path(home) / "cache" / "data"
             run_cache.mkdir(parents=True, exist_ok=True)
 
@@ -311,13 +304,12 @@ class WorkerSlot:
 
                 if provider == "fetch":
                     from urllib.parse import quote as _quote
+
                     mount_dest = work_root / mount if mount else work_root
 
                     manifest_url = f"{master_url}/api/data/manifest/{run_id}?run_id={run_id}"
                     try:
-                        mreq = urllib.request.Request(
-                            manifest_url, headers=_transfer_headers(finalize_token)
-                        )
+                        mreq = urllib.request.Request(manifest_url, headers=_transfer_headers(finalize_token))
                         with urllib.request.urlopen(mreq, timeout=30) as mresp:
                             manifest_data = json.loads(mresp.read().decode("utf-8"))
                     except Exception as me:
@@ -336,9 +328,7 @@ class WorkerSlot:
                             if not cached.is_file():
                                 blob_url = f"{master_url}/api/data/blob/{sha256}?run_id={run_id}"
                                 try:
-                                    breq = urllib.request.Request(
-                                        blob_url, headers=_transfer_headers(finalize_token)
-                                    )
+                                    breq = urllib.request.Request(blob_url, headers=_transfer_headers(finalize_token))
                                     with urllib.request.urlopen(breq, timeout=120) as bresp:
                                         data_bytes = bresp.read()
                                     cached.parent.mkdir(parents=True, exist_ok=True)
@@ -397,15 +387,15 @@ class WorkerSlot:
                     quoted_path = urllib.parse.quote(f_path)
                     file_url = f"{master_url}/api/data/file/{proj_name}/{quoted_path}"
                     file_req = urllib.request.Request(file_url, headers=_auth_headers())
-                    with urllib.request.urlopen(file_req, timeout=120) as fresp, open(
-                        local_f, "wb"
-                    ) as out:
+                    with urllib.request.urlopen(file_req, timeout=120) as fresp, open(local_f, "wb") as out:
                         out.write(fresp.read())
                     os.utime(local_f, (time.time(), f_mtime))
         except Exception as e:
             print(f"[worker] Data sync warning (skipping file sync): {e}", file=sys.stderr)
 
-    def _pull_transfers(self, transfer_specs: list[Any], work_root: Path, project: Any, proj_name: str, run_id: int, finalize_token: Any) -> None:
+    def _pull_transfers(
+        self, transfer_specs: list[Any], work_root: Path, project: Any, proj_name: str, run_id: int, finalize_token: Any
+    ) -> None:
         """W7.6 post-task transfer (direction=pull: worker to master)."""
         master_url = self.master_url
         for spec in transfer_specs:
@@ -424,15 +414,14 @@ class WorkerSlot:
                     continue
                 data = src_path.read_bytes()
                 from urllib.parse import quote, urlencode
+
                 q = urlencode({"run_id": str(run_id)})
                 upload_req = urllib.request.Request(
-                    f"{master_url}/api/transfer/put/"
-                    f"{quote(proj_name, safe='')}/{quote(dst, safe='/')}?{q}",
+                    f"{master_url}/api/transfer/put/{quote(proj_name, safe='')}/{quote(dst, safe='/')}?{q}",
                     data=data,
                     headers=_transfer_headers(
                         finalize_token,
-                        {"Content-Type": "application/octet-stream",
-                         "Content-Length": str(len(data))},
+                        {"Content-Type": "application/octet-stream", "Content-Length": str(len(data))},
                     ),
                     method="POST",
                 )
@@ -474,13 +463,15 @@ class WorkerSlot:
                                     upload_req = urllib.request.Request(
                                         f"{master_url}/api/data/upload/{proj_name}",
                                         data=data_bytes,
-                                        headers=_auth_headers({
-                                            "Content-Type": "application/octet-stream",
-                                            "X-File-Path": rel_str,
-                                        }),
-                                        method="POST"
+                                        headers=_auth_headers(
+                                            {
+                                                "Content-Type": "application/octet-stream",
+                                                "X-File-Path": rel_str,
+                                            }
+                                        ),
+                                        method="POST",
                                     )
-                                    with urllib.request.urlopen(upload_req, timeout=15) as upload_resp:
+                                    with urllib.request.urlopen(upload_req, timeout=120) as upload_resp:
                                         json.loads(upload_resp.read().decode("utf-8"))
                             except Exception as e:
                                 print(f"[worker] Output upload error for {f}: {e}", file=sys.stderr)
@@ -495,6 +486,17 @@ class WorkerSlot:
         slots_lock = self.slots_lock
         slots = self.slots
 
+        def _finalize_and_gc(rid_: int, **kw: object) -> None:
+            # F-194: GC journal on every exit so recovery does not rebuild a
+            # pending finalize that wedges the claim loop.
+            try:
+                _finalize(rid_, **kw)  # type: ignore[arg-type]
+            finally:
+                try:
+                    gc_journal(home, rid_)
+                except Exception:
+                    pass
+
         stop_flag = sl["stop_flag"]
         control_file = sl["control_file"]
         run_id = rid
@@ -508,7 +510,9 @@ class WorkerSlot:
         try:
             print(f"[worker] Claimed task: {proj_name}/{task_id} (run_id={run_id})")
             try:
-                append_entry(home, run_id, {"t": "claim", "run_id": run_id, "task_id": task_id, "session": self.session_id})
+                append_entry(
+                    home, run_id, {"t": "claim", "run_id": run_id, "task_id": task_id, "session": self.session_id}
+                )
             except Exception:
                 pass
 
@@ -517,7 +521,7 @@ class WorkerSlot:
             if not project:
                 err_msg = f"Project '{proj_name}' not configured in worker's projects.yaml"
                 print(f"[worker] {err_msg}", file=sys.stderr)
-                _finalize(run_id, token=finalize_token, status="failed", exit_code=-1)
+                _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
                 return
 
             self._pull_project_sync(proj_name, project)
@@ -527,7 +531,7 @@ class WorkerSlot:
             except Exception as e:
                 err_msg = f"Failed to materialize code workspace: {e}"
                 print(f"[worker] {err_msg}", file=sys.stderr)
-                _finalize(run_id, token=finalize_token, status="failed", exit_code=-1)
+                _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
                 return
 
             # W7.6: pre-task transfer (direction=push: master->worker)
@@ -537,6 +541,7 @@ class WorkerSlot:
             self._fetch_data_inputs(task, work_root, run_id, finalize_token)
 
             from taskqueue.platform_utils import resolve_command, pythonw_if_available
+
             command_path = resolve_command(task["command"], project.root)
             command_path = pythonw_if_available(command_path)
 
@@ -553,15 +558,11 @@ class WorkerSlot:
                 err_msg = f"Missing required paths on worker: {', '.join(missing)}"
                 print(f"[worker] {err_msg}", file=sys.stderr)
                 _log_chunk(run_id, f"Preflight error: {err_msg}\n")
-                _finalize(run_id, token=finalize_token, status="failed", exit_code=-1)
+                _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
                 return
 
             use_resume = bool(resp.get("use_resume"))
-            argv_tail = (
-                task.get("resume_args")
-                if use_resume and task.get("resume_args")
-                else task.get("args", [])
-            )
+            argv_tail = task.get("resume_args") if use_resume and task.get("resume_args") else task.get("args", [])
             argv = [str(command_path), *argv_tail]
 
             print(f"[worker] Executing: {' '.join(argv)}")
@@ -573,6 +574,7 @@ class WorkerSlot:
                 wall_cap_sec = 0.0
 
             from taskqueue.config import control_path, controls_dir
+
             ctrl = control_path(home, proj_name, task_id)
             controls_dir(home).mkdir(parents=True, exist_ok=True)
             if not ctrl.exists():
@@ -621,7 +623,7 @@ class WorkerSlot:
                 err_msg = f"Failed to spawn process: {e}"
                 print(f"[worker] {err_msg}", file=sys.stderr)
                 _log_chunk(run_id, f"Execution error: {err_msg}\n")
-                _finalize(run_id, token=finalize_token, status="failed", exit_code=-1)
+                _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
                 return
 
             log_buffer: list[str] = []
@@ -641,6 +643,7 @@ class WorkerSlot:
                 sidecar_name_hints,
                 task_requires_gpu,
             )
+
             _res = parse_json_obj(task.get("resources"))
             _gpu_hints = sidecar_name_hints(_res, parse_json_list(task.get("requires_services")))
             _need_gpu = task_requires_gpu(_res) or bool(_gpu_hints)
@@ -680,7 +683,7 @@ class WorkerSlot:
                                     ram_val += c.memory_info().rss
                                 except Exception:
                                     pass
-                            peak_ram = max(peak_ram, ram_val / (1024 ** 3))
+                            peak_ram = max(peak_ram, ram_val / (1024**3))
                             pids_current = [parent.pid] + [c.pid for c in _children]
                             pids = pids_current
 
@@ -690,12 +693,8 @@ class WorkerSlot:
                                 probe = probe_gpu_compute_apps(timeout=2.0)
                                 if probe.ok:
                                     device_used = None
-                                    attributed = attributed_gpu_pids(
-                                        probe.processes, pids_current, _gpu_hints
-                                    )
-                                    if attributed and not any(
-                                        float(p.get("vram_gib") or 0) > 0 for p in attributed
-                                    ):
+                                    attributed = attributed_gpu_pids(probe.processes, pids_current, _gpu_hints)
+                                    if attributed and not any(float(p.get("vram_gib") or 0) > 0 for p in attributed):
                                         device_used = probe_gpu_memory_used(timeout=2.0)
                                     vram_gib = attributed_vram_gib(
                                         probe.processes,
@@ -753,11 +752,7 @@ class WorkerSlot:
                     break
                 log_buffer.append(line)
                 log_buffer_bytes += len(line)
-                if (
-                    time.monotonic() - last_flush > 1.0
-                    or len(log_buffer) > 50
-                    or log_buffer_bytes > 256 * 1024
-                ):
+                if time.monotonic() - last_flush > 1.0 or len(log_buffer) > 50 or log_buffer_bytes > 256 * 1024:
                     flush_logs()
 
             flush_logs()
@@ -792,7 +787,11 @@ class WorkerSlot:
 
             self._upload_outputs(work_root, project, proj_name, task_start_time)
 
-            _finalize(
+            try:
+                append_entry(home, run_id, {"t": "finalize", "payload": {"status": status, "exit_code": exit_code}})
+            except Exception:
+                pass
+            _finalize_and_gc(
                 run_id,
                 token=finalize_token,
                 exit_code=exit_code,
@@ -801,11 +800,6 @@ class WorkerSlot:
                 peak_vram_gib=round(peak_vram, 2),
                 **({"stop_reason": "wall_clock_cap"} if stop_hard[0] else {}),
             )
-            try:
-                append_entry(home, run_id, {"t": "finalize", "payload": {"status": status, "exit_code": exit_code}})
-                gc_journal(home, run_id)
-            except Exception:
-                pass
 
             time.sleep(1)
         except Exception as _task_exc:
@@ -813,9 +807,10 @@ class WorkerSlot:
             # Log the error, finalize the run as failed, and continue to the next task.
             print(f"[worker] Unhandled exception in task {proj_name}/{task_id}: {_task_exc}", file=sys.stderr)
             import traceback
+
             traceback.print_exc(file=sys.stderr)
             try:
-                _finalize(run_id, token=finalize_token, status="failed", exit_code=-1)
+                _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
             except Exception:
                 pass
         finally:

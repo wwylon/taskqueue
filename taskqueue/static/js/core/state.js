@@ -12,6 +12,7 @@ export const S = {
   queuePage: 0,
   forceStarting: {},   // 'project/task' -> epoch ms; set from a confirmed Force until the task runs
   historyPage: 0,
+  historyOffset: 0,
   historyLimit: 20,
   projects: [],
   myProjects: [],       // R8: projects for current operator (mine scope)
@@ -34,6 +35,7 @@ export const S = {
   savedToday: false,
   forceQueueRender: false,
   queueSelection: new Set(),
+  queueSelectAnchor: null,  // last clicked row key for shift-click range select
   kbdTaskKey: null,
   drawerTask: null,
   docsCurrentId: null,
@@ -53,6 +55,7 @@ export const S = {
   cardLogSseMap: {},     // live log EventSources by runId (run cards)
   expandedHistory: {},   // per-task run history panels, key = project/task_id
   _histGen: {},          // F-133: generation tokens for async history panels
+  _groupChipScope: '',   // F-174: last project scope used for /api/groups chip fetch
   historySort: { field: 'run_id', dir: -1 },
   prevHistoryStr: '',    // owned by refresh.js identity key — do not clobber in renderHistory
   globalWorkerFilter: '',

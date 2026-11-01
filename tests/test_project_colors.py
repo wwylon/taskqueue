@@ -7,7 +7,7 @@ def test_deterministic_and_distinct():
     assert a == assign_project_colors({}, ["p5", "p4", "p3", "p2", "p1"])
     cols = list(a.values())
     assert all(c.startswith("#") and len(c) == 7 for c in cols)
-    m = min(delta_e(x, y) for i, x in enumerate(cols) for y in cols[i + 1:])
+    m = min(delta_e(x, y) for i, x in enumerate(cols) for y in cols[i + 1 :])
     assert m > 15
 
 

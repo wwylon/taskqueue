@@ -3,6 +3,7 @@
 No idle file watcher. Workers compare fingerprints before a remote run and
 fetch only changed allowlisted paths. ``tq resync`` forces a re-diff.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -13,21 +14,23 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 # Always excluded even if a push glob would match.
-HARD_EXCLUDE_DIR_NAMES = frozenset({
-    ".venv",
-    "out",
-    "bin",
-    "bin2",
-    "__pycache__",
-    ".git",
-    "node_modules",
-    ".tox",
-    ".mypy_cache",
-    ".pytest_cache",
-    "logs",
-    "logs_tests",
-    "logs_tests_agent",
-})
+HARD_EXCLUDE_DIR_NAMES = frozenset(
+    {
+        ".venv",
+        "out",
+        "bin",
+        "bin2",
+        "__pycache__",
+        ".git",
+        "node_modules",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        "logs",
+        "logs_tests",
+        "logs_tests_agent",
+    }
+)
 HARD_EXCLUDE_SUFFIXES = (".pdb", ".obj", ".ilk", ".exp")
 
 
@@ -213,10 +216,7 @@ def diff_manifest(
 ) -> list[dict[str, Any]]:
     """Entries in want that differ from have by path→(size,mtime_ns)."""
     have_map = {e["path"]: (e.get("size"), e.get("mtime_ns")) for e in have}
-    return [
-        e for e in want
-        if have_map.get(e["path"]) != (e.get("size"), e.get("mtime_ns"))
-    ]
+    return [e for e in want if have_map.get(e["path"]) != (e.get("size"), e.get("mtime_ns"))]
 
 
 def pull_from_master(
@@ -293,10 +293,7 @@ def pull_from_master(
     fetched = 0
     for entry in missing:
         rel = str(entry["path"])
-        url = (
-            f"{master_url}/api/sync/file/{urllib.parse.quote(project)}/"
-            f"{urllib.parse.quote(rel, safe='/')}"
-        )
+        url = f"{master_url}/api/sync/file/{urllib.parse.quote(project)}/{urllib.parse.quote(rel, safe='/')}"
         dest = project_root / rel.replace("/", os.sep)
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)

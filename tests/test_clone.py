@@ -1,4 +1,5 @@
 """tq clone: a new task YAML from an existing task."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,7 +27,9 @@ def _setup(tmp_path: Path):
 
 def test_clone_copies_yaml_with_new_id_and_overrides(tmp_path: Path) -> None:
     db, projects, qdir = _setup(tmp_path)
-    dest = clone_task_yaml(db, projects, "p", "train", "train_lr2", parse_set_args(["priority=80", "args=[train.py, --lr, '0.2']"]))
+    dest = clone_task_yaml(
+        db, projects, "p", "train", "train_lr2", parse_set_args(["priority=80", "args=[train.py, --lr, '0.2']"])
+    )
     doc = yaml.safe_load(dest.read_text(encoding="utf-8"))
     assert dest == qdir / "train_lr2.yaml"
     assert doc["task_id"] == "train_lr2" and doc["priority"] == 80 and doc["args"][-1] == "0.2"

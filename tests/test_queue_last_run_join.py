@@ -57,13 +57,11 @@ def test_bulk_prior_matches_scalar_on_queue_path(tmp_path: Path) -> None:
         ("p", "t", "python", "running", now, now),
     )
     db.execute(
-        "INSERT INTO runs (project, task_id, status, started_at, finished_at, wall_sec) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO runs (project, task_id, status, started_at, finished_at, wall_sec) VALUES (?,?,?,?,?,?)",
         ("p", "t", "interrupted", now, now, 100.0),
     )
     db.execute(
-        "INSERT INTO runs (project, task_id, status, started_at, finished_at, wall_sec) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO runs (project, task_id, status, started_at, finished_at, wall_sec) VALUES (?,?,?,?,?,?)",
         ("p", "t", "interrupted", now, now, 200.0),
     )
     open_cur = db.execute(

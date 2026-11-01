@@ -2,6 +2,7 @@
 
 The join YAML is a secret (contains auth_token). Transfer out-of-band.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

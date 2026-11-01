@@ -13,9 +13,7 @@ from tests.helpers.master_worker import seed_master_lease, seed_queued_task, see
 def _seed_running_remote(db, *, semantics: str = "idempotent", idempotent: int = 1) -> int:
     seed_queued_task(db, dispatch="remote", execution_semantics=semantics, idempotent=idempotent)
     now = datetime.now(UTC).isoformat()
-    db.execute(
-        "UPDATE tasks SET status='running' WHERE task_id='T1'"
-    )
+    db.execute("UPDATE tasks SET status='running' WHERE task_id='T1'")
     db.execute(
         "INSERT INTO runs (project, task_id, status, started_at, worker_id, "
         "last_log_line, progress_pct, lease_expires_at) "

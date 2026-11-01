@@ -1,4 +1,5 @@
 """W1 security regression tests."""
+
 from __future__ import annotations
 
 import json
@@ -16,6 +17,7 @@ from taskqueue.web import _is_loopback, start_web_server, make_handler
 # W1.1: bind-driven auth
 # ---------------------------------------------------------------------------
 
+
 def test_loopback_detection():
     assert _is_loopback("127.0.0.1")
     assert _is_loopback("127.0.0.2")
@@ -31,7 +33,10 @@ def test_nonloopback_bind_requires_token(tmp_path):
     # auth_token is empty by default → must raise on non-loopback bind
     with pytest.raises(RuntimeError, match="auth_token"):
         start_web_server(
-            db, {}, {}, lambda: {},
+            db,
+            {},
+            {},
+            lambda: {},
             db_path=tmp_path / "q.db",
             port=19999,
             bind_host="0.0.0.0",
@@ -42,7 +47,10 @@ def test_loopback_bind_no_token_allowed(tmp_path):
     """Loopback bind with empty token must NOT raise — zero-config local use."""
     db = open_db(tmp_path / "q.db")
     t = start_web_server(
-        db, {}, {}, lambda: {},
+        db,
+        {},
+        {},
+        lambda: {},
         db_path=tmp_path / "q.db",
         port=19998,
         bind_host="127.0.0.1",
@@ -54,6 +62,7 @@ def test_loopback_bind_no_token_allowed(tmp_path):
 # W1.1: CSRF — foreign Origin rejected on POST when no token
 # ---------------------------------------------------------------------------
 
+
 def _make_handler(tmp_path):
     db = open_db(tmp_path / "q.db")
     return make_handler(db, {}, {}, lambda: {}, tmp_path / "q.db", "127.0.0.1")
@@ -62,6 +71,7 @@ def _make_handler(tmp_path):
 class _FakeRequest:
     def makefile(self, mode, *a, **kw):
         import io
+
         return io.BytesIO(b"")
 
 
@@ -85,6 +95,7 @@ def test_csrf_origin_rejected(tmp_path):
     class _FakeWfile:
         def write(self, data):
             captured.append(data)
+
         def flush(self):
             pass
 
@@ -99,7 +110,7 @@ def test_csrf_origin_rejected(tmp_path):
 
     class _FakeSocket:
         def makefile(self, mode, *a, **kw):
-            if 'r' in mode:
+            if "r" in mode:
                 return io.BufferedReader(io.BytesIO(raw_request))
             return io.BytesIO()
 
@@ -121,6 +132,7 @@ def test_csrf_origin_rejected(tmp_path):
             self.command = "POST"
             self.path = "/api/config"
             from http.client import parse_headers
+
             header_bytes = b"\r\n".join(raw_request.split(b"\r\n")[1:])
             self.headers = parse_headers(io.BytesIO(header_bytes))
             self.connection = "close"
@@ -150,6 +162,7 @@ def test_csrf_origin_rejected(tmp_path):
 # W1.2: upload path traversal blocked
 # ---------------------------------------------------------------------------
 
+
 def test_upload_rejects_traversal(tmp_path):
     """X-File-Path with .. must not escape project root."""
     from taskqueue.config import Project
@@ -162,12 +175,14 @@ def test_upload_rejects_traversal(tmp_path):
     class FakeProject:
         root = proj_root
         _queue_dir = queue_dir
+
         def resolve(self, rel):
             return proj_root / rel
 
     class MockHeaders(dict):
         def get(self, key, default=None):
             return self.get_ci(key, default)
+
         def get_ci(self, key, default=None):
             for k, v in self.items():
                 if k.lower() == key.lower():
@@ -206,9 +221,10 @@ def test_upload_rejects_queue_dir_write(tmp_path):
 # W1.4: worker_id validation
 # ---------------------------------------------------------------------------
 
+
 def test_worker_id_pattern():
-    pat = re.compile(r'^[A-Za-z0-9_.\-]{1,64}$')
-    WIN_RESERVED = {"CON","PRN","AUX","NUL","COM1","LPT1"}
+    pat = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+    WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", "COM1", "LPT1"}
 
     # valid ids
     for wid in ["worker1", "my-worker.host", "A" * 64]:
@@ -230,6 +246,7 @@ def test_worker_id_pattern():
 # ---------------------------------------------------------------------------
 # W1.5: body size cap in _read_json (unit)
 # ---------------------------------------------------------------------------
+
 
 def test_read_json_cap_is_enforced(tmp_path):
     """_read_json must reject bodies > 1 MiB."""

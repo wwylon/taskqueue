@@ -1,4 +1,5 @@
 """Daemon tick admission phase: cooldown freeze, CPU gate, reap-before-admit ordering."""
+
 from taskqueue import daemon
 import taskqueue.scheduler as scheduler
 
@@ -15,10 +16,19 @@ def _capture(monkeypatch):
 
 def _run(now=100.0, frozen_until=0.0, logged=False, cpu_ema=0.0, cfg=None):
     return daemon._run_local_admission(
-        object(), None, {}, {}, {"cpu_total_cores": 8}, cfg or {"cpu_limit_pct": 50},
-        3.0, False,
-        now=now, admit_frozen_until=frozen_until, cooldown_logged=logged,
-        reservation_state={}, cpu_ema=cpu_ema,
+        object(),
+        None,
+        {},
+        {},
+        {"cpu_total_cores": 8},
+        cfg or {"cpu_limit_pct": 50},
+        3.0,
+        False,
+        now=now,
+        admit_frozen_until=frozen_until,
+        cooldown_logged=logged,
+        reservation_state={},
+        cpu_ema=cpu_ema,
     )
 
 
@@ -57,7 +67,17 @@ def test_fast_reap_collects_before_admitting(monkeypatch):
     monkeypatch.setattr(daemon, "_collect_finished_runs", lambda *a, **k: order.append("reap"))
     monkeypatch.setattr(scheduler, "_local_admit_queued", lambda *a, **k: order.append("admit"))
     daemon._fast_reap_and_admit(
-        object(), None, {}, {}, {"cpu_total_cores": 8}, {}, 3.0, False,
-        admit_frozen_until=0.0, cooldown_logged=False, reservation_state={}, cpu_ema=0.0,
+        object(),
+        None,
+        {},
+        {},
+        {"cpu_total_cores": 8},
+        {},
+        3.0,
+        False,
+        admit_frozen_until=0.0,
+        cooldown_logged=False,
+        reservation_state={},
+        cpu_ema=0.0,
     )
     assert order == ["reap", "admit"]

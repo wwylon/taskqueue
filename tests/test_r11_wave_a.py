@@ -1,4 +1,5 @@
 """Round 11 Wave A: P0 correctness + security DTO + offline sync (F-110–F-119)."""
+
 from __future__ import annotations
 
 import json
@@ -264,7 +265,7 @@ def test_f110_f111_dom_id_and_history_identity() -> None:
 
     root = Path(__file__).resolve().parents[1] / "taskqueue" / "static" / "js"
     script = f"""
-    const {{ domIdPart }} = await import({json.dumps((root / 'util/format.js').as_uri())});
+    const {{ domIdPart }} = await import({json.dumps((root / "util/format.js").as_uri())});
     const raw = 'a&b"c';
     const id = 'btn-' + domIdPart(raw);
     if (id.includes('&') || id.includes('"')) throw new Error('unsafe id: ' + id);

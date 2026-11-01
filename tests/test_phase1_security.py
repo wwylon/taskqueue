@@ -36,8 +36,9 @@ def test_no_cors_header_on_api_responses(tmp_path: Path) -> None:
     with socket.socket() as _s:
         _s.bind(("127.0.0.1", 0))
         port = _s.getsockname()[1]
-    start_web_server(open_db(tmp_path / "q.db"), {}, {}, lambda: {}, db_path=tmp_path / "q.db",
-                     port=port, bind_host="127.0.0.1")
+    start_web_server(
+        open_db(tmp_path / "q.db"), {}, {}, lambda: {}, db_path=tmp_path / "q.db", port=port, bind_host="127.0.0.1"
+    )
     deadline = _time.monotonic() + 10
     for path in ("/api/status", "/api/dashboard", "/api/nope"):
         while True:

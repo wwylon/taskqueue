@@ -1,4 +1,5 @@
 """Handler mixin (extracted from make_handler)."""
+
 from __future__ import annotations
 
 # Broad shared namespace so method bodies keep working with minimal churn.
@@ -82,18 +83,21 @@ class SSEMixin:
             # Lines split on newline only (the CR of CRLF is dropped): splitlines() would
             # also break on form feeds and other separators that are not line ends in a log.
             _SSE_LINE_CAP = 4096
+            # F-207: bare CR progress lines must not land inside SSE data: (EventSource
+            # treats CR as a frame break). Normalize before splitting.
+            text = text.replace("\r\n", "\n").replace("\r", "\n")
             if text.endswith("\n"):
                 text = text[:-1]  # a final newline ends the last line; it is not an extra empty line
             try:
                 if event_id is not None:
                     # The byte offset lets a reconnecting EventSource resume via Last-Event-ID.
                     self.wfile.write(f"id: {event_id}\n".encode("utf-8"))
-                for line in (ln[:-1] if ln.endswith("\r") else ln for ln in text.split("\n")):
+                for line in text.split("\n"):
                     if len(line) <= _SSE_LINE_CAP:
                         self.wfile.write(f"data: {line}\n".encode("utf-8"))
                     else:
                         for i in range(0, len(line), _SSE_LINE_CAP):
-                            self.wfile.write(f"data: {line[i:i+_SSE_LINE_CAP]}\n".encode("utf-8"))
+                            self.wfile.write(f"data: {line[i : i + _SSE_LINE_CAP]}\n".encode("utf-8"))
                 self.wfile.write(b"\n")
                 self.wfile.flush()
                 return True
@@ -109,24 +113,28 @@ class SSEMixin:
         except (TypeError, ValueError):
             resume_at = -1
 
-        # Send last 32 KiB of existing content (a reconnect with Last-Event-ID resumes instead)
+        # Send last 32 KiB of existing content (a reconnect with Last-Event-ID resumes instead).
+        # F-207: take offset from the same handle used for the tail so bytes appended
+        # between read and stat() are not skipped.
+        offset = 0
         if resume_at < 0 and log_path.exists():
             try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    f.seek(0, 2)
-                    size = f.tell()
-                    if size > 32768:
-                        f.seek(size - 32768)
-                        f.readline()  # skip partial line
-                    else:
-                        f.seek(0)
-                    init = f.read()
+                with open(log_path, "rb") as fb:
+                    fb.seek(0, 2)
+                    size = fb.tell()
+                    start = max(0, size - 32768)
+                    fb.seek(start)
+                    raw = fb.read()
+                    offset = fb.tell()
+                init = raw.decode("utf-8", errors="replace")
+                if start > 0 and "\n" in init:
+                    init = init.split("\n", 1)[1]
                 if init and not _send(init):
                     return
             except OSError:
-                pass
-
-        offset = log_path.stat().st_size if log_path.exists() else 0
+                offset = log_path.stat().st_size if log_path.exists() else 0
+        elif log_path.exists():
+            offset = log_path.stat().st_size
         if 0 <= resume_at <= offset:
             offset = resume_at
         import codecs
@@ -154,9 +162,7 @@ class SSEMixin:
                 active_ids = {r.run_id for r in list(self._active_runs.values())}
                 run_still_active = run_id in active_ids
                 if not run_still_active:
-                    db_row = self._rconn().execute(
-                        "SELECT status FROM runs WHERE run_id=?", (run_id,)
-                    ).fetchone()
+                    db_row = self._rconn().execute("SELECT status FROM runs WHERE run_id=?", (run_id,)).fetchone()
                     run_still_active = bool(db_row and db_row["status"] == "running")
                 if log_path.exists():
                     try:
@@ -180,7 +186,7 @@ class SSEMixin:
                                 offset = size
                             nl = pending.rfind("\n")
                             if nl != -1:
-                                chunk, pending = pending[:nl], pending[nl + 1:]
+                                chunk, pending = pending[:nl], pending[nl + 1 :]
                                 # id = byte offset just past the last complete line sent
                                 if not _send(chunk, offset - len(pending.encode("utf-8"))):
                                     return
@@ -229,10 +235,7 @@ class SSEMixin:
             # The reconnect hint rides on the first event (one write per frame).
             prefix = getattr(self, "_sse_prefix", "")
             self._sse_prefix = ""
-            payload = (
-                f"{prefix}event: {event}\n"
-                f"data: {json.dumps(data, default=str)}\n\n"
-            ).encode("utf-8")
+            payload = (f"{prefix}event: {event}\ndata: {json.dumps(data, default=str)}\n\n").encode("utf-8")
             self.wfile.write(payload)
             self.wfile.flush()
             return True
@@ -253,6 +256,7 @@ class SSEMixin:
 
     def _stream_sse_body(self) -> None:
         import time
+
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
@@ -267,10 +271,7 @@ class SSEMixin:
                 status = self._shared_status()
                 running = status.get("running") or []
                 cur_keys = {(t["project"], t["task_id"]) for t in running}
-                cur_status = {
-                    (t["project"], t["task_id"]): str(t.get("status") or "running")
-                    for t in running
-                }
+                cur_status = {(t["project"], t["task_id"]): str(t.get("status") or "running") for t in running}
                 alive = True
                 slim = _slim_status_payload(status)
                 try:
@@ -289,38 +290,45 @@ class SSEMixin:
                         if key not in prev_keys:
                             # Wave C3: use prior known status when available; else "unknown".
                             from_st = prev_status.get(key) or "unknown"
-                            alive = self._sse_event("transition", {
-                                "project": t["project"],
-                                "task_id": t["task_id"],
-                                "from_status": from_st,
-                                "to_status": "running",
-                                "run_id": t.get("run_id"),
-                            })
+                            alive = self._sse_event(
+                                "transition",
+                                {
+                                    "project": t["project"],
+                                    "task_id": t["task_id"],
+                                    "from_status": from_st,
+                                    "to_status": "running",
+                                    "run_id": t.get("run_id"),
+                                },
+                            )
                             if not alive:
                                 break
                     if alive:
                         for proj, tid in prev_keys - cur_keys:
-                            alive = self._sse_event("transition", {
-                                "project": proj,
-                                "task_id": tid,
-                                "from_status": "running",
-                                "to_status": "terminal",
-                            })
+                            alive = self._sse_event(
+                                "transition",
+                                {
+                                    "project": proj,
+                                    "task_id": tid,
+                                    "from_status": "running",
+                                    "to_status": "terminal",
+                                },
+                            )
                             if not alive:
                                 break
                     if alive:
-                        alive = self._sse_event("metrics", {
-                            "running": [_live_run_dict(t) for t in running],
-                            "queued_count": status.get("queued_count", 0),
-                        })
+                        alive = self._sse_event(
+                            "metrics",
+                            {
+                                "running": [_live_run_dict(t) for t in running],
+                                "queued_count": status.get("queued_count", 0),
+                            },
+                        )
 
                 # T-201: also emit default ``message`` so browser onmessage works.
                 # Named events above carry transitions; keep one slim default payload.
                 if alive:
                     try:
-                        self.wfile.write(
-                            f"data: {json.dumps(slim, default=str)}\n\n".encode("utf-8")
-                        )
+                        self.wfile.write(f"data: {json.dumps(slim, default=str)}\n\n".encode("utf-8"))
                         self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         alive = False

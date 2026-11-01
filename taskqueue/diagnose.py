@@ -64,6 +64,7 @@ def build_diagnose(
     metrics = None
     try:
         from taskqueue.metrics_snapshot import build_run_metrics
+
         metrics = build_run_metrics(conn, project, task_id, home=home, samples=60)
     except Exception:
         metrics = None

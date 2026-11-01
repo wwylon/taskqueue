@@ -17,8 +17,11 @@ from tests.helpers.master_worker import http_request, make_handler_env
 def test_via_master_none_when_unreachable(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("TQ_MASTER", raising=False)
     assert via_master(tmp_path, "GET", "/api/status") is None
+    # F-155: with TQ_MASTER set, unreachable is a hard error dict (no local SQLite fallback).
     monkeypatch.setenv("TQ_MASTER", "http://127.0.0.1:1")
-    assert via_master(tmp_path, "GET", "/api/status") is None
+    resp = via_master(tmp_path, "GET", "/api/status")
+    assert isinstance(resp, dict) and resp.get("unreachable") is True
+    assert resp.get("ok") is False
 
 
 def test_via_master_forwards_timeout(tmp_path: Path, monkeypatch) -> None:
@@ -40,12 +43,14 @@ def test_cli_add_and_patch_via_handler(tmp_path: Path) -> None:
     qdir.mkdir(parents=True)
     yml = qdir / "job.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "job",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "priority": 40,
-        }),
+        yaml.dump(
+            {
+                "task_id": "job",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "priority": 40,
+            }
+        ),
         encoding="utf-8",
     )
     proj = Project(name="p", root=root, queue_dir=qdir)
@@ -59,11 +64,13 @@ def test_cli_add_and_patch_via_handler(tmp_path: Path) -> None:
         {
             "project": "p",
             "filename": "job2.yaml",
-            "yaml_text": yaml.dump({
-                "task_id": "job2",
-                "command": sys.executable,
-                "args": ["-c", "pass"],
-            }),
+            "yaml_text": yaml.dump(
+                {
+                    "task_id": "job2",
+                    "command": sys.executable,
+                    "args": ["-c", "pass"],
+                }
+            ),
         },
     )
     assert code == 200

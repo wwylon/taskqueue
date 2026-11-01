@@ -40,12 +40,15 @@ def issue_ticket(token: str) -> str:
 
 
 def redeem_ticket(ticket: str) -> str | None:
-    """Return the issuer's token while *ticket* is unexpired, else None."""
+    """Return the issuer's token once while *ticket* is unexpired, else None.
+
+    F-151: consume on first successful redeem so a leaked EventSource URL cannot
+    be replayed for concurrent stream hijacks within the TTL window.
+    """
     with _lock:
-        hit = _tickets.get(ticket)
+        hit = _tickets.pop(ticket, None)
         if hit is None:
             return None
         if hit[1] <= time.monotonic():
-            del _tickets[ticket]
             return None
         return hit[0]

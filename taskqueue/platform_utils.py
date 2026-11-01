@@ -1,4 +1,5 @@
 """Cross-platform utilities shared between local runner and remote worker slot."""
+
 from __future__ import annotations
 
 import os
@@ -65,11 +66,7 @@ def resolve_command(name_or_relpath: str, project_root: Path) -> Path:
 
 def pythonw_if_available(python_path: Path) -> Path:
     """On Windows, swap python.exe → pythonw.exe for windowless GUI subsystem."""
-    if (
-        os.name == "nt"
-        and python_path.suffix.lower() == ".exe"
-        and python_path.stem.lower() == "python"
-    ):
+    if os.name == "nt" and python_path.suffix.lower() == ".exe" and python_path.stem.lower() == "python":
         pw = python_path.with_name("pythonw.exe")
         if pw.is_file():
             return pw
@@ -87,7 +84,7 @@ def resolve_path(
     ``shared_roots[name]`` from worker.yaml / projects.yaml.
     """
     if shared_roots and path_str.startswith("shared:"):
-        rest = path_str[len("shared:"):]
+        rest = path_str[len("shared:") :]
         name, _, tail = rest.partition("/")
         if name in shared_roots:
             return Path(shared_roots[name]) / tail

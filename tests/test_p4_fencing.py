@@ -165,14 +165,16 @@ def test_at_most_once_lease_reclaim_unknown(tmp_path: Path) -> None:
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "once",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-            "execution_semantics": "at_most_once",
-            "resources": {"cpu_cores": 1},
-        }),
+        yaml.dump(
+            {
+                "task_id": "once",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+                "execution_semantics": "at_most_once",
+                "resources": {"cpu_cores": 1},
+            }
+        ),
         encoding="utf-8",
     )
     task = parse_task_yaml(yml, proj)

@@ -1,10 +1,11 @@
 // API tokens tab. Uses app.js globals at call time: tqAct, i18n, showToast, _postJson, _sendJson, _showPageEmpty.
 import { escHtml, fmt } from '../util/format.js';
-import { fetchJson } from '../core/api.js';
+import { fetchJson, latest } from '../core/api.js';
 
 export async function loadApiTokens() {
+  const live = latest('tokens');
   const data = await fetchJson('/api/tokens', 8000, true);
-  if (!data) return false;
+  if (!live() || !data) return false;
   const rows = data.tokens || [];
   const tb = document.getElementById('tokens-tbody');
   if (!tb) return;

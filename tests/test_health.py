@@ -1,4 +1,5 @@
 """Queue health verdict: taskqueue.health, `tq health`, /api/health, coloured toasts and CLI colours."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -17,8 +18,16 @@ def _iso(minutes_ago: float) -> str:
     return (datetime.now(UTC) - timedelta(minutes=minutes_ago)).isoformat()
 
 
-def _task(conn, task_id: str, status: str, *, ended_min_ago: float = 5.0, enabled: int = 1,
-          error_code: str | None = None, project: str = "p") -> None:
+def _task(
+    conn,
+    task_id: str,
+    status: str,
+    *,
+    ended_min_ago: float = 5.0,
+    enabled: int = 1,
+    error_code: str | None = None,
+    project: str = "p",
+) -> None:
     conn.execute(
         "INSERT INTO tasks (project, task_id, command, status, enabled, last_error_code, enqueued_at, updated_at) "
         "VALUES (?,?,?,?,?,?,?,?)",
@@ -81,8 +90,8 @@ def test_format_line_icons_and_plain(conn) -> None:
     _task(conn, "run", "running")
     h = compute_health(conn, daemon_up=False)
     line = format_line(h)
-    assert line.startswith("\U0001F534 tq") and "\U0001F480" in line and "❌1" in line
-    assert "\U0001F4801" not in line  # daemon-down icon carries no count
+    assert line.startswith("\U0001f534 tq") and "\U0001f480" in line and "❌1" in line
+    assert "\U0001f4801" not in line  # daemon-down icon carries no count
     plain = format_line(h, icons=False)
     assert plain.startswith("[!!] tq daemon down, 1 new failed") and "1 running" in plain
     assert "\033[" in format_line(h, icons=False, color=True)
@@ -140,7 +149,7 @@ def test_toast_level_prefix_and_icon(monkeypatch) -> None:
     fake = types.SimpleNamespace(Notification=lambda **kw: _N(**kw), audio=types.SimpleNamespace(Default=None))
     monkeypatch.setitem(sys.modules, "winotify", fake)
     notify._send_toast("Task failed: p/a", "body", level="red")
-    assert sent["title"].startswith("\U0001F534 ")
+    assert sent["title"].startswith("\U0001f534 ")
     icon = Path(sent["icon"])
     assert icon.is_file() and icon.read_bytes().startswith(b"\x89PNG")
 

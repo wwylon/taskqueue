@@ -2,13 +2,14 @@
 // tqProjectQuery, _postJson, _showPageEmpty.
 import { S } from '../core/state.js';
 import { escHtml, fmt } from '../util/format.js';
-import { fetchJson } from '../core/api.js';
+import { fetchJson, latest } from '../core/api.js';
 import { projStyle } from '../util/projcolor.js';
 
 
 export async function loadSchedules() {
+  const live = latest('schedules');
   const data = await fetchJson('/api/schedules' + tqProjectQuery(), 8000, true);
-  if (!data) return false;
+  if (!live() || !data) return false;
   const rows = data.schedules || [];
   const tb = document.getElementById('sched-tbody');
   if (!tb) return;

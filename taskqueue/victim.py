@@ -26,11 +26,11 @@ from typing import Any
 # point of the exercise. Among candidates that relieve comparable pressure,
 # restartability and lost work decide.
 DEFAULT_WEIGHTS = {
-    "relief": 2.0,      # how much pressure this actually removes
-    "progress": 1.5,    # work destroyed by killing it
-    "restart": 1.0,     # cheap to kill if it can just be re-run
-    "priority": 1.0,    # operator-declared importance
-    "elapsed": 0.5,     # long uncheckpointed runs are expensive to redo
+    "relief": 2.0,  # how much pressure this actually removes
+    "progress": 1.5,  # work destroyed by killing it
+    "restart": 1.0,  # cheap to kill if it can just be re-run
+    "priority": 1.0,  # operator-declared importance
+    "elapsed": 0.5,  # long uncheckpointed runs are expensive to redo
 }
 
 # Resume-eligible tasks are cheaper to kill than one-shot tasks but more
@@ -120,18 +120,20 @@ def pick_victim(
         except Exception:
             elapsed = 0.0
 
-        scored.append((
-            key,
-            score_victim(
-                freed_gib=freed,
-                needed_gib=needed_gib,
-                progress_pct=getattr(run, "progress_pct", None),
-                priority=(task_row["priority"] if task_row is not None else None),
-                elapsed_sec=elapsed,
-                restartability=_restartability(task_row),
-                weights=weights,
-            ),
-        ))
+        scored.append(
+            (
+                key,
+                score_victim(
+                    freed_gib=freed,
+                    needed_gib=needed_gib,
+                    progress_pct=getattr(run, "progress_pct", None),
+                    priority=(task_row["priority"] if task_row is not None else None),
+                    elapsed_sec=elapsed,
+                    restartability=_restartability(task_row),
+                    weights=weights,
+                ),
+            )
+        )
 
     if not scored:
         return None, []

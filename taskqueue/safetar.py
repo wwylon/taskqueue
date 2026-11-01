@@ -64,4 +64,3 @@ def safe_extract(
     if hasattr(tarfile, "data_filter"):
         kwargs["filter"] = "data"
     tar.extractall(**kwargs)
-

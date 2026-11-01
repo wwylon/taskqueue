@@ -37,9 +37,7 @@ def test_idle_longpoll_skips_claim_when_queue_empty(tmp_path: Path) -> None:
     with patch("taskqueue.web._claim_next_remote_task") as claim:
         claim.return_value = {"task": None}
         t0 = time.monotonic()
-        code, data = http_request(
-            HandlerClass, "GET", "/api/worker/next-task?worker_id=w1&wait=0.6"
-        )
+        code, data = http_request(HandlerClass, "GET", "/api/worker/next-task?worker_id=w1&wait=0.6")
         elapsed = time.monotonic() - t0
     assert code == 200
     assert data["task"] is None

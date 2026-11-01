@@ -21,8 +21,7 @@ def test_prefetch_exact_peaks_matches_per_task(tmp_path: Path):
         if ram is not None:
             _insert_run(db, "p", tid, base.isoformat(), (base + timedelta(seconds=30)).isoformat())
             db.execute(
-                "UPDATE runs SET peak_ram_gib = ?, status = 'completed' "
-                "WHERE project = ? AND task_id = ?",
+                "UPDATE runs SET peak_ram_gib = ?, status = 'completed' WHERE project = ? AND task_id = ?",
                 (ram, "p", tid),
             )
     db.commit()
@@ -33,9 +32,7 @@ def test_prefetch_exact_peaks_matches_per_task(tmp_path: Path):
     assert ("p", "c") not in peaks
     assert ("p", "missing") not in peaks
     # Checked miss skips the exact-task SQL and falls through cleanly.
-    pred = predict_task_resources(
-        db, "p", "c", exact_peaks=peaks, exact_checked=checked
-    )
+    pred = predict_task_resources(db, "p", "c", exact_peaks=peaks, exact_checked=checked)
     assert pred["source"] == "default"
 
 
@@ -53,9 +50,7 @@ def test_bulk_prior_run_seconds(tmp_path: Path):
         (NOW.isoformat(),),
     )
     db.commit()
-    open_row = db.execute(
-        "SELECT run_id, project, task_id FROM runs WHERE status = 'running'"
-    ).fetchone()
+    open_row = db.execute("SELECT run_id, project, task_id FROM runs WHERE status = 'running'").fetchone()
     key = (open_row["project"], open_row["task_id"])
     got = bulk_prior_run_seconds(db, {key: open_row})
     assert got[key] == 100.0

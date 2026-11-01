@@ -3,7 +3,8 @@ from taskqueue import estimate
 
 def test_declared_change_busts_cache_and_cache_is_bounded(monkeypatch) -> None:
     monkeypatch.setattr(
-        estimate, "predict_task_resources",
+        estimate,
+        "predict_task_resources",
         lambda *a, **k: {"ram_gib": 0.0, "vram_gib": 0.0, "source": estimate.SOURCE_DEFAULT},
     )
     cache: dict = {}

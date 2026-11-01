@@ -18,10 +18,7 @@ from taskqueue.resources import (
 
 def _fake_detect(n: int):
     def _detect():
-        gpus = [
-            {"index": i, "name": f"FakeGPU{i}", "vram_gib": 8.0, "vram_used_gib": 0.0}
-            for i in range(n)
-        ]
+        gpus = [{"index": i, "name": f"FakeGPU{i}", "vram_gib": 8.0, "vram_used_gib": 0.0} for i in range(n)]
         return {
             "cpu_total_cores": 8,
             "ram_total_gib": 32.0,

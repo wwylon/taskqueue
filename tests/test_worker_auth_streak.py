@@ -6,6 +6,7 @@ import urllib.error
 import pytest
 
 from taskqueue import worker
+from taskqueue import worker_http
 
 
 class _Resp(io.BytesIO):
@@ -30,7 +31,8 @@ def test_success_resets_auth_failure_streak(monkeypatch):
             raise item
         return item
 
-    monkeypatch.setattr(worker.urllib.request, "urlopen", fake_open)
+    # F-208: HTTP lives in worker_http; patch the module that actually calls urlopen.
+    monkeypatch.setattr(worker_http.urllib.request, "urlopen", fake_open)
     for _ in range(5):
         worker._post("http://m/x", {})  # must never exit: failures are not consecutive
     assert worker._post._auth_fail_streak == 2
@@ -42,7 +44,7 @@ def test_three_consecutive_auth_failures_exit(monkeypatch):
     def fake_open(req, timeout=0):
         raise _http(401)
 
-    monkeypatch.setattr(worker.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(worker_http.urllib.request, "urlopen", fake_open)
     with pytest.raises(SystemExit):
         for _ in range(3):
             worker._post("http://m/x", {})

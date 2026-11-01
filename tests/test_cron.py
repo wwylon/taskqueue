@@ -14,6 +14,7 @@ from taskqueue.cron import check_cron_schedule, cron_matches
 # cron_matches — field parsing
 # ---------------------------------------------------------------------------
 
+
 def _dt(minute=0, hour=0, day=1, month=1, weekday=1):
     """Build a UTC datetime for testing. weekday: Mon=1 … Sun=7 (isoweekday)."""
     return datetime(2025, month, day, hour, minute, tzinfo=timezone.utc).replace(
@@ -67,8 +68,8 @@ def test_day_of_week():
     # 2025-01-06 = Monday = isoweekday 1 → cron DOW 1
     mon = _dt_raw(year=2025, month=1, day=6)
     assert cron_matches("0 0 * * 1", mon)
-    assert not cron_matches("0 0 * * 0", mon)   # Sunday
-    assert not cron_matches("0 0 * * 2", mon)   # Tuesday
+    assert not cron_matches("0 0 * * 0", mon)  # Sunday
+    assert not cron_matches("0 0 * * 2", mon)  # Tuesday
 
 
 def test_sunday_is_zero():
@@ -87,8 +88,8 @@ def test_dom_and_month():
 
 def test_invalid_field_count_returns_false():
     dt = _dt_raw()
-    assert not cron_matches("* * * *", dt)       # 4 fields
-    assert not cron_matches("* * * * * *", dt)   # 6 fields
+    assert not cron_matches("* * * *", dt)  # 4 fields
+    assert not cron_matches("* * * * * *", dt)  # 6 fields
     assert not cron_matches("", dt)
 
 
@@ -103,8 +104,10 @@ def test_step_with_base():
 # check_cron_schedule — integration with DB
 # ---------------------------------------------------------------------------
 
+
 def _seed_scheduled_task(db, project="proj", task_id="t1", status="completed"):
     import json
+
     now = "2025-01-06T00:00:00+00:00"
     db.execute(
         "INSERT INTO tasks (project, task_id, status, command, enqueued_at, updated_at, enabled, schedule) "
@@ -116,17 +119,19 @@ def _seed_scheduled_task(db, project="proj", task_id="t1", status="completed"):
 
 def test_first_tick_skips(tmp_path: Path):
     from taskqueue.db import open_db
+
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db)
     state: dict = {}
     check_cron_schedule(db, state)  # first tick — should not re-queue
     row = db.execute("SELECT status FROM tasks WHERE task_id='t1'").fetchone()
-    assert row["status"] == "completed"   # unchanged
+    assert row["status"] == "completed"  # unchanged
 
 
 def test_cron_fires_on_match(tmp_path: Path):
     from taskqueue.db import open_db
     from unittest.mock import patch
+
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
 
@@ -147,6 +152,7 @@ def test_cron_fires_on_match(tmp_path: Path):
 def test_cron_does_not_fire_before_match(tmp_path: Path):
     from taskqueue.db import open_db
     from unittest.mock import patch
+
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
 
@@ -161,12 +167,13 @@ def test_cron_does_not_fire_before_match(tmp_path: Path):
         check_cron_schedule(db, state)
 
     row = db.execute("SELECT status FROM tasks WHERE task_id='t1'").fetchone()
-    assert row["status"] == "completed"   # unchanged
+    assert row["status"] == "completed"  # unchanged
 
 
 def test_cron_only_fires_for_terminal_status(tmp_path: Path):
     from taskqueue.db import open_db
     from unittest.mock import patch
+
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="running")  # running — should not re-queue
 
@@ -180,12 +187,13 @@ def test_cron_only_fires_for_terminal_status(tmp_path: Path):
         check_cron_schedule(db, state)
 
     row = db.execute("SELECT status FROM tasks WHERE task_id='t1'").fetchone()
-    assert row["status"] == "running"   # unchanged
+    assert row["status"] == "running"  # unchanged
 
 
 # ---------------------------------------------------------------------------
 # Phase 9: robustness / semantics
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("expr", ["*/0 * * * *", "MON * * * *", "5-30/5 * * * *x", "61 * * * *", "a b c d e", "* * *"])
 def test_invalid_cron_never_matches_and_never_raises(expr):

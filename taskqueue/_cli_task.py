@@ -1,4 +1,5 @@
 """Task-level CLI commands — extracted from cli.py."""
+
 from __future__ import annotations
 from taskqueue._time import parse_iso as _parse_iso
 from taskqueue._db_tasks import get_task, get_task_status
@@ -15,11 +16,13 @@ from taskqueue._cli_helpers import (
     _split_key,
     _check_ownership_or_print,
     format_resources,
+    offline_sqlite_write_blocked,
     warn_enabled_but_terminal,
     last_nonempty_line,
     read_last_lines,
 )
 from taskqueue.rows import row_get
+
 
 def _list_fetch_rows(
     conn,
@@ -62,13 +65,9 @@ def _list_fetch_rows(
         f" tasks.depends_on_any, tasks.spawned_by,"
         f" r.last_log_line, r.worker_id AS last_worker_id, r.progress_pct,"
         f" r.exit_code, r.started_at AS run_started_at, r.finished_at AS run_finished_at, r.log_path,"
-        f" rc.attempts"
+        f" tasks.total_run_count AS attempts"
         f" FROM tasks"
         f" LEFT JOIN runs r ON r.run_id = tasks.last_run_id"
-        f" LEFT JOIN ("
-        f"   SELECT project, task_id, COUNT(*) AS attempts"
-        f"   FROM runs GROUP BY project, task_id"
-        f" ) rc ON rc.project=tasks.project AND rc.task_id=tasks.task_id"
         f" {where} ORDER BY tasks.priority DESC, tasks.enqueued_at ASC",
         params,
     ).fetchall()
@@ -76,6 +75,7 @@ def _list_fetch_rows(
     if tags:
         rows = [r for r in rows if all(t in json_list(r["tags"]) for t in tags)]
     from taskqueue.db import lock_occupancy
+
     occupancy = lock_occupancy(conn)
     return rows, occupancy
 
@@ -83,6 +83,7 @@ def _list_fetch_rows(
 def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = False) -> None:
     from taskqueue.config import load_projects as _load_projects
     from taskqueue.resources import task_requires_gpu
+
     _projects = _load_projects(home) if stat_artifacts else {}
     out = []
     for r in rows:
@@ -103,44 +104,56 @@ def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = Fals
         lock_waiting_on = []
         err_code = row_get(r, "last_error_code")
         if err_code == "tq.block.mutex":
-            for lk in (res.get("locks") or []):
+            for lk in res.get("locks") or []:
                 info = occupancy.get(str(lk)) or {}
-                lock_waiting_on.append({
-                    "lock": str(lk),
-                    "holder": info.get("holder"),
-                    "holder_started_at": info.get("holder_started_at"),
-                })
-        out.append({
-            "project": r["project"],
-            "task_id": r["task_id"],
-            "priority": r["priority"],
-            "status": r["status"],
-            "enabled": bool(r["enabled"]) if "enabled" in r.keys() and r["enabled"] is not None else True,
-            "resources": res,
-            "requires_gpu": task_requires_gpu(res),
-            "last_error_code": err_code,
-            "block_reason": row_get(r, "block_reason"),
-            "description": row_get(r, "description"),
-            "tags": json_list(r["tags"]),
-            "suite": r["suite"] or "",
-            "group": r["grp"] or "" if "grp" in r.keys() else "",
-            "last_log_line": row_get(r, "last_log_line"),
-            "progress_pct": row_get(r, "progress_pct"),
-            "metadata": json.loads(r["metadata"] or "{}") if "metadata" in r.keys() else {},
-            "artifacts": artifacts_info,
-            "depends_on": json_list(r["depends_on"]) if "depends_on" in r.keys() else [],
-            "depends_on_any": json_list(r["depends_on_any"]) if "depends_on_any" in r.keys() else [],
-            "spawned_by": r["spawned_by"] if "spawned_by" in r.keys() and r["spawned_by"] else None,
-            "exit_code": row_get(r, "exit_code"),
-            "attempts": row_get(r, "attempts"),
-            "started_at": row_get(r, "run_started_at"),
-            "finished_at": row_get(r, "run_finished_at"),
-            "log_path": row_get(r, "log_path"),
-            "lock_waiting_on": lock_waiting_on or None,
-            "cap_auto_retry_count": int(r["cap_auto_retry_count"] or 0) if "cap_auto_retry_count" in r.keys() else 0,
-            "max_auto_retries": int(r["max_auto_retries"] if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None else 20),
-            "auto_retry_on_cap": bool(int(r["auto_retry_on_cap"] or 0)) if "auto_retry_on_cap" in r.keys() else False,
-        })
+                lock_waiting_on.append(
+                    {
+                        "lock": str(lk),
+                        "holder": info.get("holder"),
+                        "holder_started_at": info.get("holder_started_at"),
+                    }
+                )
+        out.append(
+            {
+                "project": r["project"],
+                "task_id": r["task_id"],
+                "priority": r["priority"],
+                "status": r["status"],
+                "enabled": bool(r["enabled"]) if "enabled" in r.keys() and r["enabled"] is not None else True,
+                "resources": res,
+                "requires_gpu": task_requires_gpu(res),
+                "last_error_code": err_code,
+                "block_reason": row_get(r, "block_reason"),
+                "description": row_get(r, "description"),
+                "tags": json_list(r["tags"]),
+                "suite": r["suite"] or "",
+                "group": r["grp"] or "" if "grp" in r.keys() else "",
+                "last_log_line": row_get(r, "last_log_line"),
+                "progress_pct": row_get(r, "progress_pct"),
+                "metadata": json.loads(r["metadata"] or "{}") if "metadata" in r.keys() else {},
+                "artifacts": artifacts_info,
+                "depends_on": json_list(r["depends_on"]) if "depends_on" in r.keys() else [],
+                "depends_on_any": json_list(r["depends_on_any"]) if "depends_on_any" in r.keys() else [],
+                "spawned_by": r["spawned_by"] if "spawned_by" in r.keys() and r["spawned_by"] else None,
+                "exit_code": row_get(r, "exit_code"),
+                "attempts": row_get(r, "attempts"),
+                "started_at": row_get(r, "run_started_at"),
+                "finished_at": row_get(r, "run_finished_at"),
+                "log_path": row_get(r, "log_path"),
+                "lock_waiting_on": lock_waiting_on or None,
+                "cap_auto_retry_count": int(r["cap_auto_retry_count"] or 0)
+                if "cap_auto_retry_count" in r.keys()
+                else 0,
+                "max_auto_retries": int(
+                    r["max_auto_retries"]
+                    if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None
+                    else 20
+                ),
+                "auto_retry_on_cap": bool(int(r["auto_retry_on_cap"] or 0))
+                if "auto_retry_on_cap" in r.keys()
+                else False,
+            }
+        )
     emit_json(out, ensure_ascii=False)
 
 
@@ -162,7 +175,9 @@ def _list_row_display(r, occupancy: dict) -> tuple[str, str, str, str | None, st
     try:
         cap_n = int(r["cap_auto_retry_count"] or 0) if "cap_auto_retry_count" in r.keys() else 0
         if cap_n > 0:
-            cap_m = int(r["max_auto_retries"] if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None else 20)
+            cap_m = int(
+                r["max_auto_retries"] if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None else 20
+            )
             cap_str = f"  cap×{cap_n}/{cap_m}" if cap_m > 0 else f"  cap×{cap_n}"
     except (TypeError, ValueError, KeyError):
         pass
@@ -188,7 +203,7 @@ def _list_row_display(r, occupancy: dict) -> tuple[str, str, str, str | None, st
         detail = reason
         if err == "tq.block.mutex":
             holders = []
-            for lk in (res.get("locks") or []):
+            for lk in res.get("locks") or []:
                 info = occupancy.get(str(lk)) or {}
                 if info.get("holder"):
                     holders.append(f"{lk} held by {info['holder']}")
@@ -255,9 +270,12 @@ def cmd_list(
         return 1
     conn = open_db(db, migrate=False)
     rows, occupancy = _list_fetch_rows(
-        conn, project,
-        tags=tags, suite=suite,
-        status_filter=status_filter, worker_filter=worker_filter,
+        conn,
+        project,
+        tags=tags,
+        suite=suite,
+        status_filter=status_filter,
+        worker_filter=worker_filter,
     )
     if offset:
         rows = rows[offset:]
@@ -309,7 +327,16 @@ def cmd_describe(home: Path, key: str) -> int:
             print(f"  {k:<22s} {rs[k]}")
     for k in keys:
         val = row[k]
-        if k in ("args", "resume_args", "requires_paths", "depends_on", "depends_on_any", "tags", "resources", "requires"):
+        if k in (
+            "args",
+            "resume_args",
+            "requires_paths",
+            "depends_on",
+            "depends_on_any",
+            "tags",
+            "resources",
+            "requires",
+        ):
             try:
                 val = json.loads(val) if val else val
             except Exception:
@@ -317,7 +344,6 @@ def cmd_describe(home: Path, key: str) -> int:
         if val not in (None, "", [], {}):
             print(f"  {k:<22s} {val}")
     return 0
-
 
 
 def cmd_stop(home: Path, key: str, *, force: bool = False, reason: str | None = None) -> int:
@@ -335,6 +361,7 @@ def cmd_stop(home: Path, key: str, *, force: bool = False, reason: str | None = 
         return 0
     print("[tq] daemon not running; writing SQLite directly (offline repair)", file=sys.stderr)
     from taskqueue.db import get_task, open_db, request_stop_with_control, set_run_stop_reason, set_task_status
+
     db = open_db(_db(home))
     row = get_task(db, project, task_id)
     if row is None:
@@ -358,8 +385,9 @@ def cmd_stop(home: Path, key: str, *, force: bool = False, reason: str | None = 
         set_task_status(db, project, task_id, "interrupted")
     else:
         op = os.environ.get("TQ_OPERATOR") or ""
-        request_stop_with_control(db, home, project, task_id,
-                                  requested_by=f"{op + ' ' if op else ''}via cli offline (pid {os.getpid()})")
+        request_stop_with_control(
+            db, home, project, task_id, requested_by=f"{op + ' ' if op else ''}via cli offline (pid {os.getpid()})"
+        )
     db.close()
     print(f"Stop requested for {key}.")
     return 0
@@ -369,6 +397,7 @@ def cmd_stop_project(home: Path, project: str) -> int:
     from taskqueue._cli_helpers import _daemon_running
     from taskqueue.db import get_running_tasks, open_db, request_stop_with_control
     from taskqueue.master_client import via_master
+
     db = open_db(_db(home))
     rows = [r for r in get_running_tasks(db) if r["project"] == project]
     n = 0
@@ -387,7 +416,6 @@ def cmd_stop_project(home: Path, project: str) -> int:
     db.close()
     print(f"Stop requested for {n} running task(s) in {project}.")
     return 0
-
 
 
 # Patchable fields that are mirrored in tasks columns, so a patch can be checked after it is applied.
@@ -419,8 +447,10 @@ def _report_patch(key: str, updates: dict, before: dict, after: dict) -> int:
     print(f"Patched {key}:")
     print("\n".join(lines))
     if failed:
-        print(f"Error: {', '.join(failed)} did not change in the queue database (check the YAML file "
-              f"and `tq validate`).", file=sys.stderr)
+        print(
+            f"Error: {', '.join(failed)} did not change in the queue database (check the YAML file and `tq validate`).",
+            file=sys.stderr,
+        )
         return 1
     return 0
 
@@ -429,6 +459,7 @@ def cmd_patch(home: Path, key: str, pairs: list[str]) -> int:
     from taskqueue.config import load_projects
     from taskqueue.db import get_config, get_task, open_db, parse_task_yaml, upsert_task
     from taskqueue.yaml_patch import patch_task_yaml
+
     project, task_id = _split_key(key)
     updates: dict = {}
     for p in pairs:
@@ -462,9 +493,8 @@ def cmd_patch(home: Path, key: str, pairs: list[str]) -> int:
     db.close()
     before = _patch_snapshot(home, project, task_id)
     from taskqueue.master_client import via_master
-    resp = via_master(
-        home, "POST", f"/api/tasks/{project}/{task_id}/patch", body={"updates": updates}
-    )
+
+    resp = via_master(home, "POST", f"/api/tasks/{project}/{task_id}/patch", body={"updates": updates})
     if resp is not None:
         if not resp.get("ok"):
             print(f"Error: {resp.get('error', resp)}")
@@ -499,12 +529,14 @@ def cmd_patch(home: Path, key: str, pairs: list[str]) -> int:
         db.close()
         print(f"Error: project {project} not registered.")
         return 1
-    upsert_task(db, parse_task_yaml(
-        path, proj, allow_remote_notify=bool(get_config(db).get("notify_allow_remote"))
-    ))
+    upsert_task(db, parse_task_yaml(path, proj, allow_remote_notify=bool(get_config(db).get("notify_allow_remote"))))
     db.close()
-    rc = _report_patch(key, {k: v for k, v in updates.items() if k in applied or k in _PATCH_DB_FIELDS},
-                       before, _patch_snapshot(home, project, task_id))
+    rc = _report_patch(
+        key,
+        {k: v for k, v in updates.items() if k in applied or k in _PATCH_DB_FIELDS},
+        before,
+        _patch_snapshot(home, project, task_id),
+    )
     if updates.get("enabled") is True:
         warn_enabled_but_terminal(project, task_id, prior_status)
     return rc
@@ -513,6 +545,7 @@ def cmd_patch(home: Path, key: str, pairs: list[str]) -> int:
 def cmd_suspend(home: Path, key: str) -> int:
     """Ask a running task to exit 75 via control file (no SIGTERM)."""
     from taskqueue.db import get_task, open_db, write_control_action
+
     project, task_id = _split_key(key)
     db = open_db(_db(home))
     row = get_task(db, project, task_id)
@@ -526,7 +559,6 @@ def cmd_suspend(home: Path, key: str) -> int:
     path = write_control_action(home, project, task_id, "suspend")
     print(f"Suspend requested for {key} via {path} (task should exit 75).")
     return 0
-
 
 
 def _print_retry_report(result: dict) -> None:
@@ -645,29 +677,13 @@ def cmd_retry(
                 return 1
 
     if set_args and row is not None:
+        from taskqueue.arg_overrides import merge_arg_overrides
+
         try:
             base_args = list(json_list(row["args"]))
         except Exception:
             base_args = []
-        for override in set_args:
-            flag_name = override.split("=")[0]
-            replaced = False
-            i = 0
-            while i < len(base_args):
-                if base_args[i] == flag_name:
-                    if "=" in override:
-                        base_args[i] = override
-                        if i + 1 < len(base_args) and not base_args[i + 1].startswith("-"):
-                            base_args.pop(i + 1)
-                    replaced = True
-                    break
-                elif base_args[i].startswith(flag_name + "="):
-                    base_args[i] = override
-                    replaced = True
-                    break
-                i += 1
-            if not replaced:
-                base_args.append(override)
+        base_args = merge_arg_overrides(base_args, list(set_args))
 
     chain_ids = [task_id]
     if downstream:
@@ -679,6 +695,7 @@ def cmd_retry(
         enabled_ids = _enable_tasks_for_retry(home, project, chain_ids)
 
     from taskqueue.master_client import via_master
+
     body: dict = {}
     if set_args and row is not None:
         body["args_override"] = base_args
@@ -686,9 +703,7 @@ def cmd_retry(
         body["downstream"] = True
     if enable_downstream:
         body["enable_downstream"] = True
-    resp = via_master(
-        home, "POST", f"/api/tasks/{project}/{task_id}/retry", body=body or None
-    )
+    resp = via_master(home, "POST", f"/api/tasks/{project}/{task_id}/retry", body=body or None)
     if resp is not None:
         ok = bool(resp.get("ok"))
         if downstream:
@@ -747,19 +762,12 @@ def cmd_retry(
         _print_retry_wait_hint(project, [task_id])
         return 0
     if reason == "max_attempts":
-        print(
-            f"{key} has exhausted its attempt cap. "
-            f"Use 'tq patch {key} max_attempts=0' to remove the cap."
-        )
+        print(f"{key} has exhausted its attempt cap. Use 'tq patch {key} max_attempts=0' to remove the cap.")
         return 1
     if reason == "disabled":
         print(f"{key} is disabled (enabled=0); enable it or use --enable-downstream.")
         return 1
-    print(
-        f"{key} not in a retryable state"
-        + (f" ({reason})" if reason else "")
-        + "."
-    )
+    print(f"{key} not in a retryable state" + (f" ({reason})" if reason else "") + ".")
     return 1
 
 
@@ -776,14 +784,19 @@ def cmd_reverify(home: Path, root_key: str, up_to: str) -> int:
         retry_task_with_downstream,
         upsert_task,
     )
-    from taskqueue.master_client import via_master
     from taskqueue.yaml_patch import patch_task_yaml
 
     project, root_id = _split_key(root_key)
     up_id = up_to.split("/", 1)[-1] if "/" in up_to else up_to
 
-    if via_master(home, "GET", "/api/status") is None:
-        print("[OFFLINE] daemon unreachable; refusing reverify", file=sys.stderr)
+    # F-196: never dual-write under a live daemon (previous code refused only
+    # when status was None, then wrote SQLite while the daemon was up).
+    block = offline_sqlite_write_blocked(home)
+    if block:
+        print(
+            f"[ERROR] {block}; stop the daemon or use tq patch / tq retry for online edits",
+            file=sys.stderr,
+        )
         return EXIT_UNREACHABLE
 
     db = open_db(_db(home))
@@ -871,6 +884,7 @@ def cmd_force(home: Path, key: str) -> int:
         err = None if resp.get("ok") else (resp.get("error") or "failed")
     else:
         from taskqueue.db import force_task, open_db
+
         db = open_db(_db(home))
         err = force_task(db, project, task_id)
         db.close()
@@ -892,6 +906,7 @@ def cmd_remove(home: Path, key: str, *, force: bool = False) -> int:
         err = None if resp.get("ok") else (resp.get("error") or "failed")
     else:
         from taskqueue.db import get_task, open_db, remove_task
+
         db = open_db(_db(home))
         row = get_task(db, project, task_id)
         if _check_ownership_or_print(row, key, force=force):
@@ -933,10 +948,7 @@ def cmd_remove_project(home: Path, project: str, *, force: bool = False) -> int:
         ).fetchone()[0]
         if running and not force:
             conn.close()
-            print(
-                f"Error: {running} task(s) are running in project '{project}'. "
-                "Stop them first or use --force."
-            )
+            print(f"Error: {running} task(s) are running in project '{project}'. Stop them first or use --force.")
             return 1
         n_tasks = conn.execute("DELETE FROM tasks WHERE project = ?", (project,)).rowcount
         conn.execute(
@@ -956,7 +968,6 @@ def cmd_remove_project(home: Path, project: str, *, force: bool = False) -> int:
 
 def cmd_logs(home: Path, key: str, *, max_bytes: int | None = None) -> int:
     return cmd_logs_extended(home, key, max_bytes=max_bytes, grep=None, jsonl=False)
-
 
 
 def cmd_diagnose(home: Path, key: str) -> int:
@@ -994,9 +1005,10 @@ def cmd_diagnose(home: Path, key: str) -> int:
         )
         print(f"log: {last.get('log_path')}")
     m = bundle.get("metrics") or {}
-    res = (m.get("resources") or {})
+    res = m.get("resources") or {}
     cur, peak, avg = res.get("current") or {}, res.get("peak") or {}, res.get("avg") or {}
     from taskqueue.log_issues import format_log_counts
+
     log_s = format_log_counts(m.get("log") or (m.get("metrics") or {}).get("log"))
     if any(v is not None for v in list(cur.values()) + list(peak.values()) + list(avg.values())):
         parts = []
@@ -1052,7 +1064,12 @@ def cmd_metrics(home: Path, key: str, *, as_json: bool = False, samples: int = 6
     conn = open_db(db, migrate=False)
     try:
         m = build_run_metrics(
-            conn, project, task_id, home=home, samples=samples, include_history=as_json,
+            conn,
+            project,
+            task_id,
+            home=home,
+            samples=samples,
+            include_history=as_json,
         )
     finally:
         conn.close()
@@ -1069,13 +1086,11 @@ def cmd_metrics(home: Path, key: str, *, as_json: bool = False, samples: int = 6
         f"  current: cpu={cur.get('cpu_pct')}% ram={cur.get('ram_gib')}G "
         f"vram={cur.get('vram_gib')}G gpu={cur.get('gpu_util_pct')}%"
     )
-    print(
-        f"  peak:    cpu={peak.get('cpu_pct')}% ram={peak.get('ram_gib')}G "
-        f"vram={peak.get('vram_gib')}G"
-    )
+    print(f"  peak:    cpu={peak.get('cpu_pct')}% ram={peak.get('ram_gib')}G vram={peak.get('vram_gib')}G")
     if avg.get("gpu_util_pct") is not None:
         print(f"  gpu_avg: {avg['gpu_util_pct']}%")
     from taskqueue.log_issues import format_log_counts
+
     log_s = format_log_counts(m.get("log") or (m.get("metrics") or {}).get("log"))
     if log_s:
         print(f"  log: {log_s}")
@@ -1084,7 +1099,6 @@ def cmd_metrics(home: Path, key: str, *, as_json: bool = False, samples: int = 6
     if m.get("last_line"):
         print(f"  last: {m['last_line'][:120]}")
     return 0
-
 
 
 def cmd_deps(home: Path, key: str, *, mermaid: bool = False) -> int:
@@ -1170,7 +1184,6 @@ def cmd_deps(home: Path, key: str, *, mermaid: bool = False) -> int:
     return 0
 
 
-
 def cmd_logs_extended(
     home: Path,
     key: str,
@@ -1228,7 +1241,6 @@ def cmd_logs_extended(
     return 0
 
 
-
 def follow_log(
     home: Path,
     key: str,
@@ -1281,7 +1293,8 @@ def follow_log(
                 cur_log, offset = Path(log_path), 0
                 if cur_log.exists():
                     tail = read_log_tail(
-                        cur_log, max_bytes=clamp_tail_bytes(tail_bytes, default=DEFAULT_LOG_TAIL_BYTES),
+                        cur_log,
+                        max_bytes=clamp_tail_bytes(tail_bytes, default=DEFAULT_LOG_TAIL_BYTES),
                     )
                     out.write(tail.text)
                     offset = cur_log.stat().st_size
@@ -1410,7 +1423,6 @@ def cmd_tail(home: Path, key: str, *, last_n: int | None = None) -> int:
     return 0
 
 
-
 def cmd_tag(home: Path, action: str, key: str, tags_list: list[str]) -> int:
     """I-24: Tag management: add/remove/list tags on a task."""
     from taskqueue.db import open_db
@@ -1419,11 +1431,14 @@ def cmd_tag(home: Path, action: str, key: str, tags_list: list[str]) -> int:
     if not db_path.exists():
         print("No queue DB.")
         return 1
+    if action in ("add", "remove"):
+        block = offline_sqlite_write_blocked(home)
+        if block:
+            print(f"[ERROR] {block}", file=sys.stderr)
+            return EXIT_UNREACHABLE
     project, task_id = _split_key(key)
     conn = open_db(db_path)
-    row = conn.execute(
-        "SELECT tags FROM tasks WHERE project=? AND task_id=?", (project, task_id)
-    ).fetchone()
+    row = conn.execute("SELECT tags FROM tasks WHERE project=? AND task_id=?", (project, task_id)).fetchone()
     if row is None:
         print(f"Task not found: {key}")
         conn.close()
@@ -1462,7 +1477,6 @@ def cmd_tag(home: Path, action: str, key: str, tags_list: list[str]) -> int:
     return 0
 
 
-
 def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
     """Live refreshing terminal dashboard. Ctrl+C to exit."""
     import time
@@ -1490,6 +1504,7 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
             return ""
         try:
             from datetime import datetime, timezone
+
             started = _parse_iso(started_at_iso)
             elapsed = (datetime.now(timezone.utc) - started).total_seconds()
             remaining = float(predicted_sec) - elapsed
@@ -1505,20 +1520,25 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
             "LEFT JOIN runs r ON r.project=t.project AND r.task_id=t.task_id AND r.status='running' "
             "WHERE t.status='running'"
         ).fetchall()
-        queued_n = conn.execute("SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','stopped') AND enabled=1").fetchone()["n"]
-        counts = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()}
+        queued_n = conn.execute(
+            "SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','stopped') AND enabled=1"
+        ).fetchone()["n"]
+        counts = {
+            r["status"]: r["n"]
+            for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()
+        }
         ts = time.strftime("%H:%M:%S")
         lines = [
             f"\033[1m tq watch\033[0m  {ts}   "
             f"running: \033[32m{len(running)}\033[0m  queued: {queued_n}  "
-            f"completed: {counts.get('completed',0)}  failed: \033[31m{counts.get('failed',0)}\033[0m",
+            f"completed: {counts.get('completed', 0)}  failed: \033[31m{counts.get('failed', 0)}\033[0m",
             "─" * 78,
         ]
         if not running:
             lines.append("  (no tasks running)")
         for row in running:
             res = json.loads(row["resources"] or "{}")
-            res_str = f"cpu={res.get('cpu_cores',1)} ram={res.get('ram_gib',0):.0f}G"
+            res_str = f"cpu={res.get('cpu_cores', 1)} ram={res.get('ram_gib', 0):.0f}G"
             desc = (row["description"] or "")[:50]
             eta = _eta_str(row["predicted_duration_sec"], row["started_at"])
             lines.append(f"  \033[32m●\033[0m {row['project']}/{row['task_id']}  {res_str}  {desc}{eta}")
@@ -1532,7 +1552,7 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
             for row in queued[:5]:
                 lines.append(f"    {row['project']}/{row['task_id']}")
             if queued_n > 5:
-                lines.append(f"    … and {queued_n-5} more")
+                lines.append(f"    … and {queued_n - 5} more")
         return "\n".join(lines)
 
     try:
@@ -1547,8 +1567,13 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
                 "LEFT JOIN runs r ON r.project=t.project AND r.task_id=t.task_id AND r.status='running' "
                 "WHERE t.status='running'"
             ).fetchall()
-            queued_n = conn.execute("SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','stopped') AND enabled=1").fetchone()["n"]
-            counts = {r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()}
+            queued_n = conn.execute(
+                "SELECT COUNT(*) AS n FROM tasks WHERE status IN ('queued','stopped') AND enabled=1"
+            ).fetchone()["n"]
+            counts = {
+                r["status"]: r["n"]
+                for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()
+            }
             tbl = Table(title=f"tq watch  {time.strftime('%H:%M:%S')}", expand=True, header_style="bold")
             tbl.add_column("Status", width=9)
             tbl.add_column("Task", min_width=30)
@@ -1556,7 +1581,7 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
             tbl.add_column("Description")
             for row in running:
                 res = json.loads(row["resources"] or "{}")
-                res_str = f"cpu={res.get('cpu_cores',1)} ram={res.get('ram_gib',0):.0f}G"
+                res_str = f"cpu={res.get('cpu_cores', 1)} ram={res.get('ram_gib', 0):.0f}G"
                 eta = _eta_str(row["predicted_duration_sec"], row["started_at"])
                 desc = ((row["description"] or "")[:58] + eta) if eta else (row["description"] or "")[:60]
                 tbl.add_row("[green]running[/green]", f"{row['project']}/{row['task_id']}", res_str, desc)
@@ -1567,11 +1592,16 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
             ).fetchall()
             for row in queued_rows:
                 res = json.loads(row["resources"] or "{}")
-                res_str = f"cpu={res.get('cpu_cores',1)} ram={res.get('ram_gib',0):.0f}G"
-                tbl.add_row("[yellow]queued[/yellow]", f"{row['project']}/{row['task_id']}", res_str, (row["description"] or "")[:60])
+                res_str = f"cpu={res.get('cpu_cores', 1)} ram={res.get('ram_gib', 0):.0f}G"
+                tbl.add_row(
+                    "[yellow]queued[/yellow]",
+                    f"{row['project']}/{row['task_id']}",
+                    res_str,
+                    (row["description"] or "")[:60],
+                )
             footer = (
                 f"running={len(running)}  queued={queued_n}  "
-                f"completed={counts.get('completed',0)}  failed={counts.get('failed',0)}"
+                f"completed={counts.get('completed', 0)}  failed={counts.get('failed', 0)}"
             )
             return Panel(tbl, subtitle=footer)
 
@@ -1606,7 +1636,6 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
     return 0
 
 
-
 def cmd_group(home: Path, action: str, project: str, group_name: str) -> int:
     """W6.2: Group-level ops (list, stop, retry)."""
     from taskqueue.db import open_db, request_stop_with_control, retry_task
@@ -1615,6 +1644,11 @@ def cmd_group(home: Path, action: str, project: str, group_name: str) -> int:
     if not db_path.exists():
         print("No queue DB.")
         return 1
+    if action in ("stop", "retry"):
+        block = offline_sqlite_write_blocked(home)
+        if block:
+            print(f"[ERROR] {block}", file=sys.stderr)
+            return EXIT_UNREACHABLE
     conn = open_db(db_path)
     rows = conn.execute(
         "SELECT project, task_id, status FROM tasks WHERE project = ? AND grp = ?",
@@ -1647,7 +1681,6 @@ def cmd_group(home: Path, action: str, project: str, group_name: str) -> int:
         return 1
     conn.close()
     return 0
-
 
 
 def cmd_wait(
@@ -1689,8 +1722,11 @@ def cmd_wait(
         print("Nothing to wait for (selectors matched no unfinished tasks).", file=sys.stderr)
         return 0
     result = wait_for(
-        lambda: open_db(db_path, migrate=False), resolved, mode=mode,
-        timeout_sec=timeout_sec, poll_sec=poll_sec,
+        lambda: open_db(db_path, migrate=False),
+        resolved,
+        mode=mode,
+        timeout_sec=timeout_sec,
+        poll_sec=poll_sec,
     )
     if as_json:
         emit_json(result)

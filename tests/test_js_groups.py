@@ -1,4 +1,5 @@
 """Behavior tests for views/groups.js (Groups tab + queue group chips) under the Node DOM stub."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -41,8 +42,8 @@ console.log('RESULT:' + JSON.stringify(r));
     # per row: view, stop, retry failed, restart all
     assert out["calls"][0] == ["viewGroupInQueue", "", "p2"]
     assert [c[0] for c in out["calls"][:4]] == ["viewGroupInQueue", "groupStop", "groupRetry", "groupRetry"]
-    assert out["calls"][1][2:] == ["", "p2"]          # bulk ops scoped to the ungrouped row's project
-    assert out["calls"][3][2:] == ["", True, "p2"]    # restart all = includeCompleted
+    assert out["calls"][1][2:] == ["", "p2"]  # bulk ops scoped to the ungrouped row's project
+    assert out["calls"][3][2:] == ["", True, "p2"]  # restart all = includeCompleted
 
 
 def test_load_groups_empty_and_error_states():

@@ -15,14 +15,10 @@ def test_paused_project_skips_service_probe(monkeypatch):
         "filter_trust",
     ):
         monkeypatch.setattr(scheduler, name, ok)
-    monkeypatch.setattr(
-        scheduler, "filter_freeze_pause", lambda ctx: FilterResult.reject("paused", "tq.filter.paused")
-    )
+    monkeypatch.setattr(scheduler, "filter_freeze_pause", lambda ctx: FilterResult.reject("paused", "tq.filter.paused"))
     probed = []
     monkeypatch.setattr(scheduler, "filter_services", lambda ctx: probed.append(1) or FilterResult.accept())
 
-    res = scheduler.filter_task(
-        {}, SimpleNamespace(stable=True), SimpleNamespace(), cpu=1, ram=1, gpu=0
-    )
+    res = scheduler.filter_task({}, SimpleNamespace(stable=True), SimpleNamespace(), cpu=1, ram=1, gpu=0)
     assert not res.ok
     assert probed == []

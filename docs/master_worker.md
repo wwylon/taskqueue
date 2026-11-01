@@ -55,7 +55,7 @@ sequenceDiagram
 | `transfer` push | Before spawn: master → worker | Yes |
 | `transfer` pull | After exit: worker → master project root | Yes |
 | `data/` manifest | Before every remote task (mtime/size diff) | Yes |
-| Logs (`log-chunk`) | During run: every 5s or 100 lines | Yes (local writes direct to disk) |
+| Logs (`log-chunk`) | During run: ~1s / 50 lines / 256 KiB (batched ~2s) | Yes (local writes direct to disk) |
 
 Workers materialize code under `{home}/cache/code/<hash>/` and a writable copy under `{home}/runs/<run_id>/work`. Bundles **do not** unpack onto shared `project.root`.
 
@@ -63,7 +63,7 @@ Workers materialize code under `{home}/cache/code/<hash>/` and a writable copy u
 
 ## Logs
 
-- **During run:** incremental `POST /api/worker/log-chunk` appends to the master's log file. Each chunk carries a monotonic `seq`; a retried POST with an already-accepted `seq` is acknowledged (`duplicate: true`) without appending the text twice. CAS blob uploads (`/api/data/push/...`) with a body shorter than `Content-Length` are rejected (400) and nothing is stored.
+- **During run:** incremental `POST /api/worker/log-chunk` appends to the master's log file. Each chunk carries a monotonic `seq`; a retried POST with an already-accepted `seq` is acknowledged (`duplicate: true`) without appending the text twice. The worker retries failed chunks a few times (seq remains idempotent). CAS blob uploads (`/api/data/push/...`) with a body shorter than `Content-Length` are rejected (400) and nothing is stored.
 - **Not at finalize:** logs are not bulk-copied; only `transfer` pull and default `reports/` / `experiments/ledger/` uploads run post-exit.
 - **On demand:** `GET /api/logs/<run_id>`, SSE stream, `tq diagnose`, MCP `log_tail`.
 - **Limits:** tail reads capped at 8 MiB; log-chunk JSON body capped at 1 MiB; on-disk log files have no cap.

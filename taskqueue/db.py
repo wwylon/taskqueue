@@ -62,9 +62,9 @@ def record_resource_sample(
     the caller is then responsible for calling conn.commit() afterwards.
     """
     import time as _time
+
     conn.execute(
-        "INSERT INTO resource_history (run_id, ts, cpu_pct, ram_gib, vram_gib, gpu_util_pct) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO resource_history (run_id, ts, cpu_pct, ram_gib, vram_gib, gpu_util_pct) VALUES (?,?,?,?,?,?)",
         (run_id, int(_time.time()), cpu_pct, ram_gib, vram_gib, gpu_util_pct),
     )
     if commit:
@@ -98,12 +98,7 @@ def get_config(conn: sqlite3.Connection) -> dict[str, Any]:
     """Read config (prune of unknown keys happens in open_db / _seed_config only)."""
     now = time.monotonic()
     slot = getattr(_config_tls, "slot", None)
-    if (
-        slot is not None
-        and slot[0] is conn
-        and slot[1] == _config_gen
-        and now - slot[2] < _CONFIG_CACHE_TTL_SEC
-    ):
+    if slot is not None and slot[0] is conn and slot[1] == _config_gen and now - slot[2] < _CONFIG_CACHE_TTL_SEC:
         return slot[3]
     gen = _config_gen
     rows = conn.execute("SELECT key, value FROM config").fetchall()
@@ -240,9 +235,7 @@ def holds_master_lease(
         holder = _current_master_instance_id or socket.gethostname()
     if now is None:
         now = int(_time.time())
-    row = conn.execute(
-        "SELECT holder, expires_at FROM master_lease WHERE singleton=1"
-    ).fetchone()
+    row = conn.execute("SELECT holder, expires_at FROM master_lease WHERE singleton=1").fetchone()
     if row is None:
         return False
     try:
@@ -282,9 +275,7 @@ def set_project_frozen(conn: sqlite3.Connection, project: str, frozen: bool) -> 
 
 
 def is_project_frozen(conn: sqlite3.Connection, project: str) -> bool:
-    row = conn.execute(
-        "SELECT value FROM config WHERE key = ?", (_freeze_key(project),)
-    ).fetchone()
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (_freeze_key(project),)).fetchone()
     if row is None:
         return False
     try:
@@ -304,9 +295,7 @@ def set_project_paused(conn: sqlite3.Connection, project: str, paused: bool) -> 
 
 
 def is_project_paused(conn: sqlite3.Connection, project: str) -> bool:
-    row = conn.execute(
-        "SELECT value FROM config WHERE key = ?", (pause_key(project),)
-    ).fetchone()
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (pause_key(project),)).fetchone()
     if row is None:
         return False
     try:
@@ -367,7 +356,7 @@ def get_project_limits(conn: sqlite3.Connection, project: str) -> dict[str, floa
     ).fetchall()
     prefix = f"project_limit_{project}_"
     for r in rows:
-        field = r["key"][len(prefix):]
+        field = r["key"][len(prefix) :]
         if field in out:
             try:
                 out[field] = float(json.loads(r["value"]))
@@ -437,6 +426,8 @@ from taskqueue._db_tasks import (  # noqa: F401
     CAP_AUTO_RETRY_SEMANTICS,
     _upsert_task_no_commit,
 )
+
+
 def set_args_override(conn: sqlite3.Connection, project: str, task_id: str, args: list[str]) -> None:
     """R2: Write a one-shot arg override; cleared by runner after pickup."""
     conn.execute(
@@ -463,10 +454,7 @@ def check_arg_overrides(row: sqlite3.Row, override: list[str]) -> str | None:
     bad = sorted({t.split("=")[0] for t in override if t not in base and t.split("=")[0] not in allowed})
     if not bad:
         return None
-    return (
-        f"not in overridable_args: {', '.join(bad)}; "
-        f"allowed: {', '.join(sorted(allowed)) or '(none)'}"
-    )
+    return f"not in overridable_args: {', '.join(bad)}; allowed: {', '.join(sorted(allowed)) or '(none)'}"
 
 
 def clear_args_override(conn: sqlite3.Connection, project: str, task_id: str) -> None:
@@ -498,6 +486,7 @@ from taskqueue._db_runs import (  # noqa: F401
     count_recent_runs,
     get_run,
     get_runs_for_task,
+    count_runs_for_task,
     gpu_hours_today,
     get_last_run_for_task,
     get_last_runs_for_tasks,
@@ -522,12 +511,14 @@ DAEMON_EVENT_START = "start"
 DAEMON_EVENT_ORPHAN_REQUEUE = "orphan_requeue"
 DAEMON_EVENT_CLEAN_SHUTDOWN = "clean_shutdown"
 
-_DAEMON_EVENT_KINDS = frozenset({
-    DAEMON_EVENT_DIRTY_RESTART,
-    DAEMON_EVENT_START,
-    DAEMON_EVENT_ORPHAN_REQUEUE,
-    DAEMON_EVENT_CLEAN_SHUTDOWN,
-})
+_DAEMON_EVENT_KINDS = frozenset(
+    {
+        DAEMON_EVENT_DIRTY_RESTART,
+        DAEMON_EVENT_START,
+        DAEMON_EVENT_ORPHAN_REQUEUE,
+        DAEMON_EVENT_CLEAN_SHUTDOWN,
+    }
+)
 
 
 def insert_daemon_event(
@@ -544,8 +535,7 @@ def insert_daemon_event(
         raise ValueError(f"unknown daemon event kind: {kind!r}")
     detail_json = json.dumps(detail, ensure_ascii=False) if detail is not None else None
     cur = conn.execute(
-        "INSERT INTO daemon_events (ts, kind, pid, instance_id, epoch, detail_json) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO daemon_events (ts, kind, pid, instance_id, epoch, detail_json) VALUES (?, ?, ?, ?, ?, ?)",
         (_now(), kind, pid, instance_id, epoch, detail_json),
     )
     conn.commit()
@@ -562,15 +552,17 @@ def list_daemon_events(conn: sqlite3.Connection, *, limit: int = 20) -> list[dic
     ).fetchall()
     out: list[dict[str, Any]] = []
     for row in rows:
-        out.append({
-            "event_id": row["event_id"],
-            "ts": row["ts"],
-            "kind": row["kind"],
-            "pid": row["pid"],
-            "instance_id": row["instance_id"],
-            "epoch": row["epoch"],
-            "detail_json": row["detail_json"],
-        })
+        out.append(
+            {
+                "event_id": row["event_id"],
+                "ts": row["ts"],
+                "kind": row["kind"],
+                "pid": row["pid"],
+                "instance_id": row["instance_id"],
+                "epoch": row["epoch"],
+                "detail_json": row["detail_json"],
+            }
+        )
     return out
 
 

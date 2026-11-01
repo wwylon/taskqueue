@@ -1,4 +1,5 @@
 """TQ_METRIC samples: recorded per key, capped, kept out of run diffs."""
+
 from __future__ import annotations
 
 from taskqueue.log_issues import SERIES_MAX_KEYS, SERIES_MAX_POINTS, merge_metrics_payload, record_metric_samples
@@ -26,8 +27,10 @@ def test_run_diff_ignores_series(tmp_path):
 
     db = open_db(tmp_path / "q.db")
     for mj in ({"loss": 0.1, "_series": {"loss": [[1, 0.2]]}}, {"loss": 0.1, "_series": {"loss": [[5, 0.9]]}}):
-        db.execute("INSERT INTO runs (project, task_id, started_at, status, metrics_json) VALUES ('p','t','2026-01-01','completed',?)",
-                   (json.dumps(mj),))
+        db.execute(
+            "INSERT INTO runs (project, task_id, started_at, status, metrics_json) VALUES ('p','t','2026-01-01','completed',?)",
+            (json.dumps(mj),),
+        )
     db.commit()
     d = diff_runs(db, 1, 2)
     assert "metrics" not in d["changes"]

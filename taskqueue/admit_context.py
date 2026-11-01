@@ -3,6 +3,7 @@
 Both paths need frozen/paused/limits, service health, and resource estimates
 without re-querying the same project for every candidate row.
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable
@@ -22,9 +23,7 @@ class AdmitProjectCaches:
         self.est: dict[tuple[str, str], dict] = {}
         self.svc: dict[str, str | None] = {}
 
-    def project_state(
-        self, conn: Any, proj_name: str
-    ) -> tuple[bool, bool, dict]:
+    def project_state(self, conn: Any, proj_name: str) -> tuple[bool, bool, dict]:
         from taskqueue.db import (
             get_project_limits,
             is_project_frozen,
@@ -37,9 +36,7 @@ class AdmitProjectCaches:
         if proj_name not in self.paused:
             self.paused[proj_name] = is_project_paused(conn, proj_name)
         if proj_name not in self.limits:
-            self.limits[proj_name] = with_gpu_usage(
-                conn, proj_name, get_project_limits(conn, proj_name)
-            )
+            self.limits[proj_name] = with_gpu_usage(conn, proj_name, get_project_limits(conn, proj_name))
         return self.frozen[proj_name], self.paused[proj_name], self.limits[proj_name]
 
     def estimate(

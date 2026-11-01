@@ -61,6 +61,7 @@ def _two_projects(db):
 
 # --- the incident -----------------------------------------------------------------------------
 
+
 def test_restart_all_ungrouped_is_project_scoped(tmp_path: Path):
     handler, db = _setup(tmp_path)
     _two_projects(db)
@@ -86,6 +87,7 @@ def test_ungrouped_bulk_without_project_is_rejected(tmp_path: Path):
 
 
 # --- restart-all needs an explicit confirmation count ------------------------------------------
+
 
 def test_restart_all_requires_matching_confirm(tmp_path: Path):
     handler, db = _setup(tmp_path)
@@ -114,6 +116,7 @@ def test_dry_run_reports_counts_and_changes_nothing(tmp_path: Path):
 
 # --- retry-failed must not include completed; flag parsing -------------------------------------
 
+
 def test_retry_failed_default_excludes_completed(tmp_path: Path):
     handler, db = _setup(tmp_path)
     _two_projects(db)
@@ -133,6 +136,7 @@ def test_completed_zero_is_not_truthy(tmp_path: Path):
 
 
 # --- named groups, suites, batch ----------------------------------------------------------------
+
 
 def test_named_group_with_slash_is_urldecoded_and_scoped(tmp_path: Path):
     handler, db = _setup(tmp_path)
@@ -168,6 +172,7 @@ def test_retry_batch_default_excludes_completed(tmp_path: Path):
 
 
 # --- groups listing: ungrouped is per project so the UI can scope its buttons -------------------
+
 
 def test_groups_listing_splits_ungrouped_per_project(tmp_path: Path):
     handler, db = _setup(tmp_path)

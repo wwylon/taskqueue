@@ -1,4 +1,5 @@
 """Last run's progress is returned and shown for failed / interrupted / partially-run queued tasks."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,8 +20,8 @@ from tests.test_health import _task
         ("failed", 73.3, 73.3),
         ("failed", 100.0, 100.0),
         ("interrupted", 12.0, 12.0),
-        ("queued", 55.0, 55.0),     # resume point of a partial run
-        ("queued", 100.0, None),    # leftover from an earlier finished run
+        ("queued", 55.0, 55.0),  # resume point of a partial run
+        ("queued", 100.0, None),  # leftover from an earlier finished run
         ("queued", 0.0, None),
         ("completed", 84.0, None),  # done means done
         ("failed", None, None),

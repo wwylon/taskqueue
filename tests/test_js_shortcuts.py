@@ -1,4 +1,5 @@
 """Behavior tests for components/shortcuts.js (shortcut overlay, queue-row navigation, global key handler)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -18,7 +19,8 @@ def _js(body: str) -> str:
 
 
 def test_shortcuts_overlay_toggle_header_mark_and_typing_target():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const sc = doc.add('tq-shortcuts'); sc.hidden = true;
 const q = doc.getElementById('queue'); q.classList.remove('active');
 r.inactive = g.tqQueueActive();
@@ -35,7 +37,8 @@ g.tqSyncHeaderMark();
 r.helpKey = [btn.attrs ? 1 : 1, btn.title];
 q.classList.add('active'); g.tqSyncHeaderMark(); r.queueKey = btn.title;
 r.typing = [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }, { tagName: 'DIV', isContentEditable: true }, { tagName: 'DIV' }, null].map(e => !!g.tqTypingTarget(e));
-"""))
+""")
+    )
     assert out["inactive"] is False and out["active"] is True
     assert out["shown"] is False and out["closed"] is True and out["markOnQueue"] is False
     assert out["markElsewhere"] == [1, False]
@@ -44,7 +47,8 @@ r.typing = [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { tagName: 'SELECT' }
 
 
 def test_move_queue_row_clamps_and_highlights_and_highlighted_task_resolves():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const tb = doc.getElementById('queue-tbody');
 const rows = ['a', 'b', 'c'].map(id => { const tr = doc.createElement('tr'); tr.setAttribute('data-project', 'p'); tr.setAttribute('data-task', id); tr.scrollIntoView = () => {}; tb.appendChild(tr); return tr; });
 g.tqMoveQueueRow(1);
@@ -62,7 +66,8 @@ S.kbdTaskKey = null; r.none = g.tqHighlightedTask();
 S.kbdTaskKey = 'nosep'; r.bad = g.tqHighlightedTask();
 rows.forEach(t => t.parentNode && tb.children.splice(0, tb.children.length));
 S.kbdTaskKey = 'keep'; g.tqMoveQueueRow(1); r.noRows = S.kbdTaskKey;
-"""))
+""")
+    )
     assert out["first"] == ["p\0a", [True, False, False]]
     assert out["clamp"] == ["p\0c", [False, False, True]]
     assert out["up"] == "p\0b" and out["fromEnd"] == "p\0c"
@@ -70,7 +75,8 @@ S.kbdTaskKey = 'keep'; g.tqMoveQueueRow(1); r.noRows = S.kbdTaskKey;
 
 
 def test_escape_closes_the_topmost_layer_first():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const help = doc.add('tq-help-modal'); help.style.display = 'flex';
 const gen = doc.getElementById('gen-modal') || doc.add('gen-modal');
 const sc = doc.add('tq-shortcuts'); sc.hidden = false;
@@ -90,14 +96,16 @@ key('Escape'); r.shortcuts = [sc.hidden, closed.length];
 key('Escape'); key('Escape');
 r.rest = closed.slice();
 key('Escape'); r.last = closed.slice();
-"""))
+""")
+    )
     assert out["helpFirst"] == ["help"] and out["genModal"] == ["help"]
     assert out["shortcuts"] == [True, 1]
     assert out["rest"] == ["help", "drawer", "log"] and out["last"] == ["help", "drawer", "log", "selection"]
 
 
 def test_question_slash_and_queue_letter_keys():
-    out = run_js(_js("""
+    out = run_js(
+        _js("""
 const input = { tagName: 'INPUT' };
 const sc = doc.add('tq-shortcuts'); sc.hidden = true;
 const q = doc.getElementById('queue'); q.classList.add('active');
@@ -135,7 +143,8 @@ key('s'); await g.flush(); r.stop = [posts.slice(), toasts.pop()];
 g._postJson = async () => { throw new Error('nope'); };
 S.kbdTaskKey = 'p\\0c'; key('r'); await g.flush(); r.err = toasts.pop();
 S.kbdTaskKey = null; r.noHighlight = key('r').prevented;
-"""))
+""")
+    )
     assert out["typingIgnored"] is False and out["questionToggled"] is False and out["questionHelp"] == 1
     assert out["slash"][0] is True and out["history"] == [1, out["slash"][1]]
     assert out["letters"] == ["alltrue"]

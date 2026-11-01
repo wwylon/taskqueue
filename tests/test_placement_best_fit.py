@@ -116,12 +116,22 @@ def test_select_skips_when_peer_better():
     from taskqueue.scheduler import FilterContext, filter_task
 
     tight = Node(
-        node_id="tight", os="windows", arch="x86_64", ram_gib=16, ram_used_gib=8,
-        cpu_cores=8, projects=["proj"],
+        node_id="tight",
+        os="windows",
+        arch="x86_64",
+        ram_gib=16,
+        ram_used_gib=8,
+        cpu_cores=8,
+        projects=["proj"],
     )
     roomy = Node(
-        node_id="roomy", os="windows", arch="x86_64", ram_gib=32, ram_used_gib=0,
-        cpu_cores=8, projects=["proj"],
+        node_id="roomy",
+        os="windows",
+        arch="x86_64",
+        ram_gib=32,
+        ram_used_gib=0,
+        cpu_cores=8,
+        projects=["proj"],
     )
 
     def ctx_for(_row):
@@ -262,14 +272,10 @@ def test_prefer_last_worker_tie_break():
     a = Node(node_id="a", ram_gib=16, ram_used_gib=0, cpu_cores=8, projects=["proj"])
     b = Node(node_id="b", ram_gib=16, ram_used_gib=0, cpu_cores=8, projects=["proj"])
     # Equal scores; preferred is b → a should defer
-    ok, better = claiming_worker_is_best_fit(
-        a, ram=4.0, gpu=0.0, peer_nodes=[b], preferred_node_id="b"
-    )
+    ok, better = claiming_worker_is_best_fit(a, ram=4.0, gpu=0.0, peer_nodes=[b], preferred_node_id="b")
     assert not ok and better is not None and better.node_id == "b"
     # Claiming preferred → ok
-    ok2, _ = claiming_worker_is_best_fit(
-        b, ram=4.0, gpu=0.0, peer_nodes=[a], preferred_node_id="b"
-    )
+    ok2, _ = claiming_worker_is_best_fit(b, ram=4.0, gpu=0.0, peer_nodes=[a], preferred_node_id="b")
     assert ok2
 
 

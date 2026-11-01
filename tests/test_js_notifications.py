@@ -1,4 +1,5 @@
 """Behavior tests for components/notifications.js (bell badge, panel, alert toasts, alert detail html)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -8,8 +9,12 @@ EVENTS = [
     {"ts": "2026-01-01T10:00:00Z", "project": "p", "task_id": "a", "status": "completed"},
     {"ts": "2026-01-01T11:00:00Z", "project": "p", "task_id": "b", "status": "failed", "last_error_code": "tq.x"},
     {
-        "ts": "2026-01-01T12:00:00Z", "project": "p", "task_id": "c", "status": "alert:any_failure",
-        "description": "boom <b>", "detail": {"title": "Failure", "project": "p", "task_id": "c", "exit_code": 2, "log_tail": ["l1", "l2"]},
+        "ts": "2026-01-01T12:00:00Z",
+        "project": "p",
+        "task_id": "c",
+        "status": "alert:any_failure",
+        "description": "boom <b>",
+        "detail": {"title": "Failure", "project": "p", "task_id": "c", "exit_code": 2, "log_tail": ["l1", "l2"]},
     },
 ]
 

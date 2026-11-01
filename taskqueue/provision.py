@@ -23,11 +23,13 @@ PROVIDER_GIT_PATCH = "git_patch"
 PROVIDER_BUNDLE = "bundle"
 PROVIDER_PROJECT_ROOT = "project_root"
 
-VALID_CODE_PROVIDERS = frozenset({
-    PROVIDER_GIT_PATCH,
-    PROVIDER_BUNDLE,
-    PROVIDER_PROJECT_ROOT,
-})
+VALID_CODE_PROVIDERS = frozenset(
+    {
+        PROVIDER_GIT_PATCH,
+        PROVIDER_BUNDLE,
+        PROVIDER_PROJECT_ROOT,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -83,13 +85,15 @@ def compute_package_hash(
     provider: str = PROVIDER_GIT_PATCH,
 ) -> str:
     """Stable ExecutionPackageID (gpt.md §15). Same inputs → same hash on master and worker."""
-    payload = "\0".join([
-        provider,
-        commit or "",
-        patch_hash or "",
-        env_hash or "",
-        bundle_hash or "",
-    ]).encode("utf-8")
+    payload = "\0".join(
+        [
+            provider,
+            commit or "",
+            patch_hash or "",
+            env_hash or "",
+            bundle_hash or "",
+        ]
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -212,9 +216,7 @@ def capture_git_package(project_root: Path, *, project: str, home: Path) -> Code
             "paths": dirty,
             "patch_hash": patch_hash,
         }
-        (packages_dir(home, project) / f"{patch_hash}.json").write_text(
-            json.dumps(meta, indent=2), encoding="utf-8"
-        )
+        (packages_dir(home, project) / f"{patch_hash}.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     pkg_hash = compute_package_hash(
         provider=PROVIDER_GIT_PATCH,
         commit=commit,
@@ -274,8 +276,7 @@ def materialize_git_package(
     if r.returncode != 0:
         shutil.rmtree(cache, ignore_errors=True)
         raise FileNotFoundError(
-            f"commit {package.commit} not present in {git_root}; "
-            "sync/pull the project on the worker first"
+            f"commit {package.commit} not present in {git_root}; sync/pull the project on the worker first"
         )
 
     with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as tmp:
@@ -341,9 +342,7 @@ def resolve_code_provider(
     if raw_provider:
         p = str(raw_provider).strip().lower()
         if p not in VALID_CODE_PROVIDERS:
-            raise ValueError(
-                f"code.provider must be one of {sorted(VALID_CODE_PROVIDERS)}, got {raw_provider!r}"
-            )
+            raise ValueError(f"code.provider must be one of {sorted(VALID_CODE_PROVIDERS)}, got {raw_provider!r}")
         return p
     if project_root is not None and is_git_repo(project_root):
         return PROVIDER_GIT_PATCH
@@ -389,6 +388,7 @@ def gc_orphan_packages(home: Path, db_path: Path) -> int:
             pass
 
     import time as _time
+
     _now = _time.time()
     _min_age_sec = 300.0  # E7: skip packages newer than 5 min (may be mid-capture)
 

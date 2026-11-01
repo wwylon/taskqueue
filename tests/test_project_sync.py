@@ -1,4 +1,5 @@
 """Allowlisted project file sync helpers."""
+
 from __future__ import annotations
 
 import os

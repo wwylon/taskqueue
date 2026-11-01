@@ -1,4 +1,5 @@
 """Round 11 Wave C: row_resources, admit SELECT projection, tick order doc contract."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,8 +46,6 @@ def test_daemon_tick_phase_order_documented() -> None:
     """Authoritative ordering assertions live in tests/test_daemon_tick.py."""
     from pathlib import Path
 
-    doc = (Path(__file__).resolve().parents[1] / "docs" / "scheduler.md").read_text(
-        encoding="utf-8"
-    )
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "scheduler.md").read_text(encoding="utf-8")
     assert "Actual order in `daemon_tick`" in doc
     assert "Cancel deps / scavenger / Admit" in doc

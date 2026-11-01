@@ -1,4 +1,5 @@
 """Shared imports for Handler mixins (avoids circular imports with package __init__)."""
+
 from __future__ import annotations
 
 import hashlib

@@ -6,6 +6,17 @@ import { projColor } from '../util/projcolor.js';
 import { S } from '../core/state.js';
 import { escHtml } from '../util/format.js';
 
+/** Structural + status key so polls do not rebuild the SVG (and reset pan/zoom) when unchanged. */
+let _depsSig = '';
+
+function _depsStructureSig(data) {
+  const nodes = data.nodes || [];
+  const edges = data.edges || [];
+  const n = nodes.map(x => `${x.id}\t${x.status || ''}\t${x.priority || ''}`).join('|');
+  const e = edges.map(x => `${x.from}>${x.to}:${x.health || ''}:${x.transfer ? x.direction || 't' : ''}`).join('|');
+  return `${data.truncated ? 1 : 0}:${data.total_nodes || 0};${n}#${e}`;
+}
+
 export async function loadDeps() {
   const allProjectsEl = document.getElementById('deps-all-projects');
   // If a specific project is selected globally and the checkbox hasn't been explicitly checked, filter by it.
@@ -49,6 +60,11 @@ export async function loadDeps() {
       data.nodes = (data.nodes || []).concat(Object.values(fileNodes));
       data.edges = (data.edges || []).concat(extraEdges);
     }
+    const sig = _depsStructureSig(data);
+    if (sig === _depsSig && document.getElementById('dag-svg')?.querySelector('.dag-node')) {
+      return true;  // keep pan/zoom; nothing structural/status changed
+    }
+    _depsSig = sig;
     renderDag(data);
   } catch(e) {
     const svg = document.getElementById('dag-svg');
@@ -71,7 +87,7 @@ export function _dagScaleLabel(scale) {
 export function _dagResetView() {
   _dagUserMoved = false;
   _dagView = {x: 0, y: 0, scale: 1};
-  // Re-render re-applies auto-fit on fresh view state
+  _depsSig = '';  // force rebuild so auto-fit runs
   loadDeps();
 }
 

@@ -1,4 +1,5 @@
 """Behavior tests for GET /api/logs/<id>/stream (connection cap, cleanup, content)."""
+
 from __future__ import annotations
 
 from pathlib import Path

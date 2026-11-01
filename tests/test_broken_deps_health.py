@@ -115,9 +115,7 @@ def test_cmd_health_and_attention(tmp_path: Path) -> None:
     _seed(db, "p", "broken", depends_on=["ghost"])
     _seed(db, "p", "bad", status="failed")
     _seed(db, "p", "off", status="disabled", enabled=0)
-    db.execute(
-        "UPDATE tasks SET last_error_code='tq.run.nonzero' WHERE task_id='bad'"
-    )
+    db.execute("UPDATE tasks SET last_error_code='tq.run.nonzero' WHERE task_id='bad'")
     db.commit()
     db.close()
 

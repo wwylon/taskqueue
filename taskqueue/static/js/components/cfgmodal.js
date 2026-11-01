@@ -7,23 +7,29 @@ import { showToast } from './modals.js';
 // ---- Config modal ----
 
 export async function openCfg() {
-  document.getElementById('cfg-cpu').value = S.cfg.cpu_limit_pct || 50;
-  document.getElementById('cfg-gpu').value = S.cfg.gpu_limit_pct || 100;
-  document.getElementById('cfg-ram').value = S.cfg.ram_limit_pct || 80;
-  document.getElementById('cfg-stop').value = S.cfg.graceful_stop_sec || 30;
-  document.getElementById('cfg-frozen').value = S.cfg.frozen_threshold_sec || 600;
-  document.getElementById('cfg-max-tasks').value = S.cfg.max_running_tasks || 0;
+  const numOr = (v, d) => (v === 0 || v === '0') ? 0 : (v || d);
+  document.getElementById('cfg-cpu').value = numOr(S.cfg.cpu_limit_pct, 50);
+  document.getElementById('cfg-gpu').value = numOr(S.cfg.gpu_limit_pct, 100);
+  document.getElementById('cfg-ram').value = numOr(S.cfg.ram_limit_pct, 80);
+  document.getElementById('cfg-stop').value = numOr(S.cfg.graceful_stop_sec, 30);
+  document.getElementById('cfg-frozen').value = numOr(S.cfg.frozen_threshold_sec, 600);
+  document.getElementById('cfg-max-tasks').value = numOr(S.cfg.max_running_tasks, 0);
   document.getElementById('cfg-limit-policy').value = S.cfg.limit_decrease_policy || 'ignore';
-  document.getElementById('cfg-max-cpu').value = S.cfg.max_cpu_cores || 0;
-  document.getElementById('cfg-max-ram').value = S.cfg.max_ram_gib || 0;
-  document.getElementById('cfg-vram-cap').value = S.cfg.gpu_vram_limit_gib || 0;
+  document.getElementById('cfg-max-cpu').value = numOr(S.cfg.max_cpu_cores, 0);
+  document.getElementById('cfg-max-ram').value = numOr(S.cfg.max_ram_gib, 0);
+  document.getElementById('cfg-vram-cap').value = numOr(S.cfg.gpu_vram_limit_gib, 0);
 
-  // Build per-project limits table
+  // Build per-project limits table — F-207: refuse save defaults if GET fails.
   let projLimits = {};
+  let projLimitsOk = false;
   try {
     const r = await fetch('/api/project-limits');
-    projLimits = await r.json();
+    if (r.ok) {
+      projLimits = await r.json();
+      projLimitsOk = true;
+    }
   } catch(e) {}
+  window.__tqCfgProjLimitsOk = projLimitsOk;
   const projects = S.status && S.status.projects ? S.status.projects : [];
   const container = document.getElementById('cfg-project-limits');
   if (projects.length === 0) {
@@ -95,14 +101,21 @@ export async function saveCfg() {
       max_ram_gib: +document.getElementById('cfg-max-ram').value,
       gpu_vram_limit_gib: +document.getElementById('cfg-vram-cap').value,
     });
-    await Promise.all(Object.entries(byProj).map(([proj, limits]) =>
-      _postJson(`/api/project-limits/${encodeURIComponent(proj)}`, limits)
-    ));
+    if (window.__tqCfgProjLimitsOk && Object.keys(byProj).length) {
+      await Promise.all(Object.entries(byProj).map(([proj, limits]) =>
+        _postJson(`/api/project-limits/${encodeURIComponent(proj)}`, limits)
+      ));
+    }
   } catch (e) {
     openAlert(String(e.message || e), i18n.t('config.title'));
     return;
   }
-  closeCfg(); refresh();
+  closeCfg();
+  // Prefer window.refresh so tests can stub it; never fail the save if refresh errors.
+  try {
+    const rfn = typeof window !== 'undefined' ? window.refresh : null;
+    if (typeof rfn === 'function') await rfn();
+  } catch (_) {}
 }
 
 export async function _sendJson(method, url, body) {

@@ -49,9 +49,7 @@ def test_gpu_refresh_interval_backoff() -> None:
 
 
 def test_probe_gpus_timeout(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "taskqueue.resources.resolve_nvidia_smi", lambda: r"C:\fake\nvidia-smi.exe"
-    )
+    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: r"C:\fake\nvidia-smi.exe")
 
     def _timeout(*_a, **_k):
         raise subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=5)
@@ -140,9 +138,7 @@ def test_empty_devices_kept_during_grace() -> None:
         "gpu_vram_total_gib": 0.0,
         "gpu_name": None,
     }
-    out, new_good, unhealthy = apply_gpu_last_good(
-        live, _last_good(now=100.0), now=110.0, empty_grace_sec=300.0
-    )
+    out, new_good, unhealthy = apply_gpu_last_good(live, _last_good(now=100.0), now=110.0, empty_grace_sec=300.0)
     assert unhealthy is True
     assert new_good is not None
     assert out["gpu_vram_total_gib"] == 8.0
@@ -157,9 +153,7 @@ def test_empty_devices_accepted_after_grace() -> None:
         "gpu_vram_total_gib": 0.0,
         "gpu_name": None,
     }
-    out, new_good, unhealthy = apply_gpu_last_good(
-        live, _last_good(now=100.0), now=500.0, empty_grace_sec=300.0
-    )
+    out, new_good, unhealthy = apply_gpu_last_good(live, _last_good(now=100.0), now=500.0, empty_grace_sec=300.0)
     assert unhealthy is False
     assert new_good is None
     assert out["gpu_vram_total_gib"] == 0.0
@@ -339,9 +333,7 @@ def test_vram_shortfall_still_service_vram(monkeypatch) -> None:
 
 def test_service_vram_uses_smi_free_when_fresh(monkeypatch) -> None:
     """Gate + message follow nvidia-smi free, not Ollama total−resident accounting."""
-    body = json.dumps(
-        {"models": [{"name": "llama3.2:latest", "size_vram": int(2.4 * 1024**3)}]}
-    ).encode()
+    body = json.dumps({"models": [{"name": "llama3.2:latest", "size_vram": int(2.4 * 1024**3)}]}).encode()
 
     def _urlopen(req, timeout=None):
         if "/api/ps" in _url_of(req):

@@ -8,11 +8,20 @@ import { trackLogSse } from './logview.js';
 export function applyLogSearch(preId, query, currentIdx) {
   const pre = document.getElementById(preId);
   if (!pre) return;
+  const countEl = document.getElementById('log-search-count-' + preId);
+  // F-176: idle (empty query) — do not tear down/rebuild the whole <pre>.
+  if (!query) {
+    if (pre._logSearchActive) {
+      pre.querySelectorAll('.log-search-hl').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
+      pre.normalize();
+      pre._logSearchActive = false;
+    }
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  pre._logSearchActive = true;
   pre.querySelectorAll('.log-search-hl').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
   pre.normalize();
-
-  const countEl = document.getElementById('log-search-count-' + preId);
-  if (!query) { if (countEl) countEl.textContent = ''; return; }
 
   const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
   const matches = [];
@@ -133,22 +142,18 @@ export function logTailText(text, maxLines) {
 
 // ---- History log toggles (state in S.expandedLogs; _fetchLog is still an app.js global) ----
 export async function toggleHistoryLog(runId, rowId, isRunning) {
-  // W3.2: panel-scoped key
+  // W3.2: panel-scoped key. Expand rows are mounted only when open (history.js).
   const key = `h:${runId}`;
-  const row = document.getElementById(rowId);
-  if (!row) return;
+  const rerender = () => { try { if (typeof window.renderHistory === 'function') window.renderHistory(); } catch (_) {} };
   if (S.expandedLogs[key]) {
     delete S.expandedLogs[key];
-    row.classList.remove('open');
-    const btn = document.getElementById(`h-logbtn-${runId}`);
-    if (btn) btn.textContent = i18n.t('btn.log');
+    rerender();
     return;
   }
   S.expandedLogs[key] = { content: '', isRunning };
-  row.classList.add('open');
-  const btn = document.getElementById(`h-logbtn-${runId}`);
-  if (btn) btn.textContent = i18n.t('btn.hideLog');
-  row.scrollIntoView({ block: 'nearest' });
+  rerender();
+  const row = document.getElementById(rowId);
+  if (row) row.scrollIntoView({ block: 'nearest' });
   await _fetchLog(runId, `h-log-pre-${runId}`);
 }
 

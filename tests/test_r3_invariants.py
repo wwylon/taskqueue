@@ -37,6 +37,7 @@ def _write_task_yaml(queue_dir: Path, task_id: str, *, suffix: str = ".yaml") ->
 # F-058
 # ---------------------------------------------------------------------------
 
+
 def test_same_host_daemons_do_not_share_lease_identity(tmp_path: Path) -> None:
     db = open_db(tmp_path / "q.db")
     ok1 = _cas_master_lease(db, "host:100:uuid-a", ttl=90)
@@ -58,6 +59,7 @@ def test_lease_renew_fails_for_other_incarnation(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # F-060 / F-061
 # ---------------------------------------------------------------------------
+
 
 def test_sync_at_cap_preserves_existing_tasks(tmp_path: Path) -> None:
     proj = _project(tmp_path)
@@ -107,6 +109,7 @@ def test_iter_queue_files_includes_yml(tmp_path: Path) -> None:
 # F-059
 # ---------------------------------------------------------------------------
 
+
 def _insert_remote_task(db, project: str, task_id: str) -> None:
     now = datetime.now(UTC).isoformat()
     res = json.dumps({"cpu_cores": 1, "ram_gib": 0.0, "gpu_vram_gib": 0.0})
@@ -128,9 +131,7 @@ def _insert_worker(db, worker_id: str, projects: list[str]):
         (worker_id, json.dumps(projects), now),
     )
     db.commit()
-    return db.execute(
-        "SELECT * FROM workers WHERE worker_id = ?", (worker_id,)
-    ).fetchone()
+    return db.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
 
 
 def test_two_workers_cannot_exceed_global_cap(tmp_path: Path, monkeypatch) -> None:
@@ -145,6 +146,7 @@ def test_two_workers_cannot_exceed_global_cap(tmp_path: Path, monkeypatch) -> No
 
     barrier = threading.Barrier(2)
     import taskqueue.db as dbmod
+
     real_open = dbmod.open_write_conn
 
     def gated_open(*args, **kwargs):
@@ -167,15 +169,14 @@ def test_two_workers_cannot_exceed_global_cap(tmp_path: Path, monkeypatch) -> No
 
     claimed = sum(1 for r in results if r and r.get("task") is not None)
     assert claimed == 1, results
-    running = db.execute(
-        "SELECT COUNT(*) AS n FROM tasks WHERE status='running'"
-    ).fetchone()["n"]
+    running = db.execute("SELECT COUNT(*) AS n FROM tasks WHERE status='running'").fetchone()["n"]
     assert running == 1
 
 
 # ---------------------------------------------------------------------------
 # F-063
 # ---------------------------------------------------------------------------
+
 
 def test_remote_override_consumed_in_claim_transaction(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
@@ -192,9 +193,7 @@ def test_remote_override_consumed_in_claim_transaction(tmp_path: Path) -> None:
     assert response["task"] is not None
     assert response["task"]["args"] == ["new"]
 
-    row = db.execute(
-        "SELECT args, args_override FROM tasks WHERE project='proj' AND task_id='t'"
-    ).fetchone()
+    row = db.execute("SELECT args, args_override FROM tasks WHERE project='proj' AND task_id='t'").fetchone()
     assert json.loads(row["args"]) == ["new"]
     assert row["args_override"] is None
 
@@ -202,6 +201,7 @@ def test_remote_override_consumed_in_claim_transaction(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # F-062
 # ---------------------------------------------------------------------------
+
 
 def test_nonloopback_standby_requires_auth(tmp_path: Path) -> None:
     from taskqueue.db import set_config
@@ -216,6 +216,7 @@ def test_nonloopback_standby_requires_auth(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # F-067 (smoke: kwargs present on the worker spawn path)
 # ---------------------------------------------------------------------------
+
 
 def test_worker_popen_uses_utf8_encoding(tmp_path: Path) -> None:
     """A child printing bytes the Windows code page cannot map is read as UTF-8 with replacement."""
@@ -248,8 +249,7 @@ def test_run_summary_counts_runs(tmp_path: Path) -> None:
     assert run_summary(db, "p", "t")["run_number"] == 0
     for i in (1, 2):
         db.execute(
-            "INSERT INTO runs (project, task_id, started_at, finished_at, status) "
-            "VALUES ('p','t',?,?,'completed')",
+            "INSERT INTO runs (project, task_id, started_at, finished_at, status) VALUES ('p','t',?,?,'completed')",
             (f"2026-01-0{i}T00:00:00+00:00", f"2026-01-0{i}T00:01:00+00:00"),
         )
     db.commit()
@@ -271,9 +271,7 @@ def test_remote_malformed_override_is_cleared_not_wedged(tmp_path: Path) -> None
 
     claim_next_remote_task(db_path, worker, lambda: {})
 
-    row = db.execute(
-        "SELECT args_override FROM tasks WHERE project='proj' AND task_id='t'"
-    ).fetchone()
+    row = db.execute("SELECT args_override FROM tasks WHERE project='proj' AND task_id='t'").fetchone()
     assert row["args_override"] is None
 
 

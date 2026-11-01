@@ -88,9 +88,7 @@ def test_migrate_priority_invert_db_and_yaml(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (home / "projects.yaml").write_text(
-        "projects:\n"
-        f"  p:\n"
-        f"    root: {root}\n",
+        f"projects:\n  p:\n    root: {root}\n",
         encoding="utf-8",
     )
     db = open_db(home / "queue.db")
@@ -107,9 +105,7 @@ def test_migrate_priority_invert_db_and_yaml(tmp_path: Path) -> None:
     assert applied["ok"] and not applied["dry_run"]
 
     db = open_db(home / "queue.db")
-    row = db.execute(
-        "SELECT priority FROM tasks WHERE project='p' AND task_id='t1'"
-    ).fetchone()
+    row = db.execute("SELECT priority FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
     assert int(row["priority"]) == 60
     assert "priority: 60" in yml.read_text(encoding="utf-8")
 

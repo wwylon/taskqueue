@@ -56,9 +56,7 @@ def export_home(
     dest.parent.mkdir(parents=True, exist_ok=True)
 
     if not allow_running_daemon and _daemon_pid_alive(home):
-        raise RuntimeError(
-            "daemon is running; stop it before export (or pass allow_running_daemon)"
-        )
+        raise RuntimeError("daemon is running; stop it before export (or pass allow_running_daemon)")
 
     db = home / "queue.db"
     registry = home / "projects.yaml"
@@ -111,14 +109,10 @@ def import_home(
     # holds the file open leaves existing connections on the old inode and
     # corrupts the new DB with stale WAL frames. --force does not bypass this.
     if _daemon_pid_alive(home):
-        raise RuntimeError(
-            "daemon is running — stop it first (tq stop) before importing"
-        )
+        raise RuntimeError("daemon is running — stop it first (tq stop) before importing")
     db = home / "queue.db"
     if db.is_file() and not force:
-        raise FileExistsError(
-            f"{db} exists; stop the daemon and re-run with --force to overwrite"
-        )
+        raise FileExistsError(f"{db} exists; stop the daemon and re-run with --force to overwrite")
 
     with tempfile.TemporaryDirectory(prefix="tq-import-") as tmp:
         tmp_path = Path(tmp)
@@ -143,6 +137,7 @@ def import_home(
         if db.is_file():
             # --force replaces a live history: keep a consistent copy to roll back to.
             import sqlite3
+
             bak = home / "queue.db.pre-import.bak"
             src_c = sqlite3.connect(str(db))
             try:

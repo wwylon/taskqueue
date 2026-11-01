@@ -21,16 +21,15 @@ from taskqueue.resources import ResourceBudget, cpu_cores_from_load
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _budget(*, used: float, total: float = 64.0, soft: int = 80, hard: int = 95,
-            gpu_total: float = 0.0, gpu_used: float = 0.0) -> ResourceBudget:
+
+def _budget(
+    *, used: float, total: float = 64.0, soft: int = 80, hard: int = 95, gpu_total: float = 0.0, gpu_used: float = 0.0
+) -> ResourceBudget:
     system = {
         "cpu_total_cores": 16,
         "ram_total_gib": total,
         "gpu_vram_total_gib": gpu_total,
-        "gpus": (
-            [{"index": 0, "vram_gib": gpu_total, "vram_used_gib": gpu_used}]
-            if gpu_total else []
-        ),
+        "gpus": ([{"index": 0, "vram_gib": gpu_total, "vram_used_gib": gpu_used}] if gpu_total else []),
     }
     cfg = {
         "cpu_limit_pct": 100,
@@ -53,9 +52,17 @@ def _mk_task(conn, project: str, task_id: str, *, priority: int = 50) -> None:
     conn.commit()
 
 
-def _mk_run(conn, project: str, task_id: str, *, ram: float, vram: float = 0.0,
-            est_ram: float | None = None, est_vram: float | None = None,
-            status: str = "completed") -> int:
+def _mk_run(
+    conn,
+    project: str,
+    task_id: str,
+    *,
+    ram: float,
+    vram: float = 0.0,
+    est_ram: float | None = None,
+    est_vram: float | None = None,
+    status: str = "completed",
+) -> int:
     now = datetime.now(UTC).isoformat()
     cur = conn.execute(
         "INSERT INTO runs (project, task_id, started_at, finished_at, status, "
@@ -70,6 +77,7 @@ def _mk_run(conn, project: str, task_id: str, *, ram: float, vram: float = 0.0,
 # ---------------------------------------------------------------------------
 # P6: reservation + backfill
 # ---------------------------------------------------------------------------
+
 
 def test_reservation_pre_holds_top_task_headroom(tmp_path: Path) -> None:
     """A large top-priority task holds its estimate; a small task can only start
@@ -116,6 +124,7 @@ def test_reservation_state_tracks_ticks() -> None:
 # ---------------------------------------------------------------------------
 # P7: CPU cores from load
 # ---------------------------------------------------------------------------
+
 
 def test_cpu_cores_from_load_returns_nonnegative() -> None:
     """cpu_cores_from_load() must never return a negative number."""
@@ -179,7 +188,14 @@ def test_host_cpu_gate_records_block_reason_without_starting(tmp_path: Path) -> 
     }
     reason = "admission skipped (CPU): live load 19.1 cores > limit 18.7"
     _local_admit_queued(
-        conn, tmp_path, projects, {}, system, cfg, 30, False,
+        conn,
+        tmp_path,
+        projects,
+        {},
+        system,
+        cfg,
+        30,
+        False,
         host_cpu_blocked=True,
         host_cpu_reason=reason,
     )
@@ -191,6 +207,7 @@ def test_host_cpu_gate_records_block_reason_without_starting(tmp_path: Path) -> 
 # ---------------------------------------------------------------------------
 # P8: VRAM pressure response
 # ---------------------------------------------------------------------------
+
 
 def test_vram_budget_fits_respects_hard_limit() -> None:
     """With a full card, a new task requiring any VRAM must be refused."""
@@ -206,13 +223,21 @@ def test_vram_pressure_victim_picked_for_relief() -> None:
 
     # Task A: 6 GiB VRAM, idempotent, 10% progress
     score_a = score_victim(
-        freed_gib=6.0, needed_gib=3.0, progress_pct=10, priority=50,
-        elapsed_sec=60, restartability=1.0,
+        freed_gib=6.0,
+        needed_gib=3.0,
+        progress_pct=10,
+        priority=50,
+        elapsed_sec=60,
+        restartability=1.0,
     )
     # Task B: 1 GiB VRAM, not restartable, 80% progress
     score_b = score_victim(
-        freed_gib=1.0, needed_gib=3.0, progress_pct=80, priority=50,
-        elapsed_sec=3600, restartability=0.0,
+        freed_gib=1.0,
+        needed_gib=3.0,
+        progress_pct=80,
+        priority=50,
+        elapsed_sec=3600,
+        restartability=0.0,
     )
     # Task A should have a lower (cheaper to kill) score because it provides much more relief.
     assert score_a < score_b, "high-VRAM idempotent task should be cheaper to kill"
@@ -221,6 +246,7 @@ def test_vram_pressure_victim_picked_for_relief() -> None:
 # ---------------------------------------------------------------------------
 # P9: Estimate telemetry in runs table
 # ---------------------------------------------------------------------------
+
 
 def test_estimated_columns_exist_in_runs_schema(tmp_path: Path) -> None:
     """open_db must create estimated_ram_gib and estimated_vram_gib columns."""
@@ -247,9 +273,9 @@ def test_estimate_accuracy_ratio(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "q.db")
     _mk_task(conn, "p", "t1")
     # Create runs with known over/under ratios
-    _mk_run(conn, "p", "t1", ram=4.0, est_ram=2.0)   # ratio 2.0x (over)
-    _mk_run(conn, "p", "t1", ram=1.0, est_ram=2.0)   # ratio 0.5x (under)
-    _mk_run(conn, "p", "t1", ram=2.0, est_ram=2.0)   # ratio 1.0x (accurate)
+    _mk_run(conn, "p", "t1", ram=4.0, est_ram=2.0)  # ratio 2.0x (over)
+    _mk_run(conn, "p", "t1", ram=1.0, est_ram=2.0)  # ratio 0.5x (under)
+    _mk_run(conn, "p", "t1", ram=2.0, est_ram=2.0)  # ratio 1.0x (accurate)
 
     rows = conn.execute(
         "SELECT estimated_ram_gib, peak_ram_gib FROM runs "

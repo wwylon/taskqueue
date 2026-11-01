@@ -1,4 +1,5 @@
 """Behavior tests for views/deps.js (Dependencies DAG tab) running under the Node DOM stub."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -42,7 +43,12 @@ r.click = svg.querySelectorAll('.dag-node').find(n => n.getAttribute('data-id') 
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["withFiles"] == ["p/a", "p/b", "p/c", "file::D:/data/in.csv"] or set(out["withFiles"]) == {"p/a", "p/b", "p/c", "file::D:/data/in.csv"}
+    assert out["withFiles"] == ["p/a", "p/b", "p/c", "file::D:/data/in.csv"] or set(out["withFiles"]) == {
+        "p/a",
+        "p/b",
+        "p/c",
+        "file::D:/data/in.csv",
+    }
     assert out["transferEdges"] == 1
     assert out["hasCb"]
     assert out["filtered"] == ["p/a", "p/b"] or set(out["filtered"]) == {"p/a", "p/b"}

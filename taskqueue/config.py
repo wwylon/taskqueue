@@ -60,7 +60,7 @@ VALID_CONFIG_KEYS = {
     "frozen_threshold_sec": (int, 60, 3600),
     "web_port": (int, 1024, 65535),
     # Slice H publish
-    "bind_host": (str, 1, 253),       # length bounds
+    "bind_host": (str, 1, 253),  # length bounds
     "auth_token": (str, 0, 256),
     "prevent_sleep": (int, 0, 1),
     "suspend_grace_sec": (int, 0, 600),
@@ -156,10 +156,7 @@ def validate_config(key: str, val: any) -> str | None:
             return "bind_host must be non-empty (e.g. 127.0.0.1 or 0.0.0.0)"
     allowed = _ENUM_CONFIG.get(key)
     if allowed is not None and parsed not in allowed:
-        return (
-            f"Value {parsed!r} for '{key}' must be one of "
-            f"{', '.join(sorted(allowed))}"
-        )
+        return f"Value {parsed!r} for '{key}' must be one of {', '.join(sorted(allowed))}"
     return None
 
 

@@ -4,10 +4,11 @@ from __future__ import annotations
 from taskqueue._time import parse_iso as _parse_iso
 
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 # Peers that cannot satisfy depends_on (UI paints these as dead; admission blocks).
-DEAD_DEP_STATUSES = frozenset({"failed", "stopped", "interrupted", "disabled", "cancelled"})
+from taskqueue.statuses import CANCEL_TRIGGER_STATUSES, DEAD_DEP_STATUSES  # noqa: F401
 
 
 from taskqueue.deprefs import resolve_dep_ref, row_dep_refs  # noqa: E402,F401
@@ -66,8 +67,7 @@ def find_broken_deps(
     if not collect_disabled:
         # Rows without dependencies can never be broken; skip parsing them (most of a big queue).
         where.append(
-            "(COALESCE(depends_on, '[]') NOT IN ('', '[]') "
-            "OR COALESCE(depends_on_any, '[]') NOT IN ('', '[]'))"
+            "(COALESCE(depends_on, '[]') NOT IN ('', '[]') OR COALESCE(depends_on_any, '[]') NOT IN ('', '[]'))"
         )
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -113,12 +113,14 @@ def find_broken_deps(
                 dead.extend(or_dead)
 
         if missing or dead:
-            out.append({
-                "project": owner,
-                "task_id": str(row["task_id"]),
-                "missing": missing,
-                "dead": dead,
-            })
+            out.append(
+                {
+                    "project": owner,
+                    "task_id": str(row["task_id"]),
+                    "missing": missing,
+                    "dead": dead,
+                }
+            )
 
     if collect_disabled:
         disabled_out: list[dict[str, Any]] = [
@@ -161,9 +163,7 @@ def tasks_cached(conn: sqlite3.Connection, name: str, project: str | None, compu
     return result
 
 
-def find_broken_deps_cached(
-    conn: sqlite3.Connection, *, project: str | None = None
-) -> list[dict[str, Any]]:
+def find_broken_deps_cached(conn: sqlite3.Connection, *, project: str | None = None) -> list[dict[str, Any]]:
     """``find_broken_deps`` memoised on a cheap tasks fingerprint (row count + newest updated_at).
 
     The dashboard asks for this on every refresh; it is O(all tasks), while the fingerprint is an
@@ -188,10 +188,8 @@ def find_broken_deps_cached(
     return result
 
 
-# Dependency states that trigger ``on_dependency_failure: cancel``. Deliberately
-# narrower than DEAD_DEP_STATUSES: ``stopped``/``interrupted`` are auto-restartable
-# and ``disabled`` is an operator action, so none of them should destroy a chain.
-CANCEL_TRIGGER_STATUSES = frozenset({"failed", "cancelled"})
+# CANCEL_TRIGGER_STATUSES: imported from statuses (F-201). Keep cascade narrow —
+# ``stopped``/``interrupted`` are auto-restartable and must not destroy a chain.
 
 
 def cancel_dead_dependents(
@@ -253,8 +251,12 @@ def cancel_dead_dependents(
         if not cur.rowcount:
             continue
         set_task_error(
-            conn, owner, r["task_id"], tqerr.DEP_CANCELLED,
-            block_reason=f"cancelled: dependency failed — {culprit}", commit=False,
+            conn,
+            owner,
+            r["task_id"],
+            tqerr.DEP_CANCELLED,
+            block_reason=f"cancelled: dependency failed — {culprit}",
+            commit=False,
         )
         cancelled.append((owner, str(r["task_id"])))
     conn.commit()
@@ -265,15 +267,26 @@ def cancel_dead_dependents(
         _cfg["toast_notifications"] = False  # no desktop toast per cascaded cancel
         for proj, tid in cancelled:
             emit_task_notify(
-                home, project=proj, task_id=tid, status="cancelled", run_id=None,
-                exit_code=None, last_error_code=tqerr.DEP_CANCELLED,
-                notify_url=None, started_by=None, cfg=_cfg,
+                home,
+                project=proj,
+                task_id=tid,
+                status="cancelled",
+                run_id=None,
+                exit_code=None,
+                last_error_code=tqerr.DEP_CANCELLED,
+                notify_url=None,
+                started_by=None,
+                cfg=_cfg,
                 block_reason="cancelled: dependency failed",
             )
     return cancelled
 
 
-def cancel_negative_dependents(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+def cancel_negative_dependents(
+    conn: sqlite3.Connection,
+    home: Path | None = None,
+    cfg: dict | None = None,
+) -> list[tuple[str, str]]:
     """Cancel queued ``on_dependency_negative: cancel`` tasks whose dependency peer(s) completed with a
     negative result (``tq.run.negative``). Default ``run`` lets dependents run, as for any completion.
 
@@ -287,15 +300,34 @@ def cancel_negative_dependents(conn: sqlite3.Connection) -> list[tuple[str, str]
         "SELECT project, task_id, depends_on, depends_on_any FROM tasks "
         "WHERE status = 'queued' AND enabled = 1 AND on_dependency_negative = 'cancel'"
     ).fetchall()
+    # F-205: one batched status fetch instead of N+1 per dependency peer.
+    needed: set[tuple[str, str]] = set()
+    for r in rows:
+        owner = str(r["project"])
+        for col in ("depends_on", "depends_on_any"):
+            needed.update((dp, di) for dp, di, _ in row_dep_refs(r, col, owner))
+    peer_map: dict[tuple[str, str], tuple[str, str | None]] = {}
+    if needed:
+        for i in range(0, len(list(needed)), _CHUNK):
+            chunk = list(needed)[i : i + _CHUNK]
+            ph = ",".join("(?, ?)" for _ in chunk)
+            flat = [v for pair in chunk for v in pair]
+            for dep in conn.execute(
+                f"SELECT project, task_id, status, last_error_code FROM tasks "
+                f"WHERE (project, task_id) IN ({ph})",
+                flat,
+            ):
+                peer_map[(str(dep["project"]), str(dep["task_id"]))] = (
+                    str(dep["status"]),
+                    dep["last_error_code"],
+                )
     cancelled: list[tuple[str, str]] = []
     for r in rows:
         owner = str(r["project"])
         culprit = ""
         for dp, di, label in row_dep_refs(r, "depends_on", owner):
-            dep = conn.execute(
-                "SELECT status, last_error_code FROM tasks WHERE project = ? AND task_id = ?", (dp, di)
-            ).fetchone()
-            if dep is not None and dep["status"] == "completed" and dep["last_error_code"] == tqerr.RUN_NEGATIVE:
+            st, code = peer_map.get((dp, di), (None, None))
+            if st == "completed" and code == tqerr.RUN_NEGATIVE:
                 culprit = label
                 break
         if not culprit:
@@ -303,15 +335,8 @@ def cancel_negative_dependents(conn: sqlite3.Connection) -> list[tuple[str, str]
             if any_refs:
                 dead: list[str] = []
                 for dp, di, label in any_refs:
-                    dep = conn.execute(
-                        "SELECT status, last_error_code FROM tasks WHERE project = ? AND task_id = ?",
-                        (dp, di),
-                    ).fetchone()
-                    if (
-                        dep is None
-                        or dep["status"] != "completed"
-                        or dep["last_error_code"] != tqerr.RUN_NEGATIVE
-                    ):
+                    st, code = peer_map.get((dp, di), (None, None))
+                    if st != "completed" or code != tqerr.RUN_NEGATIVE:
                         dead = []
                         break
                     dead.append(label)
@@ -326,10 +351,36 @@ def cancel_negative_dependents(conn: sqlite3.Connection) -> list[tuple[str, str]
             (now, now, owner, r["task_id"]),
         )
         if cur.rowcount:
-            set_task_error(conn, owner, r["task_id"], tqerr.DEP_NEGATIVE,
-                           block_reason=f"cancelled: dependency {culprit} ended negative", commit=False)
+            set_task_error(
+                conn,
+                owner,
+                r["task_id"],
+                tqerr.DEP_NEGATIVE,
+                block_reason=f"cancelled: dependency {culprit} ended negative",
+                commit=False,
+            )
             cancelled.append((owner, str(r["task_id"])))
     conn.commit()
+    # F-199: every terminal event must hit notify.jsonl (parity with cancel_dead).
+    if home is not None and cancelled:
+        from taskqueue.notify import emit_task_notify
+
+        _cfg = dict(cfg or {})
+        _cfg["toast_notifications"] = False
+        for proj, tid in cancelled:
+            emit_task_notify(
+                home,
+                project=proj,
+                task_id=tid,
+                status="cancelled",
+                run_id=None,
+                exit_code=None,
+                last_error_code=tqerr.DEP_NEGATIVE,
+                notify_url=None,
+                started_by=None,
+                cfg=_cfg,
+                block_reason="cancelled: dependency ended negative",
+            )
     return cancelled
 
 
@@ -361,10 +412,7 @@ def list_disabled(
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     """Disabled tasks (status=disabled)."""
-    sql = (
-        "SELECT project, task_id, status, enabled, updated_at "
-        "FROM tasks WHERE status = 'disabled'"
-    )
+    sql = "SELECT project, task_id, status, enabled, updated_at FROM tasks WHERE status = 'disabled'"
     params: list[Any] = []
     if project:
         sql += " AND project = ?"
@@ -430,6 +478,7 @@ def list_attention(
     sql += " ORDER BY t.updated_at DESC LIMIT ?"
     params.append(limit)
     from datetime import datetime, timezone
+
     _now = datetime.now(timezone.utc)
     items: list[dict[str, Any]] = []
     for row in conn.execute(sql, params).fetchall():
@@ -523,9 +572,7 @@ def list_operator_projects(conn: sqlite3.Connection, *, operator: str) -> list[s
     if not op:
         return []
     rows = conn.execute(
-        "SELECT DISTINCT project FROM tasks "
-        "WHERE started_by = ? OR submitted_by = ? "
-        "ORDER BY project",
+        "SELECT DISTINCT project FROM tasks WHERE started_by = ? OR submitted_by = ? ORDER BY project",
         (op, op),
     ).fetchall()
     return [str(r[0]) for r in rows if r[0]]

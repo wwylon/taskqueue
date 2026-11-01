@@ -1,13 +1,16 @@
 """Worker and capacity CLI commands — extracted from cli.py."""
+
 from __future__ import annotations
 import os
 import sys
 from pathlib import Path
 from taskqueue._cli_helpers import _db
 
+
 def cmd_capacity(home: Path) -> None:
     from taskqueue.capacity import build_capacity
     from taskqueue.db import open_db
+
     db = open_db(_db(home))
     cap = build_capacity(db)
     db.close()
@@ -29,7 +32,6 @@ def cmd_capacity(home: Path) -> None:
         print(f"  {r['project']}/{r['task_id']} cpu={r['cpu_cores']} gpu={r['gpu_vram_gib']}")
 
 
-
 def cmd_worker_list(home: Path) -> int:
     from taskqueue.db import open_db
 
@@ -47,26 +49,30 @@ def cmd_worker_list(home: Path) -> int:
 
     from taskqueue import __version__ as _mv
     from taskqueue.db import SCHEMA_VERSION as _ms
-    print(f"{'Worker ID':<20} {'OS':<10} {'Arch':<10} {'RAM':<8} {'Cores':<6} {'VRAM':<8} {'Status':<10} {'Version':<18} {'Last Seen':<20}")
+
+    print(
+        f"{'Worker ID':<20} {'OS':<10} {'Arch':<10} {'RAM':<8} {'Cores':<6} {'VRAM':<8} {'Status':<10} {'Version':<18} {'Last Seen':<20}"
+    )
     print("-" * 110)
     for w in workers:
-        ver = w['version'] or '—'
-        ws = w['schema_version']
-        mismatch = ''
-        if w['version']:
+        ver = w["version"] or "—"
+        ws = w["schema_version"]
+        mismatch = ""
+        if w["version"]:
             try:
-                wt = tuple(int(x) for x in w['version'].split('.')[:3])
-                mt = tuple(int(x) for x in _mv.split('.')[:3])
+                wt = tuple(int(x) for x in w["version"].split(".")[:3])
+                mt = tuple(int(x) for x in _mv.split(".")[:3])
                 if wt < mt:
-                    mismatch = ' !'
+                    mismatch = " !"
             except Exception:
                 pass
         if ws is not None and int(ws) < _ms:
-            mismatch = ' !!'
+            mismatch = " !!"
         ver_str = f"{ver} (s{ws or '?'}){mismatch}"
-        print(f"{w['worker_id']:<20} {w['os']:<10} {w['arch']:<10} {w['ram_gib']:<8.1f} {w['cpu_cores']:<6} {w['gpu_vram_gib']:<8.1f} {w['status']:<10} {ver_str:<18} {w['last_seen'][:19]}")
+        print(
+            f"{w['worker_id']:<20} {w['os']:<10} {w['arch']:<10} {w['ram_gib']:<8.1f} {w['cpu_cores']:<6} {w['gpu_vram_gib']:<8.1f} {w['status']:<10} {ver_str:<18} {w['last_seen'][:19]}"
+        )
     return 0
-
 
 
 def cmd_worker_sync(home: Path, worker_id: str, *, master_url: str | None = None, auth_token: str | None = None) -> int:
@@ -91,7 +97,6 @@ def cmd_worker_sync(home: Path, worker_id: str, *, master_url: str | None = None
         return 1
 
 
-
 def cmd_worker_start(
     home: Path,
     master_url: str,
@@ -100,8 +105,8 @@ def cmd_worker_start(
     auth_token: str | None = None,
 ) -> None:
     from taskqueue.worker import run_worker
-    run_worker(home, master_url, worker_id, auth_token=auth_token)
 
+    run_worker(home, master_url, worker_id, auth_token=auth_token)
 
 
 def cmd_worker_setup(
@@ -112,6 +117,7 @@ def cmd_worker_setup(
     auth_token: str | None = None,
 ) -> None:
     from taskqueue.worker import setup_worker
+
     setup_worker(home, master_url, worker_id, auth_token=auth_token)
 
 
@@ -159,9 +165,7 @@ def cmd_worker_config_master(
         )
 
     master_url = f"http://{host}:{web_port}"
-    payload = build_join_payload(
-        home, master_url=master_url, auth_token=auth_token, remote_only=remote_only
-    )
+    payload = build_join_payload(home, master_url=master_url, auth_token=auth_token, remote_only=remote_only)
     out_path = out or (home / "worker-join.yaml")
     write_join_file(out_path, payload)
     print(f"Wrote join file: {out_path}")
@@ -202,7 +206,6 @@ def cmd_worker_setup_from_join(
     return 0
 
 
-
 def cmd_worker_remove(home: Path, worker_id: str) -> int:
     from taskqueue.db import open_db
 
@@ -220,6 +223,90 @@ def cmd_worker_remove(home: Path, worker_id: str) -> int:
     print(f"Deregistered worker '{worker_id}' from coordinator database.")
     return 0
 
+
+def cmd_worker_outbox(home: Path, *, clear_quarantine: bool = False) -> int:
+    """F-206: list (and optionally clear) pending / quarantined finalize outbox."""
+    from taskqueue.worker_outbox import pending_finalize_dir
+
+    d = pending_finalize_dir(home)
+    pending = sorted(d.glob("*.json")) if d.is_dir() else []
+    qdir = d / "quarantine"
+    quarantined = sorted(qdir.glob("*.json")) if qdir.is_dir() else []
+    print(f"pending finalize: {len(pending)}")
+    for p in pending:
+        print(f"  {p.name}")
+    print(f"quarantined: {len(quarantined)}")
+    for p in quarantined:
+        print(f"  {p.name}")
+    if clear_quarantine and quarantined:
+        for p in quarantined:
+            p.unlink(missing_ok=True)
+            (qdir / f"{p.stem}.reason.json").unlink(missing_ok=True)
+        print(f"cleared {len(quarantined)} quarantined file(s).")
+    return 0
+
+
+def cmd_worker_doctor(home: Path, *, master_url: str | None = None) -> int:
+    """I5 / F-206: local worker diagnostics (reachability, outbox, config)."""
+    import os
+    import urllib.request
+
+    from taskqueue.config import load_projects
+    from taskqueue.worker import _load_worker_conf
+    from taskqueue.worker_outbox import pending_finalize_dir
+
+    errors = 0
+    pin, token = _load_worker_conf(home)
+    print(f"home: {home}")
+    print(f"pin_worker_version: {pin!r}")
+    print(f"worker_token: {'set' if token else 'missing'}")
+    conf_path = home / "worker.yaml"
+    print(f"worker.yaml: {'present' if conf_path.is_file() else 'missing'}")
+    url = (master_url or os.environ.get("TQ_MASTER") or "").rstrip("/")
+    if not url and conf_path.is_file():
+        try:
+            import yaml
+
+            conf = yaml.safe_load(conf_path.read_text(encoding="utf-8")) or {}
+            url = str(conf.get("master_url") or "").rstrip("/")
+        except Exception as exc:
+            print(f"worker.yaml parse error: {exc}")
+            errors += 1
+    print(f"master_url: {url or '(none)'}")
+    if url:
+        try:
+            req = urllib.request.Request(f"{url}/api/status", method="GET")
+            if token:
+                req.add_header("Authorization", f"Bearer {token}")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                print(f"master reachability: OK HTTP {resp.status}")
+        except Exception as exc:
+            print(f"master reachability: FAIL ({exc})")
+            errors += 1
+    projects = load_projects(home)
+    print(f"projects.yaml entries: {len(projects)}")
+    for name, proj in projects.items():
+        root = getattr(proj, "root", None)
+        ok = root is not None and Path(root).is_dir()
+        print(f"  {name}: root={'ok' if ok else 'MISSING'} ({root})")
+        if not ok:
+            errors += 1
+    d = pending_finalize_dir(home)
+    pending = list(d.glob("*.json")) if d.is_dir() else []
+    q = list((d / "quarantine").glob("*.json")) if (d / "quarantine").is_dir() else []
+    print(f"outbox pending={len(pending)} quarantined={len(q)}")
+    if pending:
+        errors += 1
+    try:
+        import shutil
+
+        print(f"nvidia-smi: {'yes' if shutil.which('nvidia-smi') else 'no'}")
+        print(f"git: {'yes' if shutil.which('git') else 'no'}")
+        print(f"uv: {'yes' if shutil.which('uv') else 'no'}")
+    except Exception:
+        pass
+    print("doctor: " + ("FAIL" if errors else "OK"))
+    return 1 if errors else 0
 
 
 def cmd_worker_build_wheel(home: Path) -> int:
@@ -289,11 +376,11 @@ def cmd_fair_share(home: Path) -> int:
         print("No queue DB.")
         return 1
     import time
+
     conn = open_db(db)
     # F-047: use correct column names (gpu_seconds / cpu_seconds, not gpu_seconds_consumed)
     rows = conn.execute(
-        "SELECT project, gpu_seconds, cpu_seconds, updated_at "
-        "FROM project_usage ORDER BY gpu_seconds DESC"
+        "SELECT project, gpu_seconds, cpu_seconds, updated_at FROM project_usage ORDER BY gpu_seconds DESC"
     ).fetchall()
     conn.close()
     if not rows:
@@ -307,11 +394,11 @@ def cmd_fair_share(home: Path) -> int:
         cpu_h = float(r["cpu_seconds"]) / 3600.0
         age = now - int(r["updated_at"] or 0)
         if age < 3600:
-            when = f"{age//60}m ago"
+            when = f"{age // 60}m ago"
         elif age < 86400:
-            when = f"{age//3600}h ago"
+            when = f"{age // 3600}h ago"
         else:
-            when = f"{age//86400}d ago"
+            when = f"{age // 86400}d ago"
         print(f"  {r['project']:<28} {gpu_h:>10.2f} {cpu_h:>10.2f} {when:>20}")
     return 0
 
@@ -334,6 +421,7 @@ def cmd_worker_rotate_credential(
         return 1
     try:
         import yaml
+
         wconf = yaml.safe_load(worker_yaml_p.read_text(encoding="utf-8")) or {}
     except Exception as e:
         print(f"Failed to read worker.yaml: {e}", file=sys.stderr)
@@ -364,11 +452,16 @@ def cmd_worker_rotate_credential(
 
     token = auth_token or old_token or os.environ.get("TQ_AUTH_TOKEN", "")
     try:
-        result = post_json(master_url, "/api/worker/rotate-credential", {
-            "worker_id": worker_id,
-            "old_credential_hash": old_hash,
-            "new_credential_hash": new_hash,
-        }, token=token)
+        result = post_json(
+            master_url,
+            "/api/worker/rotate-credential",
+            {
+                "worker_id": worker_id,
+                "old_credential_hash": old_hash,
+                "new_credential_hash": new_hash,
+            },
+            token=token,
+        )
     except Exception as e:
         print(f"Failed to contact master: {e}", file=sys.stderr)
         return 1
@@ -378,6 +471,7 @@ def cmd_worker_rotate_credential(
     wconf["worker_token"] = new_token
     try:
         import yaml as _yaml2
+
         _tmp_yaml = worker_yaml_p.with_name(worker_yaml_p.name + ".tmp")
         _tmp_yaml.write_text(_yaml2.dump(wconf, default_flow_style=False), encoding="utf-8")
         os.replace(_tmp_yaml, worker_yaml_p)
@@ -421,5 +515,3 @@ def cmd_worker_set_trust(
         conn.close()
     print(f"Worker '{worker_id}' trust tier set to '{tier}'.")
     return 0
-
-

@@ -46,27 +46,29 @@ export async function toggleTaskHistory(project, taskId, rowId) {
 export async function _loadTaskRunHistoryHtml(project, taskId) {
   try {
     const [runsData, statsData] = await Promise.all([
-      fetch(`/api/tasks/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}/runs`).then(r => r.json()),
+      fetch(`/api/tasks/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}/runs?limit=20`).then(r => r.json()),
       fetch(`/api/task-stats?project=${encodeURIComponent(project)}&task_id=${encodeURIComponent(taskId)}`).then(r => r.json()).catch(() => ({ tasks: [] })),
     ]);
     const runs = runsData.runs || [];
+    const total = runsData.total != null ? runsData.total : runs.length;
     const stats = ((statsData.tasks || []).find(s => s.task_id === taskId && s.project === project))
       || (statsData.tasks || [])[0]
       || null;
-    return _renderTaskRunHistoryHtml(project, taskId, runs, stats);
+    return _renderTaskRunHistoryHtml(project, taskId, runs, stats, total);
   } catch (e) {
     return `<em style="color:#EF4444">Failed to load history: ${escHtml(String(e))}</em>`;
   }
 }
 
-export function _renderTaskRunHistoryHtml(project, taskId, runs, stats) {
+export function _renderTaskRunHistoryHtml(project, taskId, runs, stats, total) {
   const statsStrip = _taskStatsStripHtml(stats);
   if (!runs.length) {
     return `${statsStrip}<em style="color:var(--muted)">No runs recorded yet.</em>`;
   }
   const shown = runs.slice(0, 20);
-  const more = runs.length > 20
-    ? `<div style="font-size:10px;color:var(--muted);padding:4px 8px">Showing latest 20 of ${runs.length} runs.</div>`
+  const nTotal = total != null ? total : runs.length;
+  const more = nTotal > shown.length
+    ? `<div style="font-size:10px;color:var(--muted);padding:4px 8px">Showing latest ${shown.length} of ${nTotal} runs.</div>`
     : '';
   const statusColors = {running:'#3B82F6',completed:'#10B981',failed:'#EF4444',unknown:'#A855F7',interrupted:'#F59E0B',stopped:'#6B7280',queued:'#8B5CF6'};
   const rows = shown.map(r => {
@@ -193,9 +195,9 @@ export function _sseAppend(pre, html) {
   pre._logSig = null;
   pre._logNext = null; // DOM no longer mirrors _logRaw: next poll refetches the tail
   pre.insertAdjacentHTML('beforeend', html);
-  // Check size every 20 appends to amortise the textContent read cost.
+  // F-176: check size every 10 appends (stricter under flood); amortise textContent reads.
   pre._sseCount = (pre._sseCount || 0) + 1;
-  if (pre._sseCount % 20 !== 0) return;
+  if (pre._sseCount % 10 !== 0) return;
   if (pre.textContent.length <= _SSE_DOM_CAP) return;
   // Keep the tail: slice text to cap, align to next newline.
   const text = pre.textContent;

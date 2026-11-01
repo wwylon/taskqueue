@@ -1,4 +1,5 @@
 """8.1 HIGH: a post-spawn failure in ActiveRun.start must not leave an orphan child running."""
+
 from __future__ import annotations
 
 import sys
@@ -23,7 +24,9 @@ def test_failed_start_after_spawn_kills_child(tmp_path: Path, monkeypatch) -> No
     script.write_text("import time\ntime.sleep(60)\n", encoding="utf-8")
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({"task_id": "orphan", "command": sys.executable, "args": [str(script)], "resources": {"cpu_cores": 1}}),
+        yaml.dump(
+            {"task_id": "orphan", "command": sys.executable, "args": [str(script)], "resources": {"cpu_cores": 1}}
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))

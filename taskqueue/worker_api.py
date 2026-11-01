@@ -67,9 +67,7 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
         if provider == PROVIDER_GIT_PATCH:
             if proj_obj is None:
                 raise RuntimeError(f"project '{proj}' not loaded for git_patch capture")
-            pkg = capture_git_package(
-                proj_obj.root, project=proj, home=state_home()
-            )
+            pkg = capture_git_package(proj_obj.root, project=proj, home=state_home())
             code_package = pkg.to_dict()
             package_hash = pkg.package_hash
         elif provider == PROVIDER_BUNDLE:
@@ -78,6 +76,7 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
             env_h = ""
             if proj_obj is not None:
                 from taskqueue.provision import env_lock_hash
+
                 env_h = env_lock_hash(proj_obj.root)
             pkg = package_from_bundle(proj, str(bh), env_hash=env_h)
             code_package = pkg.to_dict()
@@ -86,6 +85,7 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
             raise RuntimeError(f"unsupported code provider {provider!r}")
     except Exception as exc:
         import sys as _sys
+
         print(
             f"[worker_api] code package capture failed for {proj}/{selected_task['task_id']}: {exc}",
             file=_sys.stderr,
@@ -94,7 +94,6 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
     if not code_package or not package_hash:
         raise RuntimeError(f"code package capture returned empty for provider {provider}")
     return code_package, package_hash
-
 
 
 def _svc_key(raw: str) -> str:
@@ -122,6 +121,7 @@ def _precheck_services(rdb: sqlite3.Connection, db_key: str, cfg: dict) -> dict[
     # Probe system once for VRAM headroom so service checks can skip slow Ollama probes.
     try:
         from taskqueue.resources import detect_system as _detect_sys
+
         system_info: dict | None = _detect_sys()
     except Exception:
         system_info = None
@@ -131,30 +131,37 @@ def _precheck_services(rdb: sqlite3.Connection, db_key: str, cfg: dict) -> dict[
         key = _svc_key(sv)
         if key not in out:
             # F-085: use F-078 TTL cache (was raw _check_services every claim).
-            out[key] = check_services_cached(
-                sv, allow_remote=allow_remote, system_info=system_info
-            )[0]
+            out[key] = check_services_cached(sv, allow_remote=allow_remote, system_info=system_info)[0]
     return out
 
 
 def _online_peer_nodes(rdb: sqlite3.Connection, cfg: dict) -> list:
     """Placement nodes for every online, healthy worker (with slot reservations)."""
     from taskqueue.db import worker_health
-    from taskqueue.scheduler import node_from_worker, worker_slot_reserved
+    from taskqueue.scheduler import node_from_worker, worker_slot_reserved_many
 
     heartbeat_sec = float(cfg.get("heartbeat_sec", 30))
     nodes = []
-    for wrow in rdb.execute("SELECT * FROM workers WHERE status = 'online'").fetchall():
+    workers = rdb.execute("SELECT * FROM workers WHERE status = 'online'").fetchall()
+    worker_ids = [str(row["worker_id"]) for row in workers]
+    reservations = worker_slot_reserved_many(rdb, worker_ids)
+    for wrow in workers:
         if worker_health(wrow["last_seen"], heartbeat_sec=heartbeat_sec) != "online":
             continue
-        rc, rr, rv = worker_slot_reserved(rdb, wrow["worker_id"])
+        rc, rr, rv = reservations.get(str(wrow["worker_id"]), (0.0, 0.0, 0.0))
         nodes.append(node_from_worker(wrow, reserved_cpu=rc, reserved_ram=rr, reserved_vram=rv))
     return nodes
 
 
 def _claim_response(
-    claimed_row_dict: dict, projects_ref: Callable[[], dict], proj: str, run_id: int,
-    log_p, use_resume: bool, lease_ttl: int, finalize_token: str,
+    claimed_row_dict: dict,
+    projects_ref: Callable[[], dict],
+    proj: str,
+    run_id: int,
+    log_p,
+    use_resume: bool,
+    lease_ttl: int,
+    finalize_token: str,
 ) -> dict:
     """Build the JSON response for a successful claim (task payload + run handles)."""
     from taskqueue.config import PROTOCOL_VERSION
@@ -163,9 +170,7 @@ def _claim_response(
     task_payload = _task_dict(claimed_row_dict)
     proj_obj = projects_ref().get(proj)
     if proj_obj is not None and isinstance(task_payload.get("requires_paths"), list):
-        task_payload["requires_paths"] = relativize_requires_paths(
-            task_payload["requires_paths"], proj_obj.root
-        )
+        task_payload["requires_paths"] = relativize_requires_paths(task_payload["requires_paths"], proj_obj.root)
     try:
         task_payload["args"] = json_list(claimed_row_dict.get("args"))
     except Exception:
@@ -190,15 +195,23 @@ def _maybe_gc_orphan_packages(db_path: Path) -> None:
         try:
             from taskqueue.provision import gc_orphan_packages
             from taskqueue.config import state_home
+
             gc_orphan_packages(state_home(), db_path)
         except Exception:
             pass
 
 
 def _insert_claimed_run(
-    wdb: sqlite3.Connection, db_path: Path, still_queued: Any, worker_fresh: Any, worker_id: str,
-    selected_proj: str, selected_tid: str, package_hash: str | None,
-    selected_ram: float, selected_gpu: float,
+    wdb: sqlite3.Connection,
+    db_path: Path,
+    still_queued: Any,
+    worker_fresh: Any,
+    worker_id: str,
+    selected_proj: str,
+    selected_tid: str,
+    package_hash: str | None,
+    selected_ram: float,
+    selected_gpu: float,
 ) -> tuple[int, str, Path, dict, int] | None:
     """Write pass inside the caller's BEGIN IMMEDIATE: insert the run, flip the task to running,
     bake a one-shot args_override (F-063). Returns (run_id, finalize_token, log_path, task dict, lease ttl),
@@ -216,6 +229,7 @@ def _insert_claimed_run(
     _lease_ttl = int(max(30, min(300, 4 * float(_p50)))) if _p50 else LEASE_TTL_SEC
     lease_exp = lease_expiry_iso(ttl_sec=_lease_ttl)
     import secrets as _secrets
+
     finalize_token = _secrets.token_hex(16)  # F-055: per-claim secret
     worker_session = None
     if "session_id" in worker_fresh.keys():
@@ -227,16 +241,25 @@ def _insert_claimed_run(
         "estimated_ram_gib, estimated_vram_gib) "
         "VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            selected_proj, selected_tid, started, str(log_p), worker_id, lease_exp,
-            finalize_token, worker_session, package_hash,
-            float(selected_ram), float(selected_gpu),
-        )
+            selected_proj,
+            selected_tid,
+            started,
+            str(log_p),
+            worker_id,
+            lease_exp,
+            finalize_token,
+            worker_session,
+            package_hash,
+            float(selected_ram),
+            float(selected_gpu),
+        ),
     )
     run_id = cur.lastrowid
 
     cur_claim = wdb.execute(
         "UPDATE tasks SET status = 'running', force_run = 0, "
-        "block_reason = NULL, last_error_code = NULL, last_run_id = ?, updated_at = ? "
+        "block_reason = NULL, last_error_code = NULL, last_run_id = ?, updated_at = ?, "
+        "total_run_count = COALESCE(total_run_count, 0) + 1 "
         "WHERE project = ? AND task_id = ? AND status = 'queued' AND enabled = 1",
         (run_id, started, selected_proj, selected_tid),
     )
@@ -251,8 +274,7 @@ def _insert_claimed_run(
         try:
             json.loads(raw_override)  # validate JSON
             wdb.execute(
-                "UPDATE tasks SET args = ?, args_override = NULL "
-                "WHERE project = ? AND task_id = ?",
+                "UPDATE tasks SET args = ?, args_override = NULL WHERE project = ? AND task_id = ?",
                 (raw_override, selected_proj, selected_tid),
             )
         except ValueError:
@@ -304,8 +326,13 @@ def _claim_next_remote_task(
     F-063: args_override is baked in the same transaction as the claim.
     """
     from taskqueue.db import (
-        failed_attempt_count, is_project_paused,
-        get_config, get_project_limits, is_project_frozen, open_write_conn, with_gpu_usage,
+        failed_attempt_count,
+        is_project_paused,
+        get_config,
+        get_project_limits,
+        is_project_frozen,
+        open_write_conn,
+        with_gpu_usage,
     )
     from taskqueue.estimate import estimate_task_resources
     from taskqueue.placement import (
@@ -329,6 +356,7 @@ def _claim_next_remote_task(
         worker_slot_reserved,
     )
     from taskqueue.resources import sort_queued_fairshare
+
     worker_id = worker["worker_id"]
 
     # F-002: pre-check services BEFORE acquiring write lock (see _precheck_services).
@@ -355,15 +383,14 @@ def _claim_next_remote_task(
             rdb,
             limit=CANDIDATE_WINDOW,
             statuses=("queued",),
-            status_map=_status_map_fn(rdb),
+            status_map=_status_map_fn(rdb, queued_raw),
             skip_projects=set(_blocked_projects(rdb)),
         )
 
     _occ_at, _occ_cached = _OCC_CACHE.get(_db_key, (0.0, []))
     if not _occ_cached or time.monotonic() - _occ_at >= _CLAIM_CACHE_TTL:
         running_rows = rdb.execute(
-            "SELECT project, task_id, exclusive, exclusive_project, resources "
-            "FROM tasks WHERE status = 'running'"
+            "SELECT project, task_id, exclusive, exclusive_project, resources FROM tasks WHERE status = 'running'"
         ).fetchall()
         _occ_cached = running_rows
         _OCC_CACHE[_db_key] = (time.monotonic(), running_rows)
@@ -375,9 +402,7 @@ def _claim_next_remote_task(
     usage_rows = rdb.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
     usage_by_proj: dict[str, float] = {r["project"]: float(r["gpu_seconds"]) for r in usage_rows}
     fairshare_weight = float(cfg.get("fairshare_weight", 1e-6))
-    queued = sort_queued_fairshare(
-        queued_raw, occ["gpu_running_by_proj"], usage_by_proj, fairshare_weight
-    )
+    queued = sort_queued_fairshare(queued_raw, occ["gpu_running_by_proj"], usage_by_proj, fairshare_weight)
 
     peer_nodes_raw = _online_peer_nodes(rdb, cfg)
 
@@ -415,9 +440,7 @@ def _claim_next_remote_task(
     )
 
     res_cpu, res_ram, res_vram = worker_slot_reserved(rdb, worker_id)
-    node = node_from_worker(
-        worker, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram
-    )
+    node = node_from_worker(worker, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram)
     # Hold inflates capacity for everyone except the held task (applied in select loop).
     node = apply_hold_to_node(node, hold=hold)
     peer_nodes = [apply_hold_to_node(n, hold=hold) for n in peer_nodes_raw]
@@ -452,12 +475,11 @@ def _claim_next_remote_task(
     def _log_placement(msg: str) -> None:
         import sys
         from taskqueue.scheduler import _ts
+
         print(f"[queue] {_ts()} info: {msg}", file=sys.stderr)
 
     hold_key = hold.get("key") if hold else None
-    bare_claimer = node_from_worker(
-        worker, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram
-    )
+    bare_claimer = node_from_worker(worker, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram)
 
     from taskqueue.placement import last_worker_id_for_task
 
@@ -490,9 +512,7 @@ def _claim_next_remote_task(
     # Snapshot keys before closing the read connection (Row may not outlive it).
     selected_proj = selected_task["project"] if selected_task else None
     selected_tid = selected_task["task_id"] if selected_task else None
-    selected_task_dict: dict | None = (
-        {k: selected_task[k] for k in selected_task.keys()} if selected_task else None
-    )
+    selected_task_dict: dict | None = {k: selected_task[k] for k in selected_task.keys()} if selected_task else None
     rdb.close()
 
     _maybe_gc_orphan_packages(db_path)
@@ -503,9 +523,7 @@ def _claim_next_remote_task(
     # F-084: capture code package BEFORE the claim commit so failure never leaves
     # a running row visible to other threads (capture must not hold BEGIN IMMEDIATE).
     try:
-        code_package, package_hash = _capture_code_package(
-            selected_task_dict, selected_proj, projects_ref
-        )
+        code_package, package_hash = _capture_code_package(selected_task_dict, selected_proj, projects_ref)
     except Exception as exc:
         return {"task": None, "error": f"code package capture failed: {exc}"}
 
@@ -528,23 +546,18 @@ def _claim_next_remote_task(
         # re-estimated a second time, doubling DB round-trips.
 
         running_fresh = wdb.execute(
-            "SELECT project, task_id, exclusive, exclusive_project, resources "
-            "FROM tasks WHERE status = 'running'"
+            "SELECT project, task_id, exclusive, exclusive_project, resources FROM tasks WHERE status = 'running'"
         ).fetchall()
         occ_fresh = occupancy_from_running_rows(running_fresh)
         cfg_fresh = get_config(wdb)
 
-        worker_fresh = wdb.execute(
-            "SELECT * FROM workers WHERE worker_id = ?", (worker_id,)
-        ).fetchone()
+        worker_fresh = wdb.execute("SELECT * FROM workers WHERE worker_id = ?", (worker_id,)).fetchone()
         if worker_fresh is None:
             wdb.rollback()
             return {"task": None}
 
         res_cpu, res_ram, res_vram = worker_slot_reserved(wdb, worker_id)
-        node_fresh = node_from_worker(
-            worker_fresh, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram
-        )
+        node_fresh = node_from_worker(worker_fresh, reserved_cpu=res_cpu, reserved_ram=res_ram, reserved_vram=res_vram)
         # Re-apply remote P6 hold so fillers cannot race past the read-side gate.
         _hold_fresh = get_remote_reservation(db_key=_db_key)
         _sel_key = (str(selected_proj), str(selected_tid))
@@ -559,27 +572,30 @@ def _claim_next_remote_task(
             wdb.rollback()
             return {"task": None}
 
-        ctx, cpu, ram, gpu, attempts = _ctx_for_row(
-            still_queued, conn=wdb, occupancy=occ_fresh, config=cfg_fresh
-        )
-        fr = filter_task(
-            still_queued, node_fresh, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts
-        )
+        ctx, cpu, ram, gpu, attempts = _ctx_for_row(still_queued, conn=wdb, occupancy=occ_fresh, config=cfg_fresh)
+        fr = filter_task(still_queued, node_fresh, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts)
         if not fr.ok:
             wdb.rollback()
             return {"task": None}
 
         last_run = wdb.execute(
-            "SELECT status FROM runs WHERE project = ? AND task_id = ? "
-            "ORDER BY run_id DESC LIMIT 1",
+            "SELECT status FROM runs WHERE project = ? AND task_id = ? ORDER BY run_id DESC LIMIT 1",
             (selected_proj, selected_tid),
         ).fetchone()
         # F-044: match local scheduler — "stopped" also resumes
         use_resume = bool(last_run and last_run["status"] in ("interrupted", "suspended", "stopped"))
 
         claimed = _insert_claimed_run(
-            wdb, db_path, still_queued, worker_fresh, worker_id,
-            selected_proj, selected_tid, package_hash, selected_ram, selected_gpu,
+            wdb,
+            db_path,
+            still_queued,
+            worker_fresh,
+            worker_id,
+            selected_proj,
+            selected_tid,
+            package_hash,
+            selected_ram,
+            selected_gpu,
         )
         if claimed is None:
             wdb.rollback()
@@ -598,8 +614,14 @@ def _claim_next_remote_task(
         return {"task": None}
 
     resp = _claim_response(
-        claimed_row_dict, projects_ref, selected_proj, run_id, log_p, use_resume,
-        _lease_ttl, finalize_token,
+        claimed_row_dict,
+        projects_ref,
+        selected_proj,
+        run_id,
+        log_p,
+        use_resume,
+        _lease_ttl,
+        finalize_token,
     )
     if code_package:
         resp["code_package"] = code_package

@@ -1,4 +1,5 @@
 """Handler mixin (extracted from make_handler)."""
+
 from __future__ import annotations
 from taskqueue.jsonutil import json_list
 
@@ -87,6 +88,7 @@ def _snapshot_path_allowed(norm: str, data_block: dict | None) -> bool:
             return True
     return False
 
+
 class TransferRoutes:
     def _serve_gzip_artifact(self, project: str, hash_val: str, path_resolver) -> None:
         if not re.fullmatch(r"[0-9a-f]{8,128}", hash_val):
@@ -103,6 +105,7 @@ class TransferRoutes:
 
     def _serve_bundle(self, project: str, bundle_hash: str) -> None:
         from taskqueue.config import state_home
+
         self._serve_gzip_artifact(
             project,
             bundle_hash,
@@ -113,6 +116,7 @@ class TransferRoutes:
         """R-009: serve dirty-tree overlay tar for a git_patch package."""
         from taskqueue.config import state_home
         from taskqueue.provision import overlay_path
+
         self._serve_gzip_artifact(
             project,
             patch_hash,
@@ -130,25 +134,29 @@ class TransferRoutes:
             return
         patterns = list(getattr(project, "sync_push", ()) or ())
         if not patterns:
-            self._json({
-                "project": project_name,
-                "fingerprint": "",
-                "generation": get_sync_generation(state_home(), project_name),
-                "file_count": 0,
-                "push": [],
-                "remote": bool(getattr(project, "remote", False)),
-                "error": "no sync.push allowlist",
-            })
+            self._json(
+                {
+                    "project": project_name,
+                    "fingerprint": "",
+                    "generation": get_sync_generation(state_home(), project_name),
+                    "file_count": 0,
+                    "push": [],
+                    "remote": bool(getattr(project, "remote", False)),
+                    "error": "no sync.push allowlist",
+                }
+            )
             return
         fp, manifest = compute_fingerprint(project.root, patterns)
-        self._json({
-            "project": project_name,
-            "fingerprint": fp,
-            "generation": get_sync_generation(state_home(), project_name),
-            "file_count": len(manifest),
-            "push": patterns,
-            "remote": bool(getattr(project, "remote", False)),
-        })
+        self._json(
+            {
+                "project": project_name,
+                "fingerprint": fp,
+                "generation": get_sync_generation(state_home(), project_name),
+                "file_count": len(manifest),
+                "push": patterns,
+                "remote": bool(getattr(project, "remote", False)),
+            }
+        )
 
     def _serve_sync_manifest(self, project_name: str) -> None:
         from taskqueue.config import state_home
@@ -167,12 +175,14 @@ class TransferRoutes:
             self._json({"project": project_name, "files": [], "fingerprint": "", "generation": 0})
             return
         manifest = build_manifest(project.root, patterns)
-        self._json({
-            "project": project_name,
-            "files": manifest,
-            "fingerprint": fingerprint_from_manifest(manifest),
-            "generation": get_sync_generation(state_home(), project_name),
-        })
+        self._json(
+            {
+                "project": project_name,
+                "files": manifest,
+                "fingerprint": fingerprint_from_manifest(manifest),
+                "generation": get_sync_generation(state_home(), project_name),
+            }
+        )
 
     def _serve_sync_file(self, project_name: str, rel_path: str) -> None:
         from taskqueue.project_sync import resolve_allowed_file
@@ -200,6 +210,7 @@ class TransferRoutes:
 
     def _serve_data_manifest(self, project_name: str) -> None:
         import os
+
         project = self._projects_ref().get(project_name)
         if not project:
             self.send_error(404)
@@ -218,11 +229,9 @@ class TransferRoutes:
                     rel_p = abs_p.relative_to(project.root)
                     try:
                         stat = abs_p.stat()
-                        files.append({
-                            "path": str(rel_p).replace("\\", "/"),
-                            "size": stat.st_size,
-                            "mtime": stat.st_mtime
-                        })
+                        files.append(
+                            {"path": str(rel_p).replace("\\", "/"), "size": stat.st_size, "mtime": stat.st_mtime}
+                        )
                     except Exception:
                         pass
                 if truncated:
@@ -284,9 +293,7 @@ class TransferRoutes:
         # Prefer header (F-121); query still accepted for one-release compat.
         token = self.headers.get("X-TQ-Finalize-Token") or (qs.get("finalize_token") or [None])[0]
         if not run_id_raw or not token:
-            self._send_error_json(
-                401, "run_id and finalize_token required for transfer"
-            )
+            self._send_error_json(401, "run_id and finalize_token required for transfer")
             return False
         try:
             run_id = int(run_id_raw)
@@ -339,16 +346,12 @@ class TransferRoutes:
                 if n:
                     allowed.add(n)
             elif direction == "pull" and d == "pull":
-                n = self._norm_transfer_rel(
-                    str(spec.get("dst") or spec.get("src") or "")
-                )
+                n = self._norm_transfer_rel(str(spec.get("dst") or spec.get("src") or ""))
                 if n:
                     allowed.add(n)
 
         if norm not in allowed:
-            self._send_error_json(
-                403, f"path not declared in transfer: for this run ({direction})"
-            )
+            self._send_error_json(403, f"path not declared in transfer: for this run ({direction})")
             return False
         return True
 
@@ -526,10 +529,14 @@ class TransferRoutes:
         if not token:
             self._send_error_json(401, "finalize_token required")
             return None
-        run = self._rconn().execute(
-            "SELECT project, task_id, status, finalize_token FROM runs WHERE run_id = ?",
-            (run_id,),
-        ).fetchone()
+        run = (
+            self._rconn()
+            .execute(
+                "SELECT project, task_id, status, finalize_token FROM runs WHERE run_id = ?",
+                (run_id,),
+            )
+            .fetchone()
+        )
         if run is None or run["status"] != "running":
             self._send_error_json(404, "run not active")
             return None
@@ -606,11 +613,13 @@ class TransferRoutes:
                             except Exception:
                                 pass
 
-                    manifests.append({
-                        "mount": inp.get("mount", ""),
-                        "readonly": inp.get("readonly", True),
-                        "files": manifest,
-                    })
+                    manifests.append(
+                        {
+                            "mount": inp.get("mount", ""),
+                            "readonly": inp.get("readonly", True),
+                            "files": manifest,
+                        }
+                    )
                 except Exception as e:
                     manifests.append({"mount": inp.get("mount", ""), "error": str(e)})
 
@@ -702,8 +711,7 @@ class TransferRoutes:
         import urllib.request as _ureq
 
         # Get token and run_id from headers
-        token = self.headers.get("X-TQ-Service-Token") or \
-                self.headers.get("Authorization", "").replace("Bearer ", "")
+        token = self.headers.get("X-TQ-Service-Token") or self.headers.get("Authorization", "").replace("Bearer ", "")
         run_id_raw = self.headers.get("X-TQ-Run-Id")
 
         if not token or not run_id_raw:
@@ -859,7 +867,7 @@ class TransferRoutes:
             return
         length = self._content_length()
         if length > self._MAX_UPLOAD_BYTES:
-            self._send_error_json(413, f"Body too large (max {self._MAX_UPLOAD_BYTES // (1024*1024)} MiB)")
+            self._send_error_json(413, f"Body too large (max {self._MAX_UPLOAD_BYTES // (1024 * 1024)} MiB)")
             return
         try:
             stream_request_body_to_file(self.rfile, length, target_file)

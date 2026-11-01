@@ -1,4 +1,5 @@
 """Handler mixin (extracted from make_handler)."""
+
 from __future__ import annotations
 from taskqueue._time import parse_iso as _parse_iso
 
@@ -112,7 +113,9 @@ class ReadRoutes:
             version = cached[1]
         else:
             h = hashlib.sha1()
-            for f in sorted(p for p in _STATIC.rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".html", ".json")):
+            for f in sorted(
+                p for p in _STATIC.rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".html", ".json")
+            ):
                 st = f.stat()
                 h.update(f"{f.name}:{st.st_size}:{st.st_mtime_ns}".encode())
             version = h.hexdigest()[:12]
@@ -126,7 +129,7 @@ class ReadRoutes:
         self.wfile.write(body)
 
     def _serve_locale(self, path: str) -> None:
-        fname = path[len("/static/locales/"):]
+        fname = path[len("/static/locales/") :]
         if re.fullmatch(r"[A-Za-z0-9_-]+\.json", fname):
             self._serve_file(_STATIC / "locales" / fname, "application/json")
         else:
@@ -134,7 +137,7 @@ class ReadRoutes:
 
     def _serve_js_module(self, path: str) -> None:
         """ES modules under static/js/. Only plain relative *.js paths; no traversal."""
-        rel = path[len("/static/js/"):]
+        rel = path[len("/static/js/") :]
         if re.fullmatch(r"[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*\.js", rel):
             self._serve_file(_STATIC / "js" / rel, "text/javascript; charset=utf-8")
         else:
@@ -163,6 +166,7 @@ class ReadRoutes:
 
     def _serve_help_api(self) -> None:
         from taskqueue.docs_loader import build_help_payload
+
         qs = self._query()
         tab = (qs.get("tab", ["queue"])[0] or "queue").strip()
         lang = (qs.get("lang", ["en"])[0] or "en").strip()
@@ -173,9 +177,10 @@ class ReadRoutes:
 
     def _serve_docs(self, path: str) -> None:
         from taskqueue.docs_loader import load_manifest, render_guide, render_reference
+
         qs = self._query()
         want_json = qs.get("format", [""])[0] == "json" or "application/json" in (self.headers.get("Accept") or "")
-        rel = path[len("/docs/"):].lstrip("/")
+        rel = path[len("/docs/") :].lstrip("/")
         if not rel or rel == "manifest.json":
             self._json(load_manifest())
             return
@@ -354,6 +359,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         try:
             import psutil as _psutil
             import os as _os
+
             _proc = _psutil.Process(_os.getpid())
             daemon_cpu_pct = round(_proc.cpu_percent(interval=None), 1)
             daemon_rss_mb = round(_proc.memory_info().rss / 1_048_576, 1)
@@ -433,6 +439,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         out = body
         if "gzip" in enc.lower() and len(out) > 1024:
             import gzip
+
             out = gzip.compress(out, compresslevel=3)
             self.send_header("Content-Encoding", "gzip")
         self.send_header("Content-Length", str(len(out)))
@@ -454,7 +461,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         if tab in ("queue", "dashboard"):
             q = self._get_queue(timings=phases)
             payload["queue"] = {
-                **{k: q[k] for k in ("total", "limit", "offset") if k in q},
+                **{k: q[k] for k in ("total", "limit", "offset", "error", "message") if k in q},
                 "tasks": [_queue_row_dict(t) for t in q.get("tasks", [])],
             }
             _t = time.perf_counter()
@@ -473,6 +480,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             op = (qs.get("started_by", [None])[0] or "").strip()
             if op:
                 from taskqueue.queries import list_operator_projects
+
                 payload["my_projects"] = list_operator_projects(self._rconn(), operator=op)
         elif tab == "history":
             try:
@@ -491,6 +499,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 limit=limit,
                 hide_blocked=qs.get("hide_blocked", ["0"])[0] in ("1", "true"),
                 started_by=(qs.get("started_by", [None])[0] or None),
+                status=(qs.get("status", [None])[0] or None),
             )
             payload["history"] = {
                 **{k: hist[k] for k in ("total", "limit", "offset") if k in hist},
@@ -536,7 +545,8 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 now = time.monotonic()
                 if hit is not None and now - hit[0] < _DASH_CACHE_TTL_SEC:
                     self._send_dashboard_bytes(
-                        etag=hit[1], body=hit[2],
+                        etag=hit[1],
+                        body=hit[2],
                         phases={**hit[3], "cached": 1},
                     )
                     return
@@ -551,7 +561,8 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                     hit = _dash_cache.get(cache_key)
                 if hit is not None:
                     self._send_dashboard_bytes(
-                        etag=hit[1], body=hit[2],
+                        etag=hit[1],
+                        body=hit[2],
                         phases={**hit[3], "cached": 1},
                     )
                     return
@@ -562,7 +573,10 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         phases: dict[str, float] = {}
         try:
             payload, phases = self._build_dashboard_payload(
-                tab=tab, qs=qs, ver=ver, want_timing=want_timing,
+                tab=tab,
+                qs=qs,
+                ver=ver,
+                want_timing=want_timing,
             )
             _t_json = time.perf_counter()
             body_for_etag = json.dumps(payload, sort_keys=True, default=str).encode()
@@ -636,7 +650,36 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             days = max(1, min(int(days_s), 366))  # F-149
         except ValueError:
             days = 7
+        kind = (qs.get("kind", ["summary"])[0] or "summary").strip().lower()
+        if kind == "hygiene":
+            from taskqueue.hygiene import build_hygiene_report
+
+            try:
+                older = float(qs.get("older_than_days", ["30"])[0])
+            except (ValueError, IndexError, TypeError):
+                older = 30.0
+            return build_hygiene_report(
+                self._rconn(), project=project, days=days, older_than_days=older
+            )
         return build_report(self._rconn(), project=project, days=days)
+
+    def _get_hygiene(self) -> dict[str, Any]:
+        """GET /api/hygiene — alias for /api/report?kind=hygiene."""
+        from taskqueue.hygiene import build_hygiene_report
+
+        qs = self._query()
+        project = qs.get("project", [None])[0]
+        try:
+            days = max(1, min(int(qs.get("days", ["7"])[0]), 366))
+        except (ValueError, IndexError):
+            days = 7
+        try:
+            older = float(qs.get("older_than_days", ["30"])[0])
+        except (ValueError, IndexError, TypeError):
+            older = 30.0
+        return build_hygiene_report(
+            self._rconn(), project=project, days=days, older_than_days=older
+        )
 
     def _get_plan(self) -> dict[str, Any]:
         from taskqueue.plan import build_plan
@@ -678,6 +721,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             limit=limit,
             hide_blocked=qs.get("hide_blocked", ["0"])[0] in ("1", "true"),
             started_by=(qs.get("started_by", [None])[0] or None),
+            status=(qs.get("status", [None])[0] or None),
         )
 
     def _get_groups(self) -> dict[str, Any]:
@@ -687,9 +731,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         from taskqueue.queries import tasks_cached
 
         conn = self._rconn()
-        return tasks_cached(
-            conn, "groups", project_filter, lambda: _get_groups_response(conn, project=project_filter)
-        )
+        return tasks_cached(conn, "groups", project_filter, lambda: _get_groups_response(conn, project=project_filter))
 
     def _get_suites(self) -> dict[str, Any]:
         """Suites summary: task counts and status breakdown per suite."""
@@ -706,21 +748,27 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
     def _compute_tags(self, project: str | None = None) -> dict[str, Any]:
         """Return all unique tags across tasks, with task counts and per-tag project sets."""
         if project:
-            rows = self._rconn().execute(
-                "SELECT project, tags FROM tasks WHERE project = ? AND tags IS NOT NULL AND tags != '[]'",
-                (project,),
-            ).fetchall()
+            rows = (
+                self._rconn()
+                .execute(
+                    "SELECT project, tags FROM tasks WHERE project = ? AND tags IS NOT NULL AND tags != '[]'",
+                    (project,),
+                )
+                .fetchall()
+            )
         else:
-            rows = self._rconn().execute(
-                "SELECT project, tags FROM tasks WHERE tags IS NOT NULL AND tags != '[]'"
-            ).fetchall()
+            rows = (
+                self._rconn()
+                .execute("SELECT project, tags FROM tasks WHERE tags IS NOT NULL AND tags != '[]'")
+                .fetchall()
+            )
         counts: dict[str, int] = {}
         tag_projects: dict[str, set] = {}
         for row in rows:
             try:
                 tags = json.loads(row["tags"] if hasattr(row, "keys") else row[1])
                 proj = row["project"] if hasattr(row, "keys") else row[0]
-                for t in (tags if isinstance(tags, list) else []):
+                for t in tags if isinstance(tags, list) else []:
                     counts[t] = counts.get(t, 0) + 1
                     tag_projects.setdefault(t, set()).add(proj)
             except Exception:
@@ -737,9 +785,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         qs = self._query()
         project_filter = qs.get("project", [None])[0]
         started_by = qs.get("started_by", [None])[0]
-        items = list_attention(
-            self._rconn(), operator=started_by, project=project_filter
-        )
+        items = list_attention(self._rconn(), operator=started_by, project=project_filter)
         return {"items": items, "count": len(items)}
 
     def _get_cost(self) -> dict[str, Any]:
@@ -764,7 +810,8 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 if kind == "alert":
                     # Alerts are sparse among task events: scan wider, then keep the newest N.
                     events = [
-                        e for e in iter_notify_events(path, since=since, limit=max(limit * 20, 1000))
+                        e
+                        for e in iter_notify_events(path, since=since, limit=max(limit * 20, 1000))
                         if str(e.get("status") or "").startswith("alert:")
                     ][-limit:]
                 else:
@@ -851,7 +898,11 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             return
         try:
             graph = _get_deps_response(
-                self._rconn(), project=project, focus=focus, mode=mode, suite=suite,
+                self._rconn(),
+                project=project,
+                focus=focus,
+                mode=mode,
+                suite=suite,
             )
         except ValueError as exc:
             self._json({"error": str(exc)}, status=400)
@@ -878,9 +929,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         except (ValueError, IndexError):
             offset, limit = 0, 2000
         conn = self._rconn()
-        total = count_tasks(
-            conn, started_by=started_by, project=project_filter, search=search
-        )
+        total = count_tasks(conn, started_by=started_by, project=project_filter, search=search)
         rows = list_tasks(
             conn,
             started_by=started_by,
@@ -890,6 +939,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             offset=offset,
         )
         from taskqueue._db_tasks import run_counts
+
         counts = run_counts(conn, [(r["project"], r["task_id"]) for r in rows])
         tasks = [_task_dict(r, strip_secrets=True) for r in rows]
         for d in tasks:
@@ -922,7 +972,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             read_log_tail,
         )
 
-        run_id_str = path[len("/api/logs/"):]
+        run_id_str = path[len("/api/logs/") :]
         try:
             run_id = int(run_id_str)
         except ValueError:
@@ -997,9 +1047,11 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             self._send_error_json(400, "q is required")
             return
         project = (qs.get("project", [None])[0] or "").strip()
+
         def _int(key: str, default: int, hi: int) -> int:
             raw = qs.get(key, [None])[0]
             return min(int(raw), hi) if raw and raw.isdigit() and int(raw) > 0 else default
+
         n_runs = _int("runs", 30, 200)
         limit = _int("limit", 100, 500)
         sql = "SELECT run_id, project, task_id, log_path FROM runs WHERE log_path IS NOT NULL AND log_path != ''"
@@ -1019,8 +1071,9 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 continue
             for line in text.splitlines():
                 if query in line.lower():
-                    matches.append({"run_id": r["run_id"], "project": r["project"],
-                                    "task_id": r["task_id"], "line": line[:500]})
+                    matches.append(
+                        {"run_id": r["run_id"], "project": r["project"], "task_id": r["task_id"], "line": line[:500]}
+                    )
                     if len(matches) >= limit:
                         break
         self._json({"q": query, "matches": matches, "truncated": len(matches) >= limit})
@@ -1034,10 +1087,14 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         raw_max = qs.get("max_bytes", [None])[0]
         max_bytes = min(int(raw_max) if raw_max and raw_max.isdigit() else 262144, 8 * 1024 * 1024)
 
-        row = self._rconn().execute(
-            "SELECT log_path FROM runs WHERE project = ? AND task_id = ? ORDER BY run_id DESC LIMIT 1",
-            (project, task_id),
-        ).fetchone()
+        row = (
+            self._rconn()
+            .execute(
+                "SELECT log_path FROM runs WHERE project = ? AND task_id = ? ORDER BY run_id DESC LIMIT 1",
+                (project, task_id),
+            )
+            .fetchone()
+        )
         if not row or not row["log_path"]:
             self._json({"error": "no log found", "matches": [], "total_bytes": 0})
             return
@@ -1068,17 +1125,19 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 next_offset = offset + len(chunk)
                 matches = chunk.decode("utf-8", errors="replace").splitlines()
 
-        self._json({
-            "project": project,
-            "task_id": task_id,
-            "query": query,
-            "matches": matches,
-            "match_count": len(matches),
-            "offset": offset,
-            "next_offset": next_offset,
-            "total_bytes": file_size,
-            "log_path": log_path.name,
-        })
+        self._json(
+            {
+                "project": project,
+                "task_id": task_id,
+                "query": query,
+                "matches": matches,
+                "match_count": len(matches),
+                "offset": offset,
+                "next_offset": next_offset,
+                "total_bytes": file_size,
+                "log_path": log_path.name,
+            }
+        )
 
     def _get_workers(self) -> list[dict[str, Any]]:
         db_key = str(getattr(self, "_db_path", "") or "")
@@ -1089,6 +1148,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         from taskqueue import __version__ as _mv
         from taskqueue.db import SCHEMA_VERSION as _ms
         from taskqueue._db_runs import worker_health
+
         cfg = get_config(self._rconn())
         heartbeat_sec = float(cfg.get("heartbeat_sec", 30))
         rows = self._rconn().execute("SELECT * FROM workers ORDER BY worker_id").fetchall()
@@ -1116,9 +1176,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             d["version_ok"] = version_ok
             d["version_note"] = version_note
             # F-074: age-based health distinct from stored status (stale "online")
-            d["health"] = worker_health(
-                d.get("last_seen"), heartbeat_sec=heartbeat_sec
-            )
+            d["health"] = worker_health(d.get("last_seen"), heartbeat_sec=heartbeat_sec)
             out.append(d)
         _workers_cache_by_db[db_key] = (time.monotonic(), out)
         return out
@@ -1131,39 +1189,54 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         try:
             if since_s:
                 since = int(since_s)
-                rows = self._rconn().execute(
-                    f"SELECT {cols} FROM resource_history "
-                    "WHERE run_id=? AND ts>? ORDER BY ts LIMIT 2000",
-                    (run_id, since),
-                ).fetchall()
+                rows = (
+                    self._rconn()
+                    .execute(
+                        f"SELECT {cols} FROM resource_history WHERE run_id=? AND ts>? ORDER BY ts LIMIT 2000",
+                        (run_id, since),
+                    )
+                    .fetchall()
+                )
             else:
-                rows = self._rconn().execute(
-                    f"SELECT {cols} FROM resource_history "
-                    "WHERE run_id=? ORDER BY ts LIMIT 2000",
-                    (run_id,),
-                ).fetchall()
+                rows = (
+                    self._rconn()
+                    .execute(
+                        f"SELECT {cols} FROM resource_history WHERE run_id=? ORDER BY ts LIMIT 2000",
+                        (run_id,),
+                    )
+                    .fetchall()
+                )
         except sqlite3.OperationalError as e:
             # Pre-migration DB without gpu_util_pct
             if "gpu_util_pct" not in str(e) and "no such column" not in str(e).lower():
                 raise
             if since_s:
                 since = int(since_s)
-                rows = self._rconn().execute(
-                    "SELECT ts, cpu_pct, ram_gib, vram_gib FROM resource_history "
-                    "WHERE run_id=? AND ts>? ORDER BY ts LIMIT 2000",
-                    (run_id, since),
-                ).fetchall()
+                rows = (
+                    self._rconn()
+                    .execute(
+                        "SELECT ts, cpu_pct, ram_gib, vram_gib FROM resource_history "
+                        "WHERE run_id=? AND ts>? ORDER BY ts LIMIT 2000",
+                        (run_id, since),
+                    )
+                    .fetchall()
+                )
             else:
-                rows = self._rconn().execute(
-                    "SELECT ts, cpu_pct, ram_gib, vram_gib FROM resource_history "
-                    "WHERE run_id=? ORDER BY ts LIMIT 2000",
-                    (run_id,),
-                ).fetchall()
+                rows = (
+                    self._rconn()
+                    .execute(
+                        "SELECT ts, cpu_pct, ram_gib, vram_gib FROM resource_history "
+                        "WHERE run_id=? ORDER BY ts LIMIT 2000",
+                        (run_id,),
+                    )
+                    .fetchall()
+                )
         self._json({"samples": [dict(r) for r in rows]})
 
     def _get_task_detail(self, project: str, task_id: str) -> dict[str, Any]:
         """GET /api/tasks/<project>/<task_id> — task detail for the drawer (secrets stripped)."""
         from taskqueue._db_runs import get_last_run_for_task
+
         conn = self._rconn()
         row = get_task(conn, project, task_id)
         if not row:
@@ -1177,22 +1250,46 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 if last_run[key] is not None:
                     task.setdefault(key, last_run[key])
         from taskqueue._db_tasks import run_summary
+
         task.update(run_summary(conn, project, task_id))
         return {"task": task}
 
     def _serve_task_runs(self, project: str, task_id: str) -> None:
         """GET /api/tasks/<project>/<task_id>/runs — per-task run history (no capability secrets)."""
-        from taskqueue._db_runs import get_runs_for_task
-        rows = get_runs_for_task(self._rconn(), project, task_id)
+        from taskqueue._db_runs import count_runs_for_task, get_runs_for_task
+
+        qs = self._query()
+        try:
+            limit = min(max(1, int(qs.get("limit", [50])[0])), 200)
+        except (ValueError, IndexError, TypeError):
+            limit = 50
+        try:
+            offset = max(0, int(qs.get("offset", [0])[0]))
+        except (ValueError, IndexError, TypeError):
+            offset = 0
+        conn = self._rconn()
+        total = count_runs_for_task(conn, project, task_id)
+        rows = get_runs_for_task(conn, project, task_id, limit=limit, offset=offset)
         # F-116: project via _history_row_dict — never serialize finalize_token / log_path.
-        self._json({"runs": [_history_row_dict(r) for r in rows]})
+        self._json(
+            {
+                "runs": [_history_row_dict(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
 
     def _serve_task_yaml(self, project: str, task_id: str) -> None:
         """L1: GET /api/tasks/<project>/<task_id>/yaml — raw yaml_source for a task."""
-        row = self._rconn().execute(
-            "SELECT yaml_source FROM tasks WHERE project=? AND task_id=?",
-            (project, task_id),
-        ).fetchone()
+        row = (
+            self._rconn()
+            .execute(
+                "SELECT yaml_source FROM tasks WHERE project=? AND task_id=?",
+                (project, task_id),
+            )
+            .fetchone()
+        )
         if not row or not row["yaml_source"]:
             self.send_error(404)
             return
@@ -1244,23 +1341,33 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         try:
             days = int(q("days") or 7)
             limit = int(q("limit") or 200)
-            self._json(agent_usage(
-                self._rconn(), days=days, by=q("by"), task_by=q("task_by"),
-                project=q("project"), channel=q("channel"), operator=q("operator"), limit=limit,
-            ))
+            self._json(
+                agent_usage(
+                    self._rconn(),
+                    days=days,
+                    by=q("by"),
+                    task_by=q("task_by"),
+                    project=q("project"),
+                    channel=q("channel"),
+                    operator=q("operator"),
+                    limit=limit,
+                )
+            )
         except ValueError as exc:
             self._json({"ok": False, "error": str(exc)}, status=400)
 
     def _get_task_stats_route(self) -> None:
         qs = self._query()
         task_id = (qs.get("task_id", [None])[0] or "").strip() or None
-        self._json({
-            "tasks": task_stats(
-                self._rconn(),
-                project=self._qs_project(),
-                task_id=task_id,
-            ),
-        })
+        self._json(
+            {
+                "tasks": task_stats(
+                    self._rconn(),
+                    project=self._qs_project(),
+                    task_id=task_id,
+                ),
+            }
+        )
 
     def _get_timeline_route(self) -> None:
         qs = self._query()
@@ -1270,9 +1377,14 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             hours = 24
         from taskqueue.timeline_forecast import cached_forecast
 
-        self._json(cached_forecast(
-            self._rconn(), hours=hours, project=self._qs_project(), limit=300,
-        ))
+        self._json(
+            cached_forecast(
+                self._rconn(),
+                hours=hours,
+                project=self._qs_project(),
+                limit=300,
+            )
+        )
 
     def _get_schedules_route(self) -> None:
         self._json({"schedules": list_schedules(self._rconn(), project=self._qs_project())})
@@ -1304,8 +1416,14 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             return qs.get(name, [None])[0] or None
 
         events = list_audit(
-            self._rconn(), limit=limit, actor=_q("actor"), action=_q("action"),
-            project=_q("project"), since=_q("since"), until=_q("until"), before_id=before_id,
+            self._rconn(),
+            limit=limit,
+            actor=_q("actor"),
+            action=_q("action"),
+            project=_q("project"),
+            since=_q("since"),
+            until=_q("until"),
+            before_id=before_id,
         )
         if fmt == "csv":
             from taskqueue.operator_features import audit_to_csv

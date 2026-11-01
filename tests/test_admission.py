@@ -24,8 +24,10 @@ def _budget(*, used: float, total: float = 64.0, soft: int = 80, hard: int = 95)
         "gpus": [],
     }
     cfg = {
-        "cpu_limit_pct": 100, "gpu_limit_pct": 100,
-        "ram_limit_pct": soft, "ram_hard_limit_pct": hard,
+        "cpu_limit_pct": 100,
+        "gpu_limit_pct": 100,
+        "ram_limit_pct": soft,
+        "ram_hard_limit_pct": hard,
     }
     b = ResourceBudget(system, cfg)
     b.ram_reserved = used
@@ -45,8 +47,7 @@ def _mk_task(conn, project: str, task_id: str, *, yaml_source: str = "", grp: st
 def _mk_run(conn, project: str, task_id: str, *, ram: float, vram: float = 0.0) -> None:
     now = datetime.now(UTC).isoformat()
     conn.execute(
-        "INSERT INTO runs (project, task_id, started_at, status, peak_ram_gib, peak_vram_gib) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO runs (project, task_id, started_at, status, peak_ram_gib, peak_vram_gib) VALUES (?,?,?,?,?,?)",
         (project, task_id, now, "completed", ram, vram),
     )
     conn.commit()
@@ -54,18 +55,20 @@ def _mk_run(conn, project: str, task_id: str, *, ram: float, vram: float = 0.0) 
 
 # --- F1: the gate must be additive ---------------------------------------
 
+
 def test_non_additive_regression(tmp_path: Path) -> None:
     """Host at 60% of a soft-80% limit; a task estimated at 30% must block.
 
     This fails against the pre-fix code — it is the incident in miniature.
     """
     b = _budget(used=38.4, total=64.0, soft=80)  # 60% of 64; soft = 51.2
-    ok, reason = b.fits(1, 0.0, 19.2)            # +30% -> 57.6 > 51.2
+    ok, reason = b.fits(1, 0.0, 19.2)  # +30% -> 57.6 > 51.2
     assert not ok
     assert "soft limit" in reason
 
 
 # --- F2: undeclared resources must not be free ---------------------------
+
 
 def test_undeclared_task_gets_floor_estimate(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "q.db")
@@ -123,6 +126,7 @@ def test_undeclared_floor_blocks_third_task(tmp_path: Path) -> None:
 
 # --- F9: history is used, and beats a low declaration --------------------
 
+
 def test_history_prediction_overrides_low_declaration(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "q.db")
     _mk_task(conn, "p", "t1")
@@ -142,7 +146,8 @@ def test_undeclared_gpu_blocked_by_historical_peak(tmp_path: Path) -> None:
     assert est["vram_gib"] == 20.0
 
     system = {
-        "cpu_total_cores": 8, "ram_total_gib": 64.0,
+        "cpu_total_cores": 8,
+        "ram_total_gib": 64.0,
         "gpu_vram_total_gib": 8.0,
         "gpus": [{"index": 0, "vram_gib": 8.0, "vram_used_gib": 0.0}],
     }
@@ -153,6 +158,7 @@ def test_undeclared_gpu_blocked_by_historical_peak(tmp_path: Path) -> None:
 
 
 # --- F8: matrix siblings share a yaml_source -----------------------------
+
 
 def test_sibling_prediction_from_shared_yaml_source(tmp_path: Path) -> None:
     """A matrix: expansion gives N tasks, same YAML, no per-task history.
@@ -187,6 +193,7 @@ def test_group_prediction_fallback(tmp_path: Path) -> None:
 
 # --- F12: fail closed when measurement is unavailable --------------------
 
+
 def test_fails_closed_when_ram_unreadable(monkeypatch) -> None:
     import taskqueue.resources as R
 
@@ -206,6 +213,7 @@ def test_fails_closed_when_ram_unreadable(monkeypatch) -> None:
 
 # --- F10 / question (b): restartability drives victim choice -------------
 
+
 class _FakeRun:
     def __init__(self, ram: float, progress: float, elapsed: float = 60.0) -> None:
         self.current_ram_gib = ram
@@ -223,11 +231,13 @@ def test_idempotent_task_chosen_over_nearly_done_one(tmp_path: Path) -> None:
     now = datetime.now(UTC).isoformat()
     conn.execute(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, "
-        "priority, idempotent) VALUES ('p','idem','python','running',?,?,50,1)", (now, now),
+        "priority, idempotent) VALUES ('p','idem','python','running',?,?,50,1)",
+        (now, now),
     )
     conn.execute(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, "
-        "priority, idempotent) VALUES ('p','precious','python','running',?,?,50,0)", (now, now),
+        "priority, idempotent) VALUES ('p','precious','python','running',?,?,50,0)",
+        (now, now),
     )
     conn.commit()
 
@@ -243,11 +253,19 @@ def test_idempotent_task_chosen_over_nearly_done_one(tmp_path: Path) -> None:
 def test_relief_still_dominates_for_useless_victim() -> None:
     """A task freeing nothing must not be chosen just because it is idempotent."""
     frees_nothing = score_victim(
-        freed_gib=0.0, needed_gib=8.0, progress_pct=0, priority=50,
-        elapsed_sec=0, restartability=1.0,
+        freed_gib=0.0,
+        needed_gib=8.0,
+        progress_pct=0,
+        priority=50,
+        elapsed_sec=0,
+        restartability=1.0,
     )
     frees_plenty = score_victim(
-        freed_gib=8.0, needed_gib=8.0, progress_pct=0, priority=50,
-        elapsed_sec=0, restartability=0.0,
+        freed_gib=8.0,
+        needed_gib=8.0,
+        progress_pct=0,
+        priority=50,
+        elapsed_sec=0,
+        restartability=0.0,
     )
     assert frees_plenty < frees_nothing

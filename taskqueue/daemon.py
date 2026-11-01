@@ -52,6 +52,7 @@ from taskqueue.models import (
 from taskqueue.victim import pick_victim
 from taskqueue._fmt import fmt_duration as _fmt_duration  # H1: shared helper
 from taskqueue._time import _ts  # noqa: E402 (after local imports)
+
 # YAML cache + queue-definition sync live in yaml_sync; re-exported for existing callers.
 from taskqueue.yaml_sync import (  # noqa: F401
     YAML_PARSER_GEN,
@@ -102,6 +103,8 @@ def _replace_registry(current: dict, fresh: dict) -> None:
     claims without a daemon restart."""
     current.clear()
     current.update(fresh)
+
+
 DAEMON_LOG_MAX_BYTES = 50 * 1024 * 1024
 
 
@@ -136,25 +139,14 @@ def rotate_own_log(home: Path, max_bytes: int = DAEMON_LOG_MAX_BYTES) -> bool:
                 os.lseek(sys.stderr.fileno(), 0, os.SEEK_SET)
         except (OSError, ValueError):
             pass
-        print(f"[queue] {_ts()} daemon.log rotated ({st.st_size / 1024 ** 2:.0f} MiB -> daemon.log.1)", flush=True)
+        print(f"[queue] {_ts()} daemon.log rotated ({st.st_size / 1024**2:.0f} MiB -> daemon.log.1)", flush=True)
         return True
     except (OSError, ValueError, AttributeError):
         return False
 
 
-def clock_jump_threshold(scheduler_interval_sec: float, cfg_override: float = 0.0) -> float:
-    """Wall-clock gap that counts as sleep/hibernate wake (F-001).
-
-    cfg_override > 0 uses an explicit value from clock_jump_threshold_sec config;
-    0 falls back to auto: max(2 * scheduler_interval, 30).
-    """
-    if cfg_override > 0:
-        return float(cfg_override)
-    return max(2.0 * float(scheduler_interval_sec), 30.0)
-
-
-def is_clock_jump(prev_wall: float, now_wall: float, threshold: float) -> bool:
-    return prev_wall > 0.0 and (now_wall - prev_wall) > threshold
+# F-208: pure helpers live in daemon_clock (re-exported for existing imports/tests).
+from taskqueue.daemon_clock import clock_jump_threshold, is_clock_jump  # noqa: E402
 
 
 def _count_recent_clock_jump_runs(
@@ -207,6 +199,7 @@ def classify_daemon_boot(home: Path, conn) -> BootClass:
         try:
             raw = pid_file.read_text(encoding="utf-8").strip()
             import psutil as _psutil
+
             if ":" in raw:
                 # F-103: PID:create_time format
                 pid_str, ct_str = raw.split(":", 1)
@@ -228,12 +221,7 @@ def classify_daemon_boot(home: Path, conn) -> BootClass:
     dirty = False
     if prev_pid is not None and not prev_alive and not had_clean:
         dirty = True
-    elif (
-        prev_pid is None
-        and not had_clean
-        and last_kind is not None
-        and last_kind != DAEMON_EVENT_CLEAN_SHUTDOWN
-    ):
+    elif prev_pid is None and not had_clean and last_kind is not None and last_kind != DAEMON_EVENT_CLEAN_SHUTDOWN:
         dirty = True
     return BootClass(
         dirty=dirty,
@@ -287,14 +275,15 @@ def requeue_orphaned_running(
         "last_error_code = COALESCE(?, last_error_code), stopped_by = ?, "
         "stop_reason = COALESCE(?, stop_reason), error_category = ?, lease_expires_at = NULL "
         "WHERE status = 'running' AND worker_id IS NULL",
-        (now_iso, now_iso, err_code, _stopped_by, _stop_reason,
-         tqerr.classify_error(err_code, -1, _stopped_by)),
+        (now_iso, now_iso, err_code, _stopped_by, _stop_reason, tqerr.classify_error(err_code, -1, _stopped_by)),
     )
     try:
         conn.commit()
     except Exception:
         pass
 
+    # F-152: track kill failures so we do not re-queue while the OS process may still live.
+    kill_failed: set[tuple[str, str]] = set()
     for row in rows:
         pid = int(row["pid"])
         ct = row["pid_create_time"]
@@ -304,6 +293,7 @@ def requeue_orphaned_running(
         if row["sleep_tier"] == 2 and sys.platform == "win32":
             try:
                 import ctypes
+
                 _SUSPEND_RESUME = 0x0800
                 _handle = ctypes.windll.kernel32.OpenProcess(_SUSPEND_RESUME, False, pid)
                 if _handle:
@@ -313,10 +303,11 @@ def requeue_orphaned_running(
                 print(f"[queue] {_ts()} warn: NtResumeProcess pid={pid}: {_re}", file=sys.stderr)
         result = kill_process_tree(pid, create_time=create_time, graceful_sec=graceful_sec)
         print(
-            f"[queue] {_ts()} reap orphan pid={pid} "
-            f"{task_key(row['project'], row['task_id'])} → {result}",
+            f"[queue] {_ts()} reap orphan pid={pid} {task_key(row['project'], row['task_id'])} → {result}",
             flush=True,
         )
+        if result in ("denied", "skipped_reuse"):
+            kill_failed.add((str(row["project"]), str(row["task_id"])))
     orphaned = conn.execute(
         "SELECT DISTINCT t.project, t.task_id FROM tasks t "
         "WHERE t.status = 'running' AND NOT EXISTS ("
@@ -327,8 +318,7 @@ def requeue_orphaned_running(
     n = 0
     for row in orphaned:
         task_row = conn.execute(
-            "SELECT stop_requested FROM tasks "
-            "WHERE project = ? AND task_id = ? AND status = 'running'",
+            "SELECT stop_requested FROM tasks WHERE project = ? AND task_id = ? AND status = 'running'",
             (row["project"], row["task_id"]),
         ).fetchone()
         if task_row is None:
@@ -337,16 +327,18 @@ def requeue_orphaned_running(
         task_status = STATUS_INTERRUPTED
         task_err = err_code
         task_block: str | None = tqerr.describe(err_code) if err_code else None
-        if not stop_req:
+        alive_key = (str(row["project"]), str(row["task_id"]))
+        if not stop_req and alive_key in kill_failed:
+            task_status = STATUS_INTERRUPTED
+            task_err = tqerr.INFRA_ORPHAN_ALIVE
+            task_block = tqerr.describe(tqerr.INFRA_ORPHAN_ALIVE)
+        elif not stop_req:
             if err_code and reason == "clock-jump" and _max_requeue > 0:
-                recent = _count_recent_clock_jump_runs(
-                    conn, row["project"], row["task_id"], _requeue_window
-                )
+                recent = _count_recent_clock_jump_runs(conn, row["project"], row["task_id"], _requeue_window)
                 if recent > _max_requeue:
                     task_err = tqerr.INFRA_CLOCK_JUMP_FLAP
                     task_block = (
-                        f"clock-jump flap: {recent} interrupts in {_requeue_window}s — "
-                        "tq retry when host is stable"
+                        f"clock-jump flap: {recent} interrupts in {_requeue_window}s — tq retry when host is stable"
                     )
                 else:
                     task_status = STATUS_QUEUED
@@ -370,8 +362,7 @@ def requeue_orphaned_running(
             )
         action = "re-queued" if task_status == STATUS_QUEUED else "left interrupted"
         print(
-            f"[queue] {_ts()} {action} {reason} task: "
-            f"{task_key(row['project'], row['task_id'])}",
+            f"[queue] {_ts()} {action} {reason} task: {task_key(row['project'], row['task_id'])}",
             flush=True,
         )
     conn.commit()
@@ -411,18 +402,12 @@ def _evict_one_suspend(
     from taskqueue.db import request_stop
     from taskqueue.victim import pick_victim as _pick
 
-    evict_key, scored = _pick(
-        conn, [(k, active_runs[k]) for k in keys if k in active_runs], resource="ram"
-    )
+    evict_key, scored = _pick(conn, [(k, active_runs[k]) for k in keys if k in active_runs], resource="ram")
     if evict_key is None:
         return
-    runner_up = (
-        f"; runner-up {task_key(*scored[1][0])} score={scored[1][1]:.2f}"
-        if len(scored) > 1 else ""
-    )
+    runner_up = f"; runner-up {task_key(*scored[1][0])} score={scored[1][1]:.2f}" if len(scored) > 1 else ""
     print(
-        f"[queue] {_ts()} {label}: suspending {task_key(*evict_key)} "
-        f"(score={scored[0][1]:.2f}{runner_up})",
+        f"[queue] {_ts()} {label}: suspending {task_key(*evict_key)} (score={scored[0][1]:.2f}{runner_up})",
         flush=True,
     )
     request_stop(conn, *evict_key)
@@ -447,19 +432,15 @@ def _preempt_scavenger(
     slot of another project would not help. One preemption per cooldown window,
     and none while a previous victim is still stopping.
     """
-    scavs = [
-        k for k, r in active_runs.items()
-        if r.task_row["task_class"] == "scavenger"
-    ] if active_runs else []
+    scavs = [k for k, r in active_runs.items() if r.task_row["task_class"] == "scavenger"] if active_runs else []
     if not scavs:
         return False
     cooldown = float(cfg.get("scavenger_preempt_cooldown_sec", 60))
     if now - float(state.get("at", 0.0)) < cooldown:
         return False
+
     def _stop_flag(k) -> int:
-        r = conn.execute(
-            "SELECT stop_requested FROM tasks WHERE project=? AND task_id=?", k
-        ).fetchone()
+        r = conn.execute("SELECT stop_requested FROM tasks WHERE project=? AND task_id=?", k).fetchone()
         return int(r["stop_requested"] or 0) if r else 0
 
     if any(_stop_flag(k) for k in scavs):
@@ -473,7 +454,10 @@ def _preempt_scavenger(
     if contender is None:
         return False
     _evict_one_suspend(
-        conn, home, active_runs, scavs,
+        conn,
+        home,
+        active_runs,
+        scavs,
         f"scavenger preempt (capacity wanted by {contender['project']}/{contender['task_id']})",
         reason="scavenger_preempt",
     )
@@ -518,22 +502,17 @@ def _cas_master_lease(
             raise MasterLeaseLockTimeout(str(exc)) from exc
         raise
     try:
-        row = conn.execute(
-            "SELECT holder, expires_at, epoch FROM master_lease WHERE singleton=1"
-        ).fetchone()
+        row = conn.execute("SELECT holder, expires_at, epoch FROM master_lease WHERE singleton=1").fetchone()
         if row is None:
             conn.execute(
-                "INSERT INTO master_lease (singleton, holder, expires_at, epoch) "
-                "VALUES (1, ?, ?, 1)",
+                "INSERT INTO master_lease (singleton, holder, expires_at, epoch) VALUES (1, ?, ?, 1)",
                 (holder, now + ttl),
             )
             conn.commit()
             return True
         epoch = int(row["epoch"] or 0)
         expired = int(row["expires_at"]) <= now
-        stale_dead = (not expired) and row["holder"] != holder and master_holder_process_dead(
-            str(row["holder"])
-        )
+        stale_dead = (not expired) and row["holder"] != holder and master_holder_process_dead(str(row["holder"]))
         if expired or stale_dead:
             conn.execute(
                 "UPDATE master_lease SET holder=?, expires_at=?, epoch=? WHERE singleton=1",
@@ -591,6 +570,7 @@ def _detect_hung_remote(
             may_auto_requeue,
             resolve_execution_semantics,
         )
+
         for row in remote_running:
             k = (row["project"], row["task_id"], row["run_id"])
             live_keys.add(k)
@@ -614,9 +594,7 @@ def _detect_hung_remote(
             raw_sem = ""
             if "execution_semantics" in row.keys():
                 raw_sem = row["execution_semantics"] or ""
-            semantics = resolve_execution_semantics(
-                raw_sem, idempotent=bool(int(row["idempotent"] or 0))
-            )
+            semantics = resolve_execution_semantics(raw_sem, idempotent=bool(int(row["idempotent"] or 0)))
             if not may_auto_requeue(semantics):
                 # F-019 / R-011: non-requeueable hung tasks can't be auto-reassigned;
                 # after 3×hung_k ticks escalate to unknown (operator decides).
@@ -633,8 +611,13 @@ def _detect_hung_remote(
                             (now_iso, row["project"], row["task_id"]),
                         )
                         finish_run(
-                            conn, row["run_id"], -1, "failed",
-                            last_error_code=tqerr.INFRA_HUNG, only_if_running=True, commit=False,
+                            conn,
+                            row["run_id"],
+                            -1,
+                            "failed",
+                            last_error_code=tqerr.INFRA_HUNG,
+                            only_if_running=True,
+                            commit=False,
                         )
                         conn.execute(
                             "UPDATE tasks SET status=?, last_error_code=?, "
@@ -656,7 +639,9 @@ def _detect_hung_remote(
                     )
                 else:
                     _note_block(
-                        conn, row["project"], row["task_id"],
+                        conn,
+                        row["project"],
+                        row["task_id"],
                         tqerr.INFRA_HUNG,
                         f"hung for {count} ticks on worker {row['worker_id']}; "
                         f"set idempotent: true or execution_semantics: idempotent "
@@ -681,8 +666,13 @@ def _detect_hung_remote(
                     (now_iso, row["project"], row["task_id"]),
                 )
                 finish_run(
-                    conn, row["run_id"], -1, "interrupted",
-                    last_error_code=tqerr.INFRA_HUNG, only_if_running=True, commit=False,
+                    conn,
+                    row["run_id"],
+                    -1,
+                    "interrupted",
+                    last_error_code=tqerr.INFRA_HUNG,
+                    only_if_running=True,
+                    commit=False,
                 )
                 conn.execute(
                     # F-008: clear stop_requested so the *new* attempt isn't immediately stopped.
@@ -788,8 +778,14 @@ def decide_terminal_status(
     stopped_by = None
     if status in (STATUS_INTERRUPTED, STATUS_STOPPED):
         if stop_reason in (
-            "wall_clock_cap", "ram_hard", "vram_hard", "frozen", "frozen_restart",
-            "evicted", "deps_invalidated", "scavenger_preempt",
+            "wall_clock_cap",
+            "ram_hard",
+            "vram_hard",
+            "frozen",
+            "frozen_restart",
+            "evicted",
+            "deps_invalidated",
+            "scavenger_preempt",
         ):
             stopped_by = "tq"
         elif stop_reason == "host-sleep":
@@ -813,10 +809,14 @@ def _collect_finished_runs(
             row = get_task(conn, *key)
             if not run.stop_reason or run.stop_reason == "stop_requested":
                 try:
-                    _sr = conn.execute(
-                        "SELECT stop_reason FROM runs WHERE run_id = ?",
-                        (run.run_id,),
-                    ).fetchone() if run.run_id else None
+                    _sr = (
+                        conn.execute(
+                            "SELECT stop_reason FROM runs WHERE run_id = ?",
+                            (run.run_id,),
+                        ).fetchone()
+                        if run.run_id
+                        else None
+                    )
                     if _sr and _sr["stop_reason"]:
                         run.stop_reason = _sr["stop_reason"]
                 except Exception:
@@ -872,14 +872,21 @@ def _collect_finished_runs(
                     outcome = apply_cap_auto_retry(conn, key[0], key[1])
                     if outcome == "queued":
                         status = STATUS_QUEUED
+                elif err_code in (tqerr.STOP_RAM, tqerr.STOP_VRAM) and status == STATUS_INTERRUPTED:
+                    # F-192: pressure stops must land auto-restartable (stopped),
+                    # never terminal interrupted — re-queue so admit can pick them up.
+                    set_task_status(conn, key[0], key[1], STATUS_STOPPED)
+                    status = STATUS_STOPPED
             except Exception as _pe:
                 print(
                     f"[queue] {_ts()} warn: post-finalize update {task_key(*key)} failed: {_pe}",
                     file=sys.stderr,
                     flush=True,
                 )
-            emoji = "OK" if status == STATUS_COMPLETED else (
-                "--" if status in (STATUS_INTERRUPTED, STATUS_STOPPED) else "!!"
+            emoji = (
+                "OK"
+                if status == STATUS_COMPLETED
+                else ("--" if status in (STATUS_INTERRUPTED, STATUS_STOPPED) else "!!")
             )
             code_tag = f" [{err_code}]" if err_code else ""
             print(
@@ -909,10 +916,7 @@ def _run_local_admission(
     _cooldown = now < admit_frozen_until
     _cooldown_reason = ""
     if _cooldown:
-        _cooldown_reason = (
-            f"admission frozen for {admit_frozen_until - now:.0f}s "
-            f"after resource-pressure stop"
-        )
+        _cooldown_reason = f"admission frozen for {admit_frozen_until - now:.0f}s after resource-pressure stop"
         if not cooldown_logged:
             print(f"[queue] {_ts()} {_cooldown_reason}", flush=True)
             cooldown_logged = True
@@ -923,16 +927,19 @@ def _run_local_admission(
     _cpu_blocked = cpu_ema > _cpu_limit_cores
     _cpu_reason = ""
     if _cpu_blocked:
-        _cpu_reason = (
-            f"admission skipped (CPU): live load "
-            f"{cpu_ema:.1f} cores > limit {_cpu_limit_cores:.1f}"
-        )
+        _cpu_reason = f"admission skipped (CPU): live load {cpu_ema:.1f} cores > limit {_cpu_limit_cores:.1f}"
         print(f"[queue] {_ts()} {_cpu_reason}", flush=True)
     from taskqueue.scheduler import _local_admit_queued
 
     _local_admit_queued(
-        conn, home, projects, active_runs, system_info, cfg,
-        graceful_stop, shutdown,
+        conn,
+        home,
+        projects,
+        active_runs,
+        system_info,
+        cfg,
+        graceful_stop,
+        shutdown,
         reservation_state=reservation_state,
         host_cpu_blocked=_cpu_blocked,
         host_cpu_reason=_cpu_reason,
@@ -961,8 +968,14 @@ def _fast_reap_and_admit(
     """Minimal tick when a local run finishes: reap then admit."""
     _collect_finished_runs(conn, active_runs, home, frozen_alerted=frozen_alerted)
     return _run_local_admission(
-        conn, home, projects, active_runs, system_info, cfg,
-        graceful_stop, shutdown,
+        conn,
+        home,
+        projects,
+        active_runs,
+        system_info,
+        cfg,
+        graceful_stop,
+        shutdown,
         now=time.monotonic(),
         admit_frozen_until=admit_frozen_until,
         cooldown_logged=cooldown_logged,
@@ -1013,9 +1026,7 @@ class _UsageAccumulator:
             try:
                 # Apply decay to existing project_usage rows
                 conn.execute(
-                    "UPDATE project_usage SET"
-                    " gpu_seconds = gpu_seconds * ?,"
-                    " cpu_seconds = cpu_seconds * ?",
+                    "UPDATE project_usage SET gpu_seconds = gpu_seconds * ?, cpu_seconds = cpu_seconds * ?",
                     (decay, decay),
                 )
                 # Merge in-memory accumulators into DB
@@ -1123,8 +1134,7 @@ class _HardwareRefresher:
 def _handle_clock_jump(conn, active_runs: dict, *, gap: float, jump_thr: float) -> None:
     """F-001: wall-clock jump (sleep/hibernate wake) → stop locals + re-queue ghosts."""
     print(
-        f"[queue] {_ts()} clock jump detected ({gap:.0f}s > {jump_thr:.0f}s); "
-        f"reclaiming running tasks",
+        f"[queue] {_ts()} clock jump detected ({gap:.0f}s > {jump_thr:.0f}s); reclaiming running tasks",
         flush=True,
     )
     # Stop locals but do not finalize — requeue_orphaned_running owns DB
@@ -1136,9 +1146,7 @@ def _handle_clock_jump(conn, active_runs: dict, *, gap: float, jump_thr: float) 
             print(f"[queue] {_ts()} warn: stop after wake {task_key(*key)}: {exc}", file=sys.stderr)
         active_runs.pop(key, None)
     grace = float(get_config(conn).get("graceful_stop_sec", 30))
-    requeue_orphaned_running(
-        conn, reason="clock-jump", graceful_sec=grace, gap_sec=gap
-    )
+    requeue_orphaned_running(conn, reason="clock-jump", graceful_sec=grace, gap_sec=gap)
 
 
 def _revalidate_running_deps(conn, home: Path, active_runs: dict) -> None:
@@ -1146,13 +1154,13 @@ def _revalidate_running_deps(conn, home: Path, active_runs: dict) -> None:
     # Catches upstream retry while a dependent is mid-run, and any
     # other path that leaves peers non-completed after admit.
     from taskqueue.db import revalidate_running_dependencies
+
     for _dproj, _dtid, _dunmet in revalidate_running_dependencies(conn, home=home):
         _dkey = (_dproj, _dtid)
         if _dkey in active_runs:
             active_runs[_dkey].stop_reason = "deps_invalidated"
         print(
-            f"[queue] {_ts()} deps invalidated while running: "
-            f"{task_key(_dproj, _dtid)} (unmet: {_dunmet}) — stopping",
+            f"[queue] {_ts()} deps invalidated while running: {task_key(_dproj, _dtid)} (unmet: {_dunmet}) — stopping",
             flush=True,
         )
 
@@ -1189,8 +1197,7 @@ def _enforce_stops_and_caps(conn, active_runs: dict, home: Path, suspend_grace: 
                 run.stop(background=True)
             elif first_notice:
                 print(
-                    f"[queue] {_ts()} cooperative suspend requested "
-                    f"{task_key(*key)}{by} (grace {suspend_grace:.0f}s)",
+                    f"[queue] {_ts()} cooperative suspend requested {task_key(*key)}{by} (grace {suspend_grace:.0f}s)",
                     flush=True,
                 )
             run._stop_logged = True
@@ -1199,6 +1206,7 @@ def _enforce_stops_and_caps(conn, active_runs: dict, home: Path, suspend_grace: 
         if cap and run.elapsed_sec() > cap:
             run.stop_reason = "wall_clock_cap"
             from taskqueue.db import request_stop
+
             request_stop(conn, *key)
             run.request_cooperative_suspend(home)
             if run.suspend_grace_elapsed(suspend_grace):
@@ -1213,9 +1221,23 @@ def _enforce_stops_and_caps(conn, active_runs: dict, home: Path, suspend_grace: 
 
 
 def _stop_pressure_victims(
-    conn, remaining: dict, *, resource: str, attr: str, projected: float, soft_limit: float,
-    stop_cap: int, stop_reason: str, err_code: str, log_label: str, log_used: str,
-    hard_limit: float, task_label: str, victim_label: str, block_used: str, total: float,
+    conn,
+    remaining: dict,
+    *,
+    resource: str,
+    attr: str,
+    projected: float,
+    soft_limit: float,
+    stop_cap: int,
+    stop_reason: str,
+    err_code: str,
+    log_label: str,
+    log_used: str,
+    hard_limit: float,
+    task_label: str,
+    victim_label: str,
+    block_used: str,
+    total: float,
 ) -> int:
     """Stop victims (cheapest to kill first) until ``projected`` drops under ``soft_limit``.
 
@@ -1228,17 +1250,16 @@ def _stop_pressure_victims(
         # D7: pick by cost-of-killing, not just biggest RSS, so an idempotent task dies
         # before a non-idempotent one that is nearly finished.
         victim_key, scored = pick_victim(
-            conn, list(remaining.items()),
-            needed_gib=max(0.0, projected - soft_limit), resource=resource,
+            conn,
+            list(remaining.items()),
+            needed_gib=max(0.0, projected - soft_limit),
+            resource=resource,
         )
         if victim_key is None:
             break
         victim = remaining.pop(victim_key)
         held = float(getattr(victim, attr) or 0.0)
-        runner_up = (
-            f"; runner-up {task_key(*scored[1][0])} score={scored[1][1]:.2f}"
-            if len(scored) > 1 else ""
-        )
+        runner_up = f"; runner-up {task_key(*scored[1][0])} score={scored[1][1]:.2f}" if len(scored) > 1 else ""
         victim.stop_reason = stop_reason
         print(
             f"[queue] {_ts()} {log_label} hard limit: stopping {task_key(*victim_key)} "
@@ -1248,7 +1269,10 @@ def _stop_pressure_victims(
             flush=True,
         )
         set_task_error(
-            conn, victim_key[0], victim_key[1], err_code,
+            conn,
+            victim_key[0],
+            victim_key[1],
+            err_code,
             block_reason=(
                 f"{block_used} > hard {hard_limit:.1f} "
                 f"(soft {soft_limit:.1f}, total {total:.1f}); "
@@ -1286,12 +1310,22 @@ def _enforce_hard_pressure(conn, cfg: dict, system_info: dict, active_runs: dict
         soft_limit = ram_total * soft_pct / 100.0
         _remaining, _dying_ram = _split_dying(active_runs, "current_ram_gib")
         _stopped_now = _stop_pressure_victims(
-            conn, _remaining, resource="ram", attr="current_ram_gib",
-            projected=host_used - _dying_ram, soft_limit=soft_limit,
-            stop_cap=int(cfg.get("stop_max_per_tick", 2)), stop_reason="ram_hard",
-            err_code=tqerr.STOP_RAM, log_label="RAM", log_used=f"host {host_used:.1f}",
-            hard_limit=hard_limit, task_label="task RSS", victim_label="victim RSS",
-            block_used=f"RAM: host {host_used:.1f}", total=ram_total,
+            conn,
+            _remaining,
+            resource="ram",
+            attr="current_ram_gib",
+            projected=host_used - _dying_ram,
+            soft_limit=soft_limit,
+            stop_cap=int(cfg.get("stop_max_per_tick", 2)),
+            stop_reason="ram_hard",
+            err_code=tqerr.STOP_RAM,
+            log_label="RAM",
+            log_used=f"host {host_used:.1f}",
+            hard_limit=hard_limit,
+            task_label="task RSS",
+            victim_label="victim RSS",
+            block_used=f"RAM: host {host_used:.1f}",
+            total=ram_total,
         )
         if _stopped_now:
             # D9: freeze admission while the OS reclaims. Without this,
@@ -1309,30 +1343,33 @@ def _enforce_hard_pressure(conn, cfg: dict, system_info: dict, active_runs: dict
         if _vram_total > 0:
             _vram_hard_limit = _vram_total * _vram_hard_pct / 100.0
             # F-143: prefer host-wide GPU usage (includes non-task CUDA) over task-only sum.
-            _vram_used_now = sum(
-                float(g.get("vram_used_gib") or 0.0)
-                for g in (system_info.get("gpus") or [])
-            )
+            _vram_used_now = sum(float(g.get("vram_used_gib") or 0.0) for g in (system_info.get("gpus") or []))
             if _vram_used_now <= 0:
-                _vram_used_now = sum(
-                    float(r.current_vram_gib or 0.0) for r in active_runs.values()
-                )
+                _vram_used_now = sum(float(r.current_vram_gib or 0.0) for r in active_runs.values())
             if _vram_used_now > _vram_hard_limit:
                 # Refresh VRAM readings before making stop decisions.
                 for _rv in list(active_runs.values()):
                     _rv.update_resources()
-                _vram_used_now = sum(
-                    float(r.current_vram_gib or 0.0) for r in active_runs.values()
-                )
+                _vram_used_now = sum(float(r.current_vram_gib or 0.0) for r in active_runs.values())
                 _vram_soft_limit = _vram_total * float(cfg.get("gpu_limit_pct", 100)) / 100.0
                 _vram_remaining, _dying_vram = _split_dying(active_runs, "current_vram_gib")
                 _vram_stopped = _stop_pressure_victims(
-                    conn, _vram_remaining, resource="vram", attr="current_vram_gib",
-                    projected=_vram_used_now - _dying_vram, soft_limit=_vram_soft_limit,
-                    stop_cap=int(cfg.get("stop_max_per_tick", 2)), stop_reason="vram_hard",
-                    err_code=tqerr.STOP_VRAM, log_label="VRAM", log_used=f"VRAM {_vram_used_now:.1f}",
-                    hard_limit=_vram_hard_limit, task_label="task VRAM", victim_label="victim VRAM",
-                    block_used=f"VRAM: device {_vram_used_now:.1f}", total=_vram_total,
+                    conn,
+                    _vram_remaining,
+                    resource="vram",
+                    attr="current_vram_gib",
+                    projected=_vram_used_now - _dying_vram,
+                    soft_limit=_vram_soft_limit,
+                    stop_cap=int(cfg.get("stop_max_per_tick", 2)),
+                    stop_reason="vram_hard",
+                    err_code=tqerr.STOP_VRAM,
+                    log_label="VRAM",
+                    log_used=f"VRAM {_vram_used_now:.1f}",
+                    hard_limit=_vram_hard_limit,
+                    task_label="task VRAM",
+                    victim_label="victim VRAM",
+                    block_used=f"VRAM: device {_vram_used_now:.1f}",
+                    total=_vram_total,
                 )
                 if _vram_stopped:
                     admit_frozen_until = now + float(cfg.get("recovery_cooldown_sec", 30))
@@ -1368,11 +1405,7 @@ def _heartbeat_and_sanity(
                     "Check CUDA availability, driver, and library installation.",
                     flush=True,
                 )
-            elif (
-                run.gpu_util_ema is not None
-                and run._gpu_util_samples >= 3
-                and run.gpu_util_ema < gpu_util_warn_pct
-            ):
+            elif run.gpu_util_ema is not None and run._gpu_util_samples >= 3 and run.gpu_util_ema < gpu_util_warn_pct:
                 # VRAM allocated but GPU barely active: pipeline is CPU-bound.
                 print(
                     f"[queue] {_ts()} WARN {task_key(*key)} GPU util EMA "
@@ -1419,10 +1452,7 @@ def _heartbeat_and_sanity(
             gpu_requested=gpu_requested,
             wsl_dispatched=wsl_dispatched,
         )
-        gpu_ema_str = (
-            f" gpu_util={run.gpu_util_ema:.0f}%"
-            if run.gpu_util_ema is not None else ""
-        )
+        gpu_ema_str = f" gpu_util={run.gpu_util_ema:.0f}%" if run.gpu_util_ema is not None else ""
         pct_str = f" {run.progress_pct:.0f}%" if run.progress_pct is not None else ""
         eta_str = ""
         if run.progress_pct and run.progress_pct > 0:
@@ -1430,17 +1460,15 @@ def _heartbeat_and_sanity(
             eta_str = f" ETA ~{_fmt_duration(total_est - run.elapsed_sec())}"
         frozen_str = ""
         if snap["frozen"]:
-            frozen_str = (
-                f" [FROZEN out={_fmt_duration(run.idle_sec())} "
-                f"cpu={_fmt_duration(run.active_idle_sec())}]"
-            )
+            frozen_str = f" [FROZEN out={_fmt_duration(run.idle_sec())} cpu={_fmt_duration(run.active_idle_sec())}]"
         suspect_str = " [PROGRESS_SUSPECT]" if snap["progress_suspect"] else ""
         # Heartbeat line only when something changed or every HEARTBEAT_LOG_SEC (was every ~30 s
         # per run: hundreds of MiB of daemon.log per day with many runs).
         _now_m = time.monotonic()
         _pct_i = None if run.progress_pct is None else int(run.progress_pct)
         if (
-            frozen_str or suspect_str
+            frozen_str
+            or suspect_str
             or _pct_i != getattr(run, "_hb_last_pct", "unset")
             or _now_m - getattr(run, "_hb_last_print", 0.0) >= HEARTBEAT_LOG_SEC
         ):
@@ -1459,7 +1487,9 @@ def _heartbeat_and_sanity(
                 try:
                     from taskqueue.system_alerts import emit_task_frozen
 
-                    if emit_task_frozen(conn, home, project=key[0], task_id=key[1], elapsed_sec=run.elapsed_sec(), run_id=run.run_id):
+                    if emit_task_frozen(
+                        conn, home, project=key[0], task_id=key[1], elapsed_sec=run.elapsed_sec(), run_id=run.run_id
+                    ):
                         frozen_alerted.add(int(rid))
                 except Exception:
                     pass
@@ -1467,21 +1497,17 @@ def _heartbeat_and_sanity(
             frozen_action = str(cfg.get("frozen_action", "log")).lower()
             if frozen_action in ("stop", "restart") and key in active_runs:
                 print(
-                    f"[queue] {_ts()} frozen_action={frozen_action}: "
-                    f"stopping frozen task {task_key(*key)}",
+                    f"[queue] {_ts()} frozen_action={frozen_action}: stopping frozen task {task_key(*key)}",
                     flush=True,
                 )
                 # restart: finalize will re-queue after the process exits
                 # (do not set queued here — that races finalize → failed).
-                active_runs[key].stop_reason = (
-                    "frozen_restart" if frozen_action == "restart" else "frozen"
-                )
+                active_runs[key].stop_reason = "frozen_restart" if frozen_action == "restart" else "frozen"
                 active_runs[key].stop(background=True)
         elif snap["progress_suspect"]:
             _note_block(conn, key[0], key[1], tqerr.RUN_PROGRESS_SUSPECT, "progress % advanced without process CPU")
         run._sanity_prev_pct = run.progress_pct
         run._sanity_prev_active = cur_active
-
 
 
 _PROC_CHILDREN_REFRESH_TICKS = 3
@@ -1532,9 +1558,7 @@ class TickState:
 def _run_hourly_maintenance(conn, home) -> None:
     """C5: resource_history (7 d) + daemon_events (90 d) + usage pruning, log rotation, retention."""
     try:
-        conn.execute(
-            "DELETE FROM resource_history WHERE ts < unixepoch('now','-7 days')"
-        )
+        conn.execute("DELETE FROM resource_history WHERE ts < unixepoch('now','-7 days')")
         conn.commit()
     except Exception:
         pass
@@ -1550,9 +1574,7 @@ def _run_hourly_maintenance(conn, home) -> None:
         )
 
         RECORDER.flush(conn)
-        prune_api_usage(
-            conn, int(get_config(conn).get("retention_usage_days", DEFAULT_RETENTION_DAYS))
-        )
+        prune_api_usage(conn, int(get_config(conn).get("retention_usage_days", DEFAULT_RETENTION_DAYS)))
     except Exception:
         pass
     try:
@@ -1567,8 +1589,7 @@ def _run_hourly_maintenance(conn, home) -> None:
             _ret = run_maintenance(home, conn, _cfg_ret)
             if _ret["runs_deleted"] or _ret["audit_deleted"] or _ret["logs_deleted"]:
                 print(
-                    f"[queue] {_ts()} retention: "
-                    f"{ {k: v for k, v in _ret.items() if k != 'per_project'} }",
+                    f"[queue] {_ts()} retention: { {k: v for k, v in _ret.items() if k != 'per_project'} }",
                     flush=True,
                 )
     except Exception as _re:
@@ -1641,6 +1662,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
     # non-blocking and cheap; the first call returns 0.0 which the EMA
     # absorbs without distorting the steady state.
     from taskqueue.resources import cpu_cores_from_load
+
     _cpu_raw = cpu_cores_from_load()
     _ema_sec = float(cfg.get("cpu_measure_ema_sec", 30))
     _alpha = min(1.0, st.interval / max(_ema_sec, st.interval))
@@ -1662,6 +1684,9 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
                 _fz = _enforce_hard_pressure(conn, cfg, system_info, active_runs, now)
                 if _fz is not None:
                     st.admit_frozen_until = _fz
+                # F-193: stamp wall on every return so a long lease-lost gap is
+                # not misread as host-sleep on the next successful tick.
+                st.last_wall = wall
                 return False
         except Exception as exc:
             print(
@@ -1674,6 +1699,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
                     st.admit_frozen_until = _fz
             except Exception:
                 pass
+            st.last_wall = wall
             return False
 
     # Leases: reclaim dead remote runs; demote stale workers
@@ -1697,8 +1723,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
     gap = wall - st.last_wall if st.last_wall > 0 else 0.0
     if st.last_wall > 0 and gap > jump_thr * 0.8 and gap <= jump_thr:
         print(
-            f"[queue] {_ts()} WARN scheduler tick slow: {gap:.0f}s "
-            f"(clock-jump threshold {jump_thr:.0f}s)",
+            f"[queue] {_ts()} WARN scheduler tick slow: {gap:.0f}s (clock-jump threshold {jump_thr:.0f}s)",
             flush=True,
         )
     if is_clock_jump(st.last_wall, wall, jump_thr):
@@ -1707,6 +1732,8 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
 
     # Re-read registry + sync every project's YAML dir every 60s or on file change (I-07)
     if now - st.last_sync > 60 or env.sync_requested.is_set():
+        # Clear before sync so a watcher set() during sync is preserved for next tick.
+        env.sync_requested.clear()
         rotate_own_log(env.home)
         try:
             _replace_registry(st.projects, load_projects(home))
@@ -1715,7 +1742,6 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
         for project in st.projects.values():
             _sync_project(conn, project, home=home)
         st.last_sync = now
-        env.sync_requested.clear()
 
     # Refresh live RAM + CPU for all active runs (fast psutil, no nvidia-smi)
     # W4.8: batch resource_history inserts into one transaction.
@@ -1723,10 +1749,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
     _history_dirty = False
     if active_runs:
         st.proc_children_tick += 1
-        if (
-            st.proc_children_cache is None
-            or st.proc_children_tick >= _PROC_CHILDREN_REFRESH_TICKS
-        ):
+        if st.proc_children_cache is None or st.proc_children_tick >= _PROC_CHILDREN_REFRESH_TICKS:
             st.proc_children_cache = build_process_children_map()
             st.proc_children_tick = 0
         _proc_children = st.proc_children_cache
@@ -1740,15 +1763,13 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
         if run._pending_history_sample is not None:
             try:
                 from taskqueue.db import record_resource_sample
-                record_resource_sample(
-                    conn, run.run_id, *run._pending_history_sample, commit=False
-                )
+
+                record_resource_sample(conn, run.run_id, *run._pending_history_sample, commit=False)
                 _history_dirty = True
             except Exception as _hist_exc:
                 # F-129: do not silently drop history; tick continues.
                 print(
-                    f"[queue] {_ts()} warn: resource_history sample failed "
-                    f"run={run.run_id}: {_hist_exc}",
+                    f"[queue] {_ts()} warn: resource_history sample failed run={run.run_id}: {_hist_exc}",
                     file=sys.stderr,
                 )
             run._pending_history_sample = None
@@ -1784,14 +1805,22 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
 
     # Heartbeat + frozen / progress-sanity (active CPU time, not wall idle alone)
     if now - st.last_heartbeat > heartbeat_sec:
-        _heartbeat_and_sanity(
-            conn, home, cfg, active_runs, frozen_threshold, st.frozen_alerted
-        )
+        _heartbeat_and_sanity(conn, home, cfg, active_runs, frozen_threshold, st.frozen_alerted)
         st.last_heartbeat = now
 
     _frozen_until = _enforce_hard_pressure(conn, cfg, system_info, active_runs, now)
     if _frozen_until is not None:
         st.admit_frozen_until = _frozen_until
+    # F-192: clear recovery freeze once host RAM is back under the soft limit
+    # (dying RSS reclaimed / idle). Otherwise queued work stays blocked with a
+    # stale "admission frozen for Ns" reason after pressure is gone.
+    elif st.admit_frozen_until > now:
+        from taskqueue.resources import ram_used_gib
+
+        _ram_total = float(system_info.get("ram_total_gib") or 0.0)
+        _soft_pct = float(cfg.get("ram_limit_pct", 80))
+        if _ram_total > 0 and ram_used_gib() <= _ram_total * _soft_pct / 100.0:
+            st.admit_frozen_until = 0.0
 
     # I-28: Graceful eviction when resource limits decrease
     limit_decrease_policy = str(cfg.get("limit_decrease_policy", "ignore")).lower()
@@ -1800,9 +1829,11 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
         local_keys = list(active_runs.keys())
         if max_tasks_evict > 0 and len(local_keys) > max_tasks_evict:
             _evict_one_suspend(
-                conn, home, active_runs, local_keys,
-                f"limit_decrease_policy=evict "
-                f"(local={len(local_keys)} > max_running_tasks={max_tasks_evict})",
+                conn,
+                home,
+                active_runs,
+                local_keys,
+                f"limit_decrease_policy=evict (local={len(local_keys)} > max_running_tasks={max_tasks_evict})",
             )
 
     # Host sleep inhibit while local runs are active (Windows; complements F-001).
@@ -1834,7 +1865,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
         from taskqueue.queries import cancel_dead_dependents, cancel_negative_dependents
 
         cancel_dead_dependents(conn, home, cfg)
-        cancel_negative_dependents(conn)
+        cancel_negative_dependents(conn, home, cfg)
     except Exception as _cde:
         print(f"[queue] {_ts()} warn: dependency-cancel sweep failed: {_cde}", file=sys.stderr)
     try:
@@ -1842,8 +1873,14 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
     except Exception as _spe:
         print(f"[queue] {_ts()} warn: scavenger preempt failed: {_spe}", file=sys.stderr)
     st.cooldown_logged = _run_local_admission(
-        conn, home, st.projects, active_runs, system_info, cfg,
-        st.graceful_stop, env.is_shutdown(),
+        conn,
+        home,
+        st.projects,
+        active_runs,
+        system_info,
+        cfg,
+        st.graceful_stop,
+        env.is_shutdown(),
         now=now,
         admit_frozen_until=st.admit_frozen_until,
         cooldown_logged=st.cooldown_logged,
@@ -1875,31 +1912,41 @@ def idle_wait_and_fast_admit(env: TickEnv, st: TickState) -> None:
         if not env.is_shutdown() and not env.host_sleeping() and not env.lease_lost.is_set():
             # T-200: YAML wake must sync before admit so new tasks are visible.
             if env.sync_requested.is_set():
+                env.sync_requested.clear()  # before sync: preserve mid-sync wakes
                 try:
                     _replace_registry(st.projects, load_projects(home))
                 except Exception as exc:
                     print(
-                        f"[queue] {_ts()} warn: projects.yaml invalid, "
-                        f"keeping previous registry: {exc}",
+                        f"[queue] {_ts()} warn: projects.yaml invalid, keeping previous registry: {exc}",
                         file=sys.stderr,
                     )
                 for project in st.projects.values():
                     _sync_project(conn, project, home=home)
                 st.last_sync = time.time()
-                env.sync_requested.clear()
             st.cooldown_logged = _fast_reap_and_admit(
-                conn, home, st.projects, active_runs, system_info, cfg,
-                st.graceful_stop, env.is_shutdown(),
+                conn,
+                home,
+                st.projects,
+                active_runs,
+                system_info,
+                cfg,
+                st.graceful_stop,
+                env.is_shutdown(),
                 admit_frozen_until=st.admit_frozen_until,
                 cooldown_logged=st.cooldown_logged,
                 reservation_state=st.reservation_state,
                 cpu_ema=st.cpu_ema,
                 frozen_alerted=st.frozen_alerted,
             )
+            # F-193: long fast-admit must not look like host-sleep on next tick.
+            st.last_wall = time.time()
 
 
 def _acquire_master_lease(
-    conn: sqlite3.Connection, my_instance: str, claim_master: bool, pre_stop: Any,
+    conn: sqlite3.Connection,
+    my_instance: str,
+    claim_master: bool,
+    pre_stop: Any,
 ) -> None:
     """Force-claim the master lease, or wait (interruptibly) until it is ours."""
     from taskqueue.config import MASTER_LEASE_TTL_SEC
@@ -1907,19 +1954,15 @@ def _acquire_master_lease(
     if claim_master:
         # --claim-master --force: unconditionally overwrite (caller checked --force)
         now = int(time.time())
-        row = conn.execute(
-            "SELECT epoch FROM master_lease WHERE singleton=1"
-        ).fetchone()
+        row = conn.execute("SELECT epoch FROM master_lease WHERE singleton=1").fetchone()
         epoch = int(row["epoch"] or 0) + 1 if row else 1
         conn.execute(
-            "INSERT OR REPLACE INTO master_lease (singleton, holder, expires_at, epoch) "
-            "VALUES (1, ?, ?, ?)",
+            "INSERT OR REPLACE INTO master_lease (singleton, holder, expires_at, epoch) VALUES (1, ?, ?, ?)",
             (my_instance, now + MASTER_LEASE_TTL_SEC, epoch),
         )
         conn.commit()
         print(
-            f"[queue] {time.strftime('%H:%M:%S')} master lease force-claimed: "
-            f"holder={my_instance} epoch={epoch}",
+            f"[queue] {time.strftime('%H:%M:%S')} master lease force-claimed: holder={my_instance} epoch={epoch}",
             flush=True,
         )
     else:
@@ -1928,8 +1971,7 @@ def _acquire_master_lease(
             try:
                 if _cas_master_lease(conn, my_instance):
                     print(
-                        f"[queue] {time.strftime('%H:%M:%S')} master lease acquired: "
-                        f"holder={my_instance}",
+                        f"[queue] {time.strftime('%H:%M:%S')} master lease acquired: holder={my_instance}",
                         flush=True,
                     )
                     break
@@ -1971,7 +2013,6 @@ def _acquire_master_lease(
             pre_stop.wait(10)
 
 
-
 @dataclass
 class _HostSleepState:
     sleeping: bool = False
@@ -1979,7 +2020,10 @@ class _HostSleepState:
 
 
 def _power_listener_main(
-    home: Path, active_runs: dict, host: _HostSleepState, hw_refresh_now: Any,
+    home: Path,
+    active_runs: dict,
+    host: _HostSleepState,
+    hw_refresh_now: Any,
 ) -> None:
     """Windows power-event listener: drain local runs on suspend, refresh hardware on resume."""
     import ctypes
@@ -2006,13 +2050,13 @@ def _power_listener_main(
                 host.sleeping = True
                 host.suspended_at = time.time()
                 print(
-                    f"[queue] {_ts()} power: host suspend detected "
-                    f"— draining {len(active_runs)} local run(s)",
+                    f"[queue] {_ts()} power: host suspend detected — draining {len(active_runs)} local run(s)",
                     flush=True,
                 )
                 for key in list(active_runs.keys()):
                     try:
                         from taskqueue.db import write_control_action
+
                         write_control_action(home, key[0], key[1], "suspend")
                     except Exception as exc:
                         print(f"[queue] {_ts()} warn: suspend drain {key}: {exc}", file=sys.stderr)
@@ -2029,33 +2073,32 @@ def _power_listener_main(
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
 
     user32.DefWindowProcW.restype = ctypes.c_int64
-    user32.DefWindowProcW.argtypes = [
-        ctypes.wintypes.HWND, ctypes.c_uint, ctypes.c_int64, ctypes.c_int64
-    ]
+    user32.DefWindowProcW.argtypes = [ctypes.wintypes.HWND, ctypes.c_uint, ctypes.c_int64, ctypes.c_int64]
     wndproc_cb = WNDPROCTYPE(_wndproc)
     try:
-        WNDCLASS = type("WNDCLASS", (ctypes.Structure,), {
-            "_fields_": [
-                ("style", ctypes.c_uint),
-                ("lpfnWndProc", WNDPROCTYPE),
-                ("cbClsExtra", ctypes.c_int),
-                ("cbWndExtra", ctypes.c_int),
-                ("hInstance", ctypes.wintypes.HMODULE),
-                ("hIcon", ctypes.wintypes.HANDLE),
-                ("hCursor", ctypes.wintypes.HANDLE),
-                ("hbrBackground", ctypes.wintypes.HANDLE),
-                ("lpszMenuName", ctypes.wintypes.LPCWSTR),
-                ("lpszClassName", ctypes.wintypes.LPCWSTR),
-            ]
-        })
+        WNDCLASS = type(
+            "WNDCLASS",
+            (ctypes.Structure,),
+            {
+                "_fields_": [
+                    ("style", ctypes.c_uint),
+                    ("lpfnWndProc", WNDPROCTYPE),
+                    ("cbClsExtra", ctypes.c_int),
+                    ("cbWndExtra", ctypes.c_int),
+                    ("hInstance", ctypes.wintypes.HMODULE),
+                    ("hIcon", ctypes.wintypes.HANDLE),
+                    ("hCursor", ctypes.wintypes.HANDLE),
+                    ("hbrBackground", ctypes.wintypes.HANDLE),
+                    ("lpszMenuName", ctypes.wintypes.LPCWSTR),
+                    ("lpszClassName", ctypes.wintypes.LPCWSTR),
+                ]
+            },
+        )
         wc = WNDCLASS()
         wc.lpfnWndProc = wndproc_cb
         wc.lpszClassName = "TQPowerListener"
         user32.RegisterClassW(ctypes.byref(wc))
-        hwnd = user32.CreateWindowExW(
-            0, "TQPowerListener", "TQPowerListener",
-            0, 0, 0, 0, 0, None, None, None, None
-        )
+        hwnd = user32.CreateWindowExW(0, "TQPowerListener", "TQPowerListener", 0, 0, 0, 0, 0, None, None, None, None)
         if hwnd:
             msg = ctypes.wintypes.MSG()
             while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
@@ -2066,7 +2109,10 @@ def _power_listener_main(
 
 
 def _start_lease_renew_thread(
-    db_path: Path, my_instance: str, lease_lost: threading.Event, is_shutdown: Callable[[], bool],
+    db_path: Path,
+    my_instance: str,
+    lease_lost: threading.Event,
+    is_shutdown: Callable[[], bool],
 ) -> threading.Thread:
     """F-074: renew master_lease on a dedicated thread so a blocked scheduler
     tick (heavy sync / SQLite busy) cannot expire fencing and 503 workers.
@@ -2089,9 +2135,7 @@ def _start_lease_renew_thread(
                     )
                     wconn.commit()
                     if cur.rowcount == 0:
-                        row = wconn.execute(
-                            "SELECT holder, expires_at FROM master_lease WHERE singleton=1"
-                        ).fetchone()
+                        row = wconn.execute("SELECT holder, expires_at FROM master_lease WHERE singleton=1").fetchone()
                         holder_now = row["holder"] if row else "unknown"
                         print(
                             f"[queue] {_ts()} WARN: master lease lost to '{holder_now}' "
@@ -2117,6 +2161,7 @@ def _start_lease_renew_thread(
 
 def _stop_and_finalize_all(active_runs: "dict[RunKey, ActiveRun]") -> None:
     """Stop every active run (in parallel); finalize each as interrupted/completed."""
+
     def _safe_stop(run) -> None:
         try:
             run.stop()
@@ -2201,6 +2246,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
     # F-103: include process create_time so _daemon_running can detect PID reuse.
     try:
         import psutil as _psutil
+
         _ct = _psutil.Process(os.getpid()).create_time()
         pid_path.write_text(f"{os.getpid()}:{_ct:.3f}")
     except Exception:
@@ -2279,6 +2325,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
 
     # I-17: also reclaim any remote tasks whose leases expired during downtime
     from taskqueue.db import reclaim_expired_leases as _reclaim
+
     heartbeat0 = float(cfg0.get("heartbeat_sec", 30))
     stale_remote = _reclaim(conn, heartbeat_sec=heartbeat0)
     if stale_remote:
@@ -2290,6 +2337,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
 
     # I-07: file-watch triggered sync — supplement the 60s poll with instant YAML change detection
     import threading as _threading
+
     _sync_requested = _threading.Event()
     _hw_refresh_now = _threading.Event()
     _watchdog_observer = None
@@ -2299,12 +2347,11 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
 
         class _YamlWatcher(_WdHandler):
             def on_any_event(self, ev):  # type: ignore
-                if not ev.is_directory and str(getattr(ev, "src_path", "")).endswith(
-                    (".yaml", ".yml")
-                ):
+                if not ev.is_directory and str(getattr(ev, "src_path", "")).endswith((".yaml", ".yml")):
                     _sync_requested.set()
                     try:
                         from taskqueue.sched_wake import wake_scheduler
+
                         wake_scheduler()
                     except Exception:
                         pass
@@ -2371,8 +2418,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
             try:
                 n_toast = int(
                     conn.execute(
-                        "SELECT COUNT(*) AS n FROM system_alerts "
-                        "WHERE enabled = 1 AND windows_toast = 1"
+                        "SELECT COUNT(*) AS n FROM system_alerts WHERE enabled = 1 AND windows_toast = 1"
                     ).fetchone()["n"]
                     or 0
                 )
@@ -2393,9 +2439,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
     # F-074: renew master_lease on a dedicated thread so a blocked scheduler
     # tick (heavy sync / SQLite busy) cannot expire fencing and 503 workers.
     _lease_lost = _threading.Event()
-    _start_lease_renew_thread(
-        tqconfig.db_path(home), _my_instance, _lease_lost, lambda: shutdown
-    )
+    _start_lease_renew_thread(tqconfig.db_path(home), _my_instance, _lease_lost, lambda: shutdown)
 
     def _handle_sigterm(sig, frame):
         nonlocal shutdown
@@ -2411,10 +2455,16 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
         signal.signal(signal.SIGBREAK, _handle_sigterm)
 
     env = TickEnv(
-        conn=conn, home=home, active_runs=active_runs, system_info=system_info,
-        my_instance=_my_instance, sync_requested=_sync_requested,
-        hw_refresh_now=_hw_refresh_now, lease_lost=_lease_lost,
-        is_shutdown=lambda: shutdown, host_sleeping=lambda: _host.sleeping,
+        conn=conn,
+        home=home,
+        active_runs=active_runs,
+        system_info=system_info,
+        my_instance=_my_instance,
+        sync_requested=_sync_requested,
+        hw_refresh_now=_hw_refresh_now,
+        lease_lost=_lease_lost,
+        is_shutdown=lambda: shutdown,
+        host_sleeping=lambda: _host.sleeping,
     )
     st = TickState(projects)
 
@@ -2426,6 +2476,7 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
             idle_wait_and_fast_admit(env, st)
         except Exception as exc:
             import traceback
+
             print(
                 f"[queue] {_ts()} ERROR: scheduler tick failed unexpectedly: {exc} "
                 "(daemon continues -- see traceback below)",
@@ -2494,6 +2545,7 @@ def run_standby(home: Path, *, port: int = 8765, bind_host: str = "127.0.0.1") -
     _promote_event = _threading.Event()
 
     from taskqueue.web import start_standby_server
+
     start_standby_server(conn, home, port=port, bind_host=bind_host, promote_event=_promote_event)
 
     shutdown = False
@@ -2522,6 +2574,7 @@ def run_standby(home: Path, *, port: int = 8765, bind_host: str = "127.0.0.1") -
 def main(argv: list[str] | None = None) -> int:
     # Ensure stdout/stderr tolerate non-ASCII even when piped to a cp1252 log file.
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
     # Module loggers (migrations, notify, runner, system_alerts, ...) were silently dropped:
@@ -2538,8 +2591,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="taskqueue daemon")
     parser.add_argument("--home", default=None, help="State home (default: ~/.taskqueue or $TASKQUEUE_HOME)")
     parser.add_argument("--claim-master", action="store_true", help="Force-claim the master lease; requires --force")
-    parser.add_argument("--force", action="store_true", help="Required with --claim-master to prevent accidental takeover")
-    parser.add_argument("--standby", action="store_true", help="W7.3: run in standby mode (no scheduling, no lease, serves /api/status + /api/import)")
+    parser.add_argument(
+        "--force", action="store_true", help="Required with --claim-master to prevent accidental takeover"
+    )
+    parser.add_argument(
+        "--standby",
+        action="store_true",
+        help="W7.3: run in standby mode (no scheduling, no lease, serves /api/status + /api/import)",
+    )
     parser.add_argument("--port", type=int, default=8765, help="HTTP port (default 8765)")
     parser.add_argument("--bind", default="127.0.0.1", help="Bind address (default 127.0.0.1)")
     args = parser.parse_args(argv)

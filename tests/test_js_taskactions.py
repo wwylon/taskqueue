@@ -1,4 +1,5 @@
 """Behavior tests for components/taskactions.js (task buttons, priority, project freeze/stop-all, worker sync)."""
+
 from __future__ import annotations
 
 from tests.test_js_app import run_js
@@ -20,7 +21,10 @@ def _js(routes: str, body: str) -> str:
 
 
 def test_button_pending_blocks_double_click_and_self_heals_after_timeout():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 const b = btn();
 r.first = g._btnPending(b, 'busy');
 r.state = [b.disabled, b.textContent];
@@ -30,14 +34,19 @@ r.healed = [b.disabled, b.textContent];
 g._btnPending(b); g._btnDone(b);
 r.done = [b.disabled, b.textContent];
 r.none = [g._btnPending(null), g._btnDone(null)];
-"""))
+""",
+        )
+    )
     assert out["first"] is True and out["state"] == [True, "busy"] and out["second"] is False
     assert out["healed"] == [False, "go"] and out["done"] == [False, "go"]
     assert out["none"][0] is False
 
 
 def test_stop_retry_mark_processed_post_to_endpoints_and_toast_errors():
-    out = run_js(_js("{ '/api/stop/': { ok: true }, '/api/retry/p/t%201': { ok: true }, '/api/mark-processed/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/stop/': { ok: true }, '/api/retry/p/t%201': { ok: true }, '/api/mark-processed/': { ok: true } }",
+            """
 g.tqStopUndoMs = 0;
 S.status = { running: [] }; S.queue = [{ project: 'p', task_id: 't 1', status: 'failed' }];
 let b = btn();
@@ -57,7 +66,9 @@ r.fail = [toasts.pop(), b.disabled];
 b = btn();
 await g.retryTask('p', 'x', b);
 r.failRetry = [toasts.pop(), b.disabled];
-"""))
+""",
+        )
+    )
     assert out["stop"] == [["toast.stopped", "ok"], False, ["POST", "/api/stop/p/t%201"]]
     assert out["retry"] == [["toast.retried", "ok"], "queued", False, ["POST", "/api/retry/p/t%201"]]
     assert out["mark"] == [["POST", "/api/mark-processed/p/t%201"], False]
@@ -65,7 +76,10 @@ r.failRetry = [toasts.pop(), b.disabled];
 
 
 def test_retry_new_and_enable_use_ok_flag_and_alert_on_failure():
-    out = run_js(_js("{}", """
+    out = run_js(
+        _js(
+            "{}",
+            """
 let mode = 'ok'; const seen = [];
 g.fetch = async (url, opts) => (seen.push(url), { ok: mode === 'ok', status: 200, json: async () => (mode === 'ok' ? { ok: true } : { error: 'nope' }) });
 const row = doc.add('qrow-1-p-t1'); const badge = doc.createElement('span'); badge.className = 'badge badge-failed'; badge.textContent = 'failed';
@@ -82,14 +96,19 @@ await g.enableTask('p', 't1', btn());
 r.enableOk = alerts.length;
 await g.setPriority('p', 't 1', '7.9');
 r.prio = seen.filter(u => u.startsWith('/api/priority/')).pop();
-"""))
+""",
+        )
+    )
     assert out["badge"] == ["badge badge-queued", "queued", False, 0]
     assert out["alerts"] == ["nope", "nope"] and out["enableOk"] == 2
     assert out["prio"] == "/api/priority/p/t%201/7"
 
 
 def test_force_asks_for_confirmation_posts_on_confirm_and_releases_on_cancel():
-    out = run_js(_js("{ '/api/force/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/force/': { ok: true } }",
+            """
 S.status = { running: [] }; S.queue = [{ project: 'p', task_id: 't', status: 'queued' }];
 let call = null;
 g.openConfirm = (msg, cb, opts) => { call = { msg, cb, opts }; };
@@ -109,7 +128,9 @@ b = btn();
 g.forceTask(b, 'p', 't');
 await call.cb();
 r.refused = [toasts.pop(), alerts.pop()[0], b.disabled];
-"""))
+""",
+        )
+    )
     assert out["pending"] == [True, "btn.forcing", "confirm.forceRun", "btn.force"]
     assert out["cancelled"] == [False, 0]
     assert out["confirmed"] == [["POST", "/api/force/p/t"], "queued", ["toast.forceWaiting", "info"], False]
@@ -117,7 +138,10 @@ r.refused = [toasts.pop(), alerts.pop()[0], b.disabled];
 
 
 def test_priority_helpers_clamp_and_enable_toggle_and_inline_editor():
-    out = run_js(_js("{ '/api/priority/': { ok: true }, '/api/enable/': { ok: true }, '/api/tasks/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/priority/': { ok: true }, '/api/enable/': { ok: true }, '/api/tasks/': { ok: true } }",
+            """
 g._dagRefreshAfterAction = () => { r.dag = (r.dag || 0) + 1; };
 await g.tqSetPriority('p', 't', '250');
 await g.tqSetPriority('p', 'u', 'abc');
@@ -149,7 +173,9 @@ g.startPrioEdit(span2, 'p', 't', 9);
 const inp2 = holder2.children[0]; inp2.value = '999';
 await inp2.listeners.blur[0]();
 r.reverted = [holder2.children[0].className, holder2.children[0].textContent, S.queue[0].priority];
-"""))
+""",
+        )
+    )
     assert out["urls"] == ["/api/priority/p/t/100", "/api/priority/p/u/0"]
     assert out["enable"] == ["/api/enable/p/t?enabled=0", "/api/enable/p/t?enabled=1"]
     assert out["dag"] == 4 or out["dag"] >= 2
@@ -160,7 +186,10 @@ r.reverted = [holder2.children[0].className, holder2.children[0].textContent, S.
 
 
 def test_project_freeze_button_toggle_and_stop_all_confirm():
-    out = run_js(_js("{ '/api/project/': { ok: true, stopped: 3 } }", """
+    out = run_js(
+        _js(
+            "{ '/api/project/': { ok: true, stopped: 3 } }",
+            """
 doc.add('proj-freeze-btn', { tag: 'button' }); doc.add('proj-stopall-btn', { tag: 'button' });
 S.selectedProject = 'all';
 await g.toggleProjectFreeze(); g.stopAllProject();
@@ -181,7 +210,9 @@ g.stopAllProject();
 r.confirm = [call.msg, call.opts.confirmLabel, doc.getElementById('proj-stopall-btn').disabled];
 await call.cb();
 r.stopped = [posts().pop(), alerts.pop()[0], doc.getElementById('proj-stopall-btn').disabled];
-"""))
+""",
+        )
+    )
     assert out["noop"] == 0
     assert out["label"] == "btn.freeze"
     assert out["freeze"] == [["POST", "/api/project/freeze/p"], ["toast.projectBlocked", "ok"]]
@@ -192,7 +223,10 @@ r.stopped = [posts().pop(), alerts.pop()[0], doc.getElementById('proj-stopall-bt
 
 
 def test_project_root_bar_and_worker_sync_alerts():
-    out = run_js(_js("{ '/api/project-roots': { p: 'D:/work/p' }, '/api/worker/sync/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/project-roots': { p: 'D:/work/p' }, '/api/worker/sync/': { ok: true } }",
+            """
 const bar = doc.add('proj-root-bar'); const txt = doc.add('proj-root-text');
 S.projectRoots = {}; S.cfg = {};
 await g._showProjectRoot('p');
@@ -210,7 +244,9 @@ r.sync = [posts().pop(), alerts.pop()[0].includes('Sync queued'), b.disabled];
 g.fetch = async () => ({ ok: true, json: async () => ({ ok: false, error: 'offline' }) });
 await g.workerSync(btn(), 'w1');
 r.syncFail = alerts.pop()[0];
-"""))
+""",
+        )
+    )
     assert out["root"] == ["📁 p root: D:/work/p", ""]
     assert out["missing"] is True
     assert out["frozen"] == [True, "var(--warn)"] and out["hidden"] == "none"
@@ -219,7 +255,10 @@ r.syncFail = alerts.pop()[0];
 
 
 def test_stop_waits_for_undo_window_and_undo_cancels():
-    out = run_js(_js("{ '/api/stop/': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/stop/': { ok: true } }",
+            """
 S.status = { running: [] }; S.queue = [];
 g.tqStopUndoMs = 5000;
 let b = btn();
@@ -236,18 +275,25 @@ const undo = host.children[host.children.length - 1].children[1];
 undo.onclick({ stopPropagation() {} });            // Undo before the timer fires
 await p2;
 r.undone = [posts().filter(x => x[1].endsWith('/p/b')).length, toasts.pop(), b.disabled];
-"""))
+""",
+        )
+    )
     assert out["sent"] == [0, ["POST", "/api/stop/p/a"]]
     assert out["undone"] == [0, ["toast.stopUndone", "info"], False]
 
 
 def test_rerun_from_history_confirms_then_posts():
-    out = run_js(_js("{ '/api/runs/9/rerun': { ok: true } }", """
+    out = run_js(
+        _js(
+            "{ '/api/runs/9/rerun': { ok: true } }",
+            """
 S.status = { running: [] }; S.queue = [];
 const asked = []; g.openConfirm = (m, ok) => { asked.push(m); return ok(); };
 await g.tqRerunRun(9);
 await g.flush();
 r.asked = asked.length; r.post = posts().pop(); r.toast = toasts.pop();
-"""))
+""",
+        )
+    )
     assert out["asked"] == 1 and out["post"] == ["POST", "/api/runs/9/rerun"]
     assert out["toast"] == ["toast.retried", "ok"]

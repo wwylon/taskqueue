@@ -12,6 +12,7 @@ Scenarios covered:
 from __future__ import annotations
 
 import sys
+import subprocess
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -25,10 +26,13 @@ from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
 from taskqueue._db_tasks import get_task, request_stop_with_control, retry_task, upsert_task
 from taskqueue._db_runs import reclaim_expired_leases
 
+pytestmark = pytest.mark.stress
+
 
 # ---------------------------------------------------------------------------
 # Scenario 1: High task count — scheduler tick and queue API stay within budget
 # ---------------------------------------------------------------------------
+
 
 def test_high_task_count_no_lock_error(tmp_path: Path) -> None:
     """1000+ tasks across 10 projects insert and query without SQLite lock errors."""
@@ -38,10 +42,7 @@ def test_high_task_count_no_lock_error(tmp_path: Path) -> None:
     db.executemany(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, priority) "
         "VALUES (?,?,?,?,?,?,?)",
-        [
-            (f"proj{i % 10}", f"task{i:05d}", "python", "queued", now, now, 50)
-            for i in range(1500)
-        ],
+        [(f"proj{i % 10}", f"task{i:05d}", "python", "queued", now, now, 50) for i in range(1500)],
     )
     db.commit()
 
@@ -55,7 +56,7 @@ def test_high_task_count_no_lock_error(tmp_path: Path) -> None:
     ).fetchall()
     elapsed = time.perf_counter() - t0
     assert len(rows) == 50
-    assert elapsed < 0.5, f"Queue query took {elapsed*1000:.0f} ms on 1500 tasks (budget: 500 ms)"
+    assert elapsed < 0.5, f"Queue query took {elapsed * 1000:.0f} ms on 1500 tasks (budget: 500 ms)"
 
 
 def test_high_task_count_fairshare_no_starvation(tmp_path: Path) -> None:
@@ -69,10 +70,7 @@ def test_high_task_count_fairshare_no_starvation(tmp_path: Path) -> None:
     db.executemany(
         "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, priority) "
         "VALUES (?,?,?,?,?,?,?)",
-        [
-            (f"proj{i % 5}", f"task{i:05d}", "python", "queued", now, now, 50)
-            for i in range(1000)
-        ],
+        [(f"proj{i % 5}", f"task{i:05d}", "python", "queued", now, now, 50) for i in range(1000)],
     )
     db.commit()
 
@@ -91,6 +89,7 @@ def test_high_task_count_fairshare_no_starvation(tmp_path: Path) -> None:
 # Scenario 2: Many concurrent projects — sync skips unchanged YAMLs
 # ---------------------------------------------------------------------------
 
+
 def test_many_projects_sync_skips_unchanged(tmp_path: Path) -> None:
     """50 projects with 1 YAML each: second sync skips all parses (mtime cache)."""
     from taskqueue.db import parse_task_yaml, upsert_task
@@ -104,11 +103,13 @@ def test_many_projects_sync_skips_unchanged(tmp_path: Path) -> None:
         proj_dir.mkdir()
         yml = proj_dir / "task.yaml"
         yml.write_text(
-            yaml.dump({
-                "task_id": f"task_{i:02d}",
-                "command": sys.executable,
-                "args": ["-c", "pass"],
-            }),
+            yaml.dump(
+                {
+                    "task_id": f"task_{i:02d}",
+                    "command": sys.executable,
+                    "args": ["-c", "pass"],
+                }
+            ),
             encoding="utf-8",
         )
         proj = Project(name=f"proj{i:02d}", root=proj_dir, queue_dir=proj_dir)
@@ -137,7 +138,7 @@ def test_many_projects_sync_skips_unchanged(tmp_path: Path) -> None:
 
     assert parse_count == 0, f"Expected 0 re-parses, got {parse_count}"
     assert second_elapsed < first_elapsed * 0.1, (
-        f"Second sync ({second_elapsed*1000:.0f} ms) should be <10% of first ({first_elapsed*1000:.0f} ms)"
+        f"Second sync ({second_elapsed * 1000:.0f} ms) should be <10% of first ({first_elapsed * 1000:.0f} ms)"
     )
 
 
@@ -148,32 +149,30 @@ def test_runaway_project_capped(tmp_path: Path) -> None:
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
     from taskqueue.db import get_config
+
     cap = int(get_config(db).get("max_queued_tasks_per_project", 500))
 
     # Insert cap+100 tasks for the runaway project.
     db.executemany(
-        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at) VALUES (?,?,?,?,?,?)",
         [("runaway", f"t{i:04d}", "python", "queued", now, now) for i in range(cap + 100)],
     )
     # Insert 10 tasks for a healthy project.
     db.executemany(
-        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at) "
-        "VALUES (?,?,?,?,?,?)",
+        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at) VALUES (?,?,?,?,?,?)",
         [("healthy", f"h{i}", "python", "queued", now, now) for i in range(10)],
     )
     db.commit()
 
     # Healthy project must appear in results regardless of runaway project size.
     result = _get_queue_response(db, project="healthy", limit=100, offset=0)
-    assert result["total"] == 10, (
-        f"Healthy project starved: expected 10, got {result['total']}"
-    )
+    assert result["total"] == 10, f"Healthy project starved: expected 10, got {result['total']}"
 
 
 # ---------------------------------------------------------------------------
 # Scenario 3: Large log files — logio tail clamps to max_bytes
 # ---------------------------------------------------------------------------
+
 
 def test_large_log_tail_clamped(tmp_path: Path) -> None:
     """A 10 MB log file: read_log_tail returns only max_bytes, not the full file."""
@@ -192,11 +191,10 @@ def test_large_log_tail_clamped(tmp_path: Path) -> None:
     max_bytes = 32 * 1024  # 32 KiB
     result = read_log_tail(log_file, max_bytes=max_bytes)
     returned = len(result.text.encode())
-    assert returned <= max_bytes + 512, (
-        f"read_log_tail returned {returned} bytes, expected ≤{max_bytes + 512}"
-    )
+    assert returned <= max_bytes + 512, f"read_log_tail returned {returned} bytes, expected ≤{max_bytes + 512}"
 
 
+@pytest.mark.slow
 def test_large_log_memory_stable(tmp_path: Path) -> None:
     """Reading a large log tail does not load the full file into memory."""
     import os
@@ -212,6 +210,7 @@ def test_large_log_memory_stable(tmp_path: Path) -> None:
             written += len(chunk)
 
     import psutil
+
     proc = psutil.Process(os.getpid())
     rss_before = proc.memory_info().rss
 
@@ -222,14 +221,13 @@ def test_large_log_memory_stable(tmp_path: Path) -> None:
 
     assert len(result.text) > 0
     # Tolerate up to 10 MB of incidental RSS growth (Python overhead, buffers).
-    assert rss_delta_mb < 10, (
-        f"Memory grew by {rss_delta_mb:.1f} MB reading log tail (budget: 10 MB)"
-    )
+    assert rss_delta_mb < 10, f"Memory grew by {rss_delta_mb:.1f} MB reading log tail (budget: 10 MB)"
 
 
 # ---------------------------------------------------------------------------
 # Scenario 4: Rapid submit/stop/retry — stop_requested never strands a running task
 # ---------------------------------------------------------------------------
+
 
 def test_rapid_stop_retry_no_stranded_running(tmp_path: Path) -> None:
     """Stop then retry on a queued task: must not produce running+stop_requested=1."""
@@ -325,19 +323,22 @@ def test_stop_without_stop_requested_requeues(tmp_path: Path) -> None:
 # Scenario 5: Worker disconnect mid-task — reclaim marks interrupted
 # ---------------------------------------------------------------------------
 
+
 def test_worker_disconnect_reclaim_interrupted(tmp_path: Path) -> None:
     """Expired lease + offline worker → task becomes interrupted, not stuck running."""
     db = open_db(tmp_path / "q.db")
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path)
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "remote1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-            "idempotent": True,
-        }),
+        yaml.dump(
+            {
+                "task_id": "remote1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+                "idempotent": True,
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))
@@ -365,9 +366,7 @@ def test_worker_disconnect_reclaim_interrupted(tmp_path: Path) -> None:
     assert row is not None
     # reclaim_expired_leases re-queues idempotent tasks so another worker can retry.
     # 'interrupted' is reserved for user-requested stops.
-    assert row["status"] == "queued", (
-        f"Expected queued after lease expiry (auto-reclaim), got {row['status']}"
-    )
+    assert row["status"] == "queued", f"Expected queued after lease expiry (auto-reclaim), got {row['status']}"
 
 
 def test_worker_alive_lease_not_reclaimed(tmp_path: Path) -> None:
@@ -376,12 +375,14 @@ def test_worker_alive_lease_not_reclaimed(tmp_path: Path) -> None:
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path)
     yml = tmp_path / "t.yaml"
     yml.write_text(
-        yaml.dump({
-            "task_id": "active1",
-            "command": sys.executable,
-            "args": ["-c", "pass"],
-            "dispatch": "remote",
-        }),
+        yaml.dump(
+            {
+                "task_id": "active1",
+                "command": sys.executable,
+                "args": ["-c", "pass"],
+                "dispatch": "remote",
+            }
+        ),
         encoding="utf-8",
     )
     upsert_task(db, parse_task_yaml(yml, proj))
@@ -411,6 +412,7 @@ def test_worker_alive_lease_not_reclaimed(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Scenario 6: DB migration under concurrent reads — migration is loud, atomic
 # ---------------------------------------------------------------------------
+
 
 def test_migration_failure_is_loud(tmp_path: Path) -> None:
     """A failing migration must raise, not silently swallow the error."""
@@ -471,3 +473,101 @@ def test_concurrent_reads_during_open(tmp_path: Path) -> None:
         t.join(timeout=10)
 
     assert not errors, f"Concurrent opens produced errors: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Wave E scale ladder: explicit nightly budgets and high-rate edge cases
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.nightly
+def test_100_projects_sync_budget(tmp_path: Path) -> None:
+    """100 projects sync in one pass and skip unchanged YAMLs on the second."""
+    db = open_db(tmp_path / "q.db")
+    projects = []
+    for i in range(100):
+        root = tmp_path / f"project-{i:03d}"
+        root.mkdir()
+        path = root / "task.yaml"
+        path.write_text(
+            yaml.safe_dump({"task_id": f"task-{i:03d}", "command": sys.executable, "args": ["-c", "pass"]}),
+            encoding="utf-8",
+        )
+        project = Project(name=f"project-{i:03d}", root=root, queue_dir=root)
+        projects.append((path, project))
+
+    started = time.perf_counter()
+    for path, project in projects:
+        upsert_task(db, parse_task_yaml(path, project))
+    db.commit()
+    first_elapsed = time.perf_counter() - started
+    mtimes = {path: path.stat().st_mtime_ns for path, _ in projects}
+
+    reparsed = 0
+    started = time.perf_counter()
+    for path, project in projects:
+        if path.stat().st_mtime_ns != mtimes[path]:
+            upsert_task(db, parse_task_yaml(path, project))
+            reparsed += 1
+    db.commit()
+    second_elapsed = time.perf_counter() - started
+
+    assert reparsed == 0
+    assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 100
+    assert second_elapsed < max(first_elapsed * 0.25, 0.05)
+
+
+@pytest.mark.nightly
+def test_20k_queue_admission_budget(tmp_path: Path) -> None:
+    """20k queued tasks remain queryable within the scale-ladder budget."""
+    from taskqueue.web import _get_queue_response
+
+    db = open_db(tmp_path / "q.db")
+    now = datetime.now(UTC).isoformat()
+    db.executemany(
+        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, priority) "
+        "VALUES (?,?,?,?,?,?,?)",
+        [(f"project-{i % 100:03d}", f"task-{i:05d}", "python", "queued", now, now, i % 100) for i in range(20_000)],
+    )
+    db.commit()
+
+    started = time.perf_counter()
+    result = _get_queue_response(db, limit=100, offset=0)
+    elapsed = time.perf_counter() - started
+    assert result["total"] == 20_000
+    assert len(result["tasks"]) == 100
+    assert elapsed < 2.0, f"20k queue admission/page exceeded 2s ({elapsed:.2f}s)"
+
+
+@pytest.mark.nightly
+def test_local_stdout_flood_and_pathological_line(tmp_path: Path) -> None:
+    """A high-rate local stdout producer and a single huge line stay bounded."""
+    flood = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.stdout.write('x\\n' * 50000)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert len(flood.stdout) < 1 * 1024 * 1024
+
+    from taskqueue.logio import read_log_tail
+
+    log = tmp_path / "pathological.log"
+    log.write_text("z" * (2 * 1024 * 1024) + "\nlast\n", encoding="utf-8")
+    tail = read_log_tail(log, max_bytes=64 * 1024)
+    assert tail.file_size < 50 * 1024 * 1024
+    assert len(tail.text.encode()) <= 64 * 1024
+
+
+@pytest.mark.nightly
+def test_progress_and_remote_log_chunk_bursts_coalesce() -> None:
+    """The remote batcher turns a burst of progress/log chunks into one send."""
+    from taskqueue.worker_slot import _LogBatcher
+
+    sent: list[str] = []
+    batcher = _LogBatcher(sent.append, interval_sec=60)
+    for i in range(10_000):
+        batcher.add(f"({i % 101}%) line {i}\n")
+    batcher.flush()
+    assert len(sent) == 1
+    assert sent[0].count("\n") == 10_000

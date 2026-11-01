@@ -1,4 +1,5 @@
 """daemon_tick: return contract, phase ordering, cross-tick state, lease fence, host sleep."""
+
 import threading
 import time
 
@@ -13,10 +14,16 @@ def env_st(tmp_path, monkeypatch):
     conn = open_db(tmp_path / "queue.db")
     flags = {"sleeping": False, "shutdown": False}
     env = daemon.TickEnv(
-        conn=conn, home=tmp_path, active_runs={}, system_info={"cpu_total_cores": 8},
-        my_instance="me", sync_requested=threading.Event(),
-        hw_refresh_now=threading.Event(), lease_lost=threading.Event(),
-        is_shutdown=lambda: flags["shutdown"], host_sleeping=lambda: flags["sleeping"],
+        conn=conn,
+        home=tmp_path,
+        active_runs={},
+        system_info={"cpu_total_cores": 8},
+        my_instance="me",
+        sync_requested=threading.Event(),
+        hw_refresh_now=threading.Event(),
+        lease_lost=threading.Event(),
+        is_shutdown=lambda: flags["shutdown"],
+        host_sleeping=lambda: flags["sleeping"],
     )
     st = daemon.TickState({})
     calls = []
@@ -25,9 +32,7 @@ def env_st(tmp_path, monkeypatch):
     monkeypatch.setattr(daemon, "_collect_finished_runs", lambda *a, **k: calls.append("reap"))
     monkeypatch.setattr(daemon, "_enforce_hard_pressure", lambda *a, **k: calls.append("pressure"))
     monkeypatch.setattr(daemon, "_preempt_scavenger", lambda *a, **k: calls.append("scav"))
-    monkeypatch.setattr(
-        daemon, "_run_local_admission", lambda *a, **k: calls.append("admit") or True
-    )
+    monkeypatch.setattr(daemon, "_run_local_admission", lambda *a, **k: calls.append("admit") or True)
     yield env, st, flags, calls
     conn.close()
 
@@ -118,7 +123,8 @@ def test_idle_wake_syncs_then_fast_admits(env_st, monkeypatch):
     monkeypatch.setattr(sched_wake, "wait_or_timeout", lambda s: True)
     monkeypatch.setattr(daemon, "load_projects", lambda home: order.append("load") or {})
     monkeypatch.setattr(
-        daemon, "_fast_reap_and_admit",
+        daemon,
+        "_fast_reap_and_admit",
         lambda *a, **k: order.append(("admit", a[6])) or False,
     )
     daemon.idle_wait_and_fast_admit(env, st)

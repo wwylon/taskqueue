@@ -58,15 +58,11 @@ def test_f076_oversized_yaml_does_not_delete_existing_task(tmp_path: Path) -> No
     db = open_db(tmp_path / "q.db")
     clear_yaml_mtime_cache()
     _sync_project(db, proj)
-    assert db.execute(
-        "SELECT task_id FROM tasks WHERE project='p' AND task_id='big'"
-    ).fetchone() is not None
+    assert db.execute("SELECT task_id FROM tasks WHERE project='p' AND task_id='big'").fetchone() is not None
 
     path.write_bytes(b"x" * (512 * 1024 + 1))
     _sync_project(db, proj)
-    row = db.execute(
-        "SELECT task_id, status FROM tasks WHERE project='p' AND task_id='big'"
-    ).fetchone()
+    row = db.execute("SELECT task_id, status FROM tasks WHERE project='p' AND task_id='big'").fetchone()
     assert row is not None
     db.close()
 

@@ -1,4 +1,5 @@
 """Pure response/helpers used by web routes (no Handler)."""
+
 from __future__ import annotations
 from taskqueue.jsonutil import json_list
 
@@ -57,17 +58,24 @@ from taskqueue.resources import ram_used_gib, task_requires_gpu
 from taskqueue.win_console import hide_console_check_output_kwargs
 from taskqueue.rows import row_get
 
+
 def _read_git_sha() -> str:
     try:
         import subprocess as _sp
-        return _sp.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=_sp.DEVNULL,
-            cwd=str(Path(__file__).resolve().parent.parent),
-            **hide_console_check_output_kwargs(),
-        ).decode().strip()
+
+        return (
+            _sp.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                stderr=_sp.DEVNULL,
+                cwd=str(Path(__file__).resolve().parent.parent),
+                **hide_console_check_output_kwargs(),
+            )
+            .decode()
+            .strip()
+        )
     except Exception:
         return "unknown"
+
 
 _GIT_SHA: str = _read_git_sha()
 
@@ -87,9 +95,11 @@ _auth_cfg_cache: dict[str, Any] = {"ts": 0.0, "cfg": None, "db": None}
 _AUTH_CFG_TTL = 5.0
 _auth_cfg_lock = threading.Lock()
 
+
 def _get_auth_config(conn: sqlite3.Connection, db_path: Path | str | None = None) -> dict[str, Any]:
     """Cached get_config for auth hot path (5s TTL), keyed by DB path."""
     import time as _time
+
     now = _time.monotonic()
     db_key = str(db_path) if db_path is not None else ""
     with _auth_cfg_lock:
@@ -114,8 +124,15 @@ _TASK_SECRET_FIELDS = ("env", "args_override", "yaml_source")
 def _task_dict(row: sqlite3.Row, *, strip_secrets: bool = False) -> dict[str, Any]:
     d = dict(row)
     for field in (
-        "args", "resume_args", "requires_paths", "resources", "depends_on",
-        "depends_on_any", "requires", "tags", "requires_services",
+        "args",
+        "resume_args",
+        "requires_paths",
+        "resources",
+        "depends_on",
+        "depends_on_any",
+        "requires",
+        "tags",
+        "requires_services",
     ):
         raw = d.get(field)
         if isinstance(raw, str):
@@ -195,11 +212,13 @@ def _attach_lock_waiting_on(tasks: list[dict[str, Any]], occupancy: dict[str, di
         waiting: list[dict[str, Any]] = []
         for lk in locks:
             info = occupancy.get(str(lk)) or {}
-            waiting.append({
-                "lock": str(lk),
-                "holder": info.get("holder"),
-                "holder_started_at": info.get("holder_started_at"),
-            })
+            waiting.append(
+                {
+                    "lock": str(lk),
+                    "holder": info.get("holder"),
+                    "holder_started_at": info.get("holder_started_at"),
+                }
+            )
         if waiting:
             d["lock_waiting_on"] = waiting
 
@@ -207,13 +226,40 @@ def _attach_lock_waiting_on(tasks: list[dict[str, Any]], occupancy: dict[str, di
 def _queue_row_dict(d: dict[str, Any]) -> dict[str, Any]:
     """Slim task projection for web UI list views."""
     keys = (
-        "project", "task_id", "status", "priority", "yaml_num", "description",
-        "tags", "depends_on", "depends_on_any", "spawned_by", "grp", "block_reason",
+        "project",
+        "task_id",
+        "status",
+        "priority",
+        "yaml_num",
+        "description",
+        "tags",
+        "depends_on",
+        "depends_on_any",
+        "spawned_by",
+        "grp",
+        "block_reason",
         "last_error_code",
-        "enqueued_at", "started_at", "finished_at", "run_id", "progress_pct",
-        "elapsed_sec", "prior_elapsed_sec", "idle_sec", "active_idle_sec", "peak_ram_gib", "peak_vram_gib",
-        "peak_cpu_pct", "last_worker_id", "log", "processed_at", "requires_gpu",
-        "last_log_line", "lock_waiting_on", "progress_health", "dep_status", "missing_deps",
+        "enqueued_at",
+        "started_at",
+        "finished_at",
+        "run_id",
+        "progress_pct",
+        "elapsed_sec",
+        "prior_elapsed_sec",
+        "idle_sec",
+        "active_idle_sec",
+        "peak_ram_gib",
+        "peak_vram_gib",
+        "peak_cpu_pct",
+        "last_worker_id",
+        "log",
+        "processed_at",
+        "requires_gpu",
+        "last_log_line",
+        "lock_waiting_on",
+        "progress_health",
+        "dep_status",
+        "missing_deps",
     )
     out = {k: d[k] for k in keys if k in d and d[k] is not None}
     slim = _slim_resources(d.get("resources"))
@@ -224,11 +270,29 @@ def _queue_row_dict(d: dict[str, Any]) -> dict[str, Any]:
 
 def _live_run_dict(d: dict[str, Any]) -> dict[str, Any]:
     keys = (
-        "project", "task_id", "run_id", "status", "progress_pct", "elapsed_sec",
-        "prior_elapsed_sec", "idle_sec", "active_idle_sec", "last_log_line", "peak_ram_gib", "peak_vram_gib",
-        "peak_cpu_pct", "current_ram_gib", "current_vram_gib", "current_cpu_pct",
-        "current_gpu_util_pct", "avg_gpu_util_pct", "worker_id", "worker_last_seen_age_sec",
-        "started_at", "log", "progress_health",
+        "project",
+        "task_id",
+        "run_id",
+        "status",
+        "progress_pct",
+        "elapsed_sec",
+        "prior_elapsed_sec",
+        "idle_sec",
+        "active_idle_sec",
+        "last_log_line",
+        "peak_ram_gib",
+        "peak_vram_gib",
+        "peak_cpu_pct",
+        "current_ram_gib",
+        "current_vram_gib",
+        "current_cpu_pct",
+        "current_gpu_util_pct",
+        "avg_gpu_util_pct",
+        "worker_id",
+        "worker_last_seen_age_sec",
+        "started_at",
+        "log",
+        "progress_health",
     )
     return {k: d[k] for k in keys if k in d and d[k] is not None}
 
@@ -236,8 +300,18 @@ def _live_run_dict(d: dict[str, Any]) -> dict[str, Any]:
 def _history_row_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     d = dict(row)
     keys = (
-        "run_id", "project", "task_id", "started_at", "finished_at", "status",
-        "exit_code", "worker_id", "peak_ram_gib", "peak_vram_gib", "stopped_by", "error_category",
+        "run_id",
+        "project",
+        "task_id",
+        "started_at",
+        "finished_at",
+        "status",
+        "exit_code",
+        "worker_id",
+        "peak_ram_gib",
+        "peak_vram_gib",
+        "stopped_by",
+        "error_category",
         "anomalies",  # F-113: Unusual badges through dashboard tab=history
     )
     return {k: d[k] for k in keys if k in d}
@@ -311,10 +385,18 @@ _QUEUE_SORT_COLS = {
 }
 
 _UNGROUPED = "__ungrouped__"
-_INCOMPLETE_FOR_DEPS = frozenset({
-    "queued", "running", "failed", "interrupted", "suspended", "stopped", "unknown",
-    "cancelled",
-})
+_INCOMPLETE_FOR_DEPS = frozenset(
+    {
+        "queued",
+        "running",
+        "failed",
+        "interrupted",
+        "suspended",
+        "stopped",
+        "unknown",
+        "cancelled",
+    }
+)
 
 _STATUS_RANK = (
     "CASE t.status"
@@ -329,6 +411,7 @@ _STATUS_RANK = (
     " WHEN 'disabled' THEN 6"
     " ELSE 7 END"
 )
+
 
 def _queue_order_by(sort: str, sort_dir: str) -> str:
     col = _QUEUE_SORT_COLS.get(sort, "t.status")
@@ -368,11 +451,7 @@ def _blocker_scores(rows: list[Any]) -> dict[str, int]:
             if key in incomplete:
                 scores[key] = scores.get(key, 0) + 1
         try:
-            deps_any = (
-                json_list(row["depends_on_any"])
-                if "depends_on_any" in row.keys()
-                else []
-            )
+            deps_any = json_list(row["depends_on_any"]) if "depends_on_any" in row.keys() else []
         except Exception:
             deps_any = []
         for dep in deps_any if isinstance(deps_any, list) else []:
@@ -392,6 +471,10 @@ _STATUS_RANK_MAP = {
     "completed": 5,
     "disabled": 6,
 }
+
+
+# Unscoped sort=deps|order materializes every matching row in Python — refuse past this.
+HEAVY_SORT_TOTAL_THRESHOLD = 2000
 
 
 def _get_queue_response(
@@ -425,6 +508,8 @@ def _get_queue_response(
     (the health badge's "new failed" set; ``ack_at=None`` keeps every failure).
     ``sort=deps`` ranks by how often incomplete peers depend on the task.
     ``sort=order`` ranks by Timeline forecast start order (advisory).
+    Unscoped deps/order sorts with ``total`` above ``HEAVY_SORT_TOTAL_THRESHOLD``
+    return an empty page plus ``error=project_required_for_sort``.
     ``started_by`` scopes to tasks attributed to that operator (R8 mine view).
     When ``timings`` is provided, fills ``queue_sql`` / ``queue_enrich`` ms.
     """
@@ -432,11 +517,14 @@ def _get_queue_response(
     where: list[str] = []
     params: list[Any] = []
     if project:
-        where.append("t.project = ?"); params.append(project)
+        where.append("t.project = ?")
+        params.append(project)
     if started_by:
-        where.append("t.started_by = ?"); params.append(started_by)
+        where.append("t.started_by = ?")
+        params.append(started_by)
     if status:
-        where.append("t.status = ?"); params.append(status)
+        where.append("t.status = ?")
+        params.append(status)
     if hide_blocked:
         blocked = blocked_projects(conn)
         if blocked:
@@ -453,16 +541,20 @@ def _get_queue_response(
         params.append(ack_at)
     if search:
         pat = f"%{search}%"
-        where.append("(t.task_id LIKE ? OR t.description LIKE ?)"); params.extend([pat, pat])
+        where.append("(t.task_id LIKE ? OR t.description LIKE ?)")
+        params.extend([pat, pat])
     if worker:
-        where.append("(lr.worker_id = ?)"); params.append(worker)
+        where.append("(lr.worker_id = ?)")
+        params.append(worker)
     if tag:
-        where.append("(t.tags LIKE ?)"); params.append(f'%"{tag}"%')
+        where.append("(t.tags LIKE ?)")
+        params.append(f'%"{tag}"%')
     if group is not None and group != "":
         if group == _UNGROUPED:
             where.append("(t.grp = '' OR t.grp IS NULL)")
         else:
-            where.append("t.grp = ?"); params.append(group)
+            where.append("t.grp = ?")
+            params.append(group)
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     # Prefer tasks.last_run_id (maintained on run create/finalize) over a correlated MAX(run_id).
@@ -475,39 +567,49 @@ def _get_queue_response(
     )
     # Count does not need last-run columns unless filtering by worker (lr.worker_id).
     if worker:
-        count_sql = (
-            f"SELECT COUNT(*) FROM tasks t {_lr_join} {where_sql}"
-        )
+        count_sql = f"SELECT COUNT(*) FROM tasks t {_lr_join} {where_sql}"
     else:
         count_sql = f"SELECT COUNT(*) FROM tasks t {where_sql}"
     total = conn.execute(count_sql, params).fetchone()[0]
 
     use_deps_sort = sort == "deps"
     use_order_sort = sort == "order"
+    # Materializing all matches for deps/order sort is O(tasks); refuse unscoped large queues.
+    if (use_deps_sort or use_order_sort) and not project and total > HEAVY_SORT_TOTAL_THRESHOLD:
+        return {
+            "tasks": [],
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "error": "project_required_for_sort",
+            "message": (
+                f"sort={sort} requires project= when total > {HEAVY_SORT_TOTAL_THRESHOLD} "
+                f"(have {total})"
+            ),
+        }
     # Forecast map is expensive; only compute it when actually needed for sort=order.
     forecast_map: dict[tuple[str, str], dict[str, float | int]] = {}
     if use_order_sort:
         try:
             from taskqueue.timeline_forecast import forecast_order_map
+
             forecast_map = forecast_order_map(conn, hours=24, project=project)
         except Exception:
             forecast_map = {}
 
-    data_sql = (
-        f"SELECT t.*, {_lr_cols} "
-        f"FROM tasks t {_lr_join} "
-        f"{where_sql} "
-    )
+    data_sql = f"SELECT t.*, {_lr_cols} FROM tasks t {_lr_join} {where_sql} "
     if use_deps_sort:
         # Sort on slim columns (no last-run join, no t.*), then load full rows for the page only.
         # The worker filter references lr.*, so that case keeps the full-row path.
         slim = not worker
         if slim:
-            rows = list(conn.execute(
-                "SELECT t.project, t.task_id, t.status, t.priority, t.enqueued_at, "
-                f"t.depends_on, t.depends_on_any FROM tasks t {where_sql}",
-                params,
-            ).fetchall())
+            rows = list(
+                conn.execute(
+                    "SELECT t.project, t.task_id, t.status, t.priority, t.enqueued_at, "
+                    f"t.depends_on, t.depends_on_any FROM tasks t {where_sql}",
+                    params,
+                ).fetchall()
+            )
         else:
             rows = list(conn.execute(data_sql, params).fetchall())
         scores = _blocker_scores(rows)
@@ -524,7 +626,7 @@ def _get_queue_response(
             return (-score, rank * dir_mul, -prio, enq)
 
         rows.sort(key=_deps_key)
-        rows = rows[offset: offset + limit]
+        rows = rows[offset : offset + limit]
         if slim and rows:
             keys = [(r["project"], r["task_id"]) for r in rows]
             full = conn.execute(
@@ -547,12 +649,9 @@ def _get_queue_response(
             return (ord_val * dir_mul, start * dir_mul, row["project"], row["task_id"])
 
         rows.sort(key=_order_key)
-        rows = rows[offset: offset + limit]
+        rows = rows[offset : offset + limit]
     else:
-        data_sql += (
-            f"ORDER BY {_queue_order_by(sort, sort_dir)} "
-            f"LIMIT ? OFFSET ?"
-        )
+        data_sql += f"ORDER BY {_queue_order_by(sort, sort_dir)} LIMIT ? OFFSET ?"
         rows = conn.execute(data_sql, params + [limit, offset]).fetchall()
 
     if timings is not None:
@@ -570,8 +669,14 @@ def _get_queue_response(
     for row in rows:
         d = _task_dict(row, strip_secrets=True)
         for _k in (
-            "lr_run_id", "lr_started_at", "lr_peak_ram_gib", "lr_peak_vram_gib",
-            "lr_peak_cpu_pct", "lr_worker_id", "lr_metrics_json", "lr_progress_pct",
+            "lr_run_id",
+            "lr_started_at",
+            "lr_peak_ram_gib",
+            "lr_peak_vram_gib",
+            "lr_peak_cpu_pct",
+            "lr_worker_id",
+            "lr_metrics_json",
+            "lr_progress_pct",
         ):
             d.pop(_k, None)
         run = ar.get((row["project"], row["task_id"]))
@@ -609,6 +714,7 @@ def _get_queue_response(
         _attach_lock_waiting_on(result, lock_occupancy(conn))
 
     from taskqueue._db_tasks import run_counts
+
     _rc = run_counts(conn, [(d["project"], d["task_id"]) for d in result])
     for d in result:
         d["run_number"] = _rc.get((d["project"], d["task_id"]), 0)
@@ -616,6 +722,7 @@ def _get_queue_response(
     # Attach missing_deps per task and expose broken_deps summary.
     try:
         from taskqueue.queries import find_broken_deps_cached
+
         broken = find_broken_deps_cached(conn, project=project)
         broken_by_id = {b["task_id"]: b for b in broken}
     except Exception:
@@ -683,14 +790,12 @@ def _get_groups_response(
     """W5.3: Pure data layer for /api/groups — testable outside make_handler."""
     if project:
         rows = conn.execute(
-            "SELECT grp, project, status, COUNT(*) as n FROM tasks "
-            "WHERE project = ? GROUP BY grp, project, status",
+            "SELECT grp, project, status, COUNT(*) as n FROM tasks WHERE project = ? GROUP BY grp, project, status",
             (project,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT grp, project, status, COUNT(*) as n FROM tasks "
-            "GROUP BY grp, project, status"
+            "SELECT grp, project, status, COUNT(*) as n FROM tasks GROUP BY grp, project, status"
         ).fetchall()
     # "Ungrouped" (empty name) is split per project: it is only meaningful inside one project, and the
     # UI scopes its stop/retry buttons with ``project`` (an unscoped ungrouped op hit every project).
@@ -743,9 +848,7 @@ def _get_suites_response(
             continue
         if name not in suites:
             suites[name] = {"name": name, "total": 0, "by_status": {}, "projects": set()}
-        suites[name]["by_status"][row["status"]] = (
-            suites[name]["by_status"].get(row["status"], 0) + int(row["n"])
-        )
+        suites[name]["by_status"][row["status"]] = suites[name]["by_status"].get(row["status"], 0) + int(row["n"])
         suites[name]["total"] += int(row["n"])
         suites[name]["projects"].add(row["project"])
     out = []
@@ -808,6 +911,7 @@ def _get_usage_response(
 ) -> dict[str, Any]:
     """W5.3: Pure data layer for /api/usage — testable outside make_handler."""
     import time as _time
+
     if cutoff_ts is None:
         cutoff_ts = int(_time.time()) - days * 86400
     if project:
@@ -818,8 +922,7 @@ def _get_usage_response(
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT ts, project, operator, cpu_seconds, gpu_seconds "
-            "FROM usage_snapshot WHERE ts >= ? ORDER BY ts",
+            "SELECT ts, project, operator, cpu_seconds, gpu_seconds FROM usage_snapshot WHERE ts >= ? ORDER BY ts",
             (cutoff_ts,),
         ).fetchall()
     by_project: dict[str, list[dict]] = {}
@@ -829,11 +932,13 @@ def _get_usage_response(
         projects_seen.add(proj)
         if proj not in by_project:
             by_project[proj] = []
-        by_project[proj].append({
-            "ts": row["ts"],
-            "cpu_hours": round(float(row["cpu_seconds"]) / 3600.0, 4),
-            "gpu_hours": round(float(row["gpu_seconds"]) / 3600.0, 4),
-        })
+        by_project[proj].append(
+            {
+                "ts": row["ts"],
+                "cpu_hours": round(float(row["cpu_seconds"]) / 3600.0, 4),
+                "gpu_hours": round(float(row["gpu_seconds"]) / 3600.0, 4),
+            }
+        )
     from taskqueue.db import get_all_project_limits, gpu_hours_today
 
     limits = get_all_project_limits(conn)
@@ -853,9 +958,17 @@ def _get_usage_response(
 
 
 _DEPS_MODES = frozenset({"active", "attention", "all"})
-_DEPS_ACTIVE_STATUSES = frozenset({
-    "queued", "running", "failed", "stopped", "interrupted", "suspended", "unknown",
-})
+_DEPS_ACTIVE_STATUSES = frozenset(
+    {
+        "queued",
+        "running",
+        "failed",
+        "stopped",
+        "interrupted",
+        "suspended",
+        "unknown",
+    }
+)
 _DEPS_ATTENTION_STATUSES = frozenset({"failed", "stopped", "interrupted", "unknown", "cancelled"})
 
 
@@ -957,14 +1070,51 @@ def _get_deps_response(
     When set, returns the focused node plus transitive ancestors and descendants.
     Optional ``mode`` (``all``|``active``|``attention``) filters after focus prune.
     Optional ``suite`` keeps only tasks whose suite field matches.
+
+    Project / suite / ``project/task_id`` focus are applied in SQL before the full
+    graph materializes. Unscoped graphs cap the SELECT at ``DEPS_MAX_NODES``.
     """
-    if project:
+    # Infer project from focus=project/task_id when the caller omitted project=.
+    focus_project: str | None = None
+    if focus and "/" in focus and not project:
+        focus_project = focus.split("/", 1)[0].strip() or None
+    scope_project = project or focus_project
+
+    where: list[str] = []
+    params: list[Any] = []
+    if scope_project:
+        where.append("project = ?")
+        params.append(scope_project)
+    if suite:
+        where.append("suite = ?")
+        params.append(suite)
+    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+    # Unscoped + no suite/focus: pull only the priority slice we would truncate to anyway.
+    # Remember the full task count so ``truncated`` / ``total_nodes`` stay honest.
+    limit_sql = ""
+    unscoped_task_total: int | None = None
+    if not scope_project and not suite and not focus:
+        unscoped_task_total = int(conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0])
+        limit_sql = f" LIMIT {int(DEPS_MAX_NODES)}"
+
+    if scope_project and not project:
+        # Cross-project ids in the response (focus inferred project).
+        rows = conn.execute(
+            "SELECT task_id, status, description, depends_on, depends_on_any, spawned_by, "
+            "project, block_reason, last_error_code, priority, transfer, yaml_num, "
+            "tags, grp, suite "
+            f"FROM tasks {where_sql} ORDER BY priority DESC, task_id{limit_sql}",
+            params,
+        ).fetchall()
+        # Treat as unscoped id shape (project/task_id) so focus matching works.
+        project = None
+    elif scope_project:
         rows = conn.execute(
             "SELECT task_id, status, description, depends_on, depends_on_any, spawned_by, "
             "block_reason, last_error_code, priority, transfer, yaml_num, "
             "tags, grp, suite "
-            "FROM tasks WHERE project = ? ORDER BY priority DESC, task_id",
-            (project,),
+            f"FROM tasks {where_sql} ORDER BY priority DESC, task_id{limit_sql}",
+            params,
         ).fetchall()
     else:
         rows = conn.execute(
@@ -972,7 +1122,8 @@ def _get_deps_response(
             "t.spawned_by, t.project, "
             "t.block_reason, t.last_error_code, t.priority, t.transfer, t.yaml_num, "
             "t.tags, t.grp, t.suite "
-            "FROM tasks t ORDER BY t.priority DESC, t.task_id"
+            f"FROM tasks t {where_sql} ORDER BY t.priority DESC, t.task_id{limit_sql}",
+            params,
         ).fetchall()
 
     def _health(status: str) -> str:
@@ -1002,25 +1153,27 @@ def _get_deps_response(
         spawned = ""
         if "spawned_by" in row.keys() and row["spawned_by"]:
             spawned = str(row["spawned_by"])
-        nodes.append({
-            "id": full_id,
-            "status": status,
-            "description": row["description"] or "",
-            "block_reason": row["block_reason"] or "",
-            "last_error_code": row["last_error_code"] or "",
-            "priority": row["priority"] if "priority" in row.keys() else 50,
-            "transfer": transfer,
-            "yaml_num": row_get(row, "yaml_num"),
-            "tags": tags if isinstance(tags, list) else [],
-            "grp": (row["grp"] if "grp" in row.keys() else "") or "",
-            "suite": (row["suite"] if "suite" in row.keys() else "") or "",
-            "spawned_by": spawned or None,
-        })
+        nodes.append(
+            {
+                "id": full_id,
+                "status": status,
+                "description": row["description"] or "",
+                "block_reason": row["block_reason"] or "",
+                "last_error_code": row["last_error_code"] or "",
+                "priority": row["priority"] if "priority" in row.keys() else 50,
+                "transfer": transfer,
+                "yaml_num": row_get(row, "yaml_num"),
+                "tags": tags if isinstance(tags, list) else [],
+                "grp": (row["grp"] if "grp" in row.keys() else "") or "",
+                "suite": (row["suite"] if "suite" in row.keys() else "") or "",
+                "spawned_by": spawned or None,
+            }
+        )
         for col, kind in (("depends_on", "all"), ("depends_on_any", "any")):
             try:
                 raw = row[col] if col in row.keys() else "[]"
                 deps = json_list(raw)
-                for dep in (deps if isinstance(deps, list) else []):
+                for dep in deps if isinstance(deps, list) else []:
                     if "/" in str(dep):
                         dep_id = str(dep)
                     elif not project and "project" in row.keys():
@@ -1034,30 +1187,29 @@ def _get_deps_response(
             except Exception:
                 pass
 
-    if suite:
-        keep_suite = {n["id"] for n in nodes if (n.get("suite") or "") == suite}
-        nodes = [n for n in nodes if n["id"] in keep_suite]
-        edges = [e for e in edges if e["from"] in keep_suite and e["to"] in keep_suite]
+    # suite already applied in SQL when provided; keep a defensive filter for stubs.
 
     # Add stub nodes for dependency references that don't exist in the DB.
     node_ids = {n["id"] for n in nodes}
     for e in edges:
         if e["from"] not in node_ids:
-            nodes.append({
-                "id": e["from"],
-                "status": "missing",
-                "stub": True,
-                "description": "",
-                "block_reason": "",
-                "last_error_code": "",
-                "priority": 50,
-                "transfer": [],
-                "yaml_num": None,
-                "tags": [],
-                "grp": "",
-                "suite": "",
-                "spawned_by": None,
-            })
+            nodes.append(
+                {
+                    "id": e["from"],
+                    "status": "missing",
+                    "stub": True,
+                    "description": "",
+                    "block_reason": "",
+                    "last_error_code": "",
+                    "priority": 50,
+                    "transfer": [],
+                    "yaml_num": None,
+                    "tags": [],
+                    "grp": "",
+                    "suite": "",
+                    "spawned_by": None,
+                }
+            )
             node_ids.add(e["from"])
         e["health"] = _health(status_by_id.get(e["from"], "missing"))
 
@@ -1099,7 +1251,15 @@ def _get_deps_response(
     nodes, edges = _apply_deps_mode(nodes, edges, mode)
     total_nodes = len(nodes)
     truncated = False
-    if not focus and total_nodes > DEPS_MAX_NODES:
+    if unscoped_task_total is not None and unscoped_task_total > DEPS_MAX_NODES:
+        # SQL already limited the SELECT; report the full task count and keep ≤ DEPS_MAX_NODES.
+        truncated = True
+        total_nodes = unscoped_task_total
+        if len(nodes) > DEPS_MAX_NODES:
+            nodes = nodes[:DEPS_MAX_NODES]
+            keep_ids = {n["id"] for n in nodes}
+            edges = [e for e in edges if e["from"] in keep_ids and e["to"] in keep_ids]
+    elif not focus and total_nodes > DEPS_MAX_NODES:
         # An unfocused graph of thousands of nodes is unreadable and MBs of JSON: keep the
         # highest-priority slice and let the UI ask for a focus/project/suite.
         nodes = nodes[:DEPS_MAX_NODES]
@@ -1126,17 +1286,22 @@ def _get_history_response(
     limit: int = 100,
     hide_blocked: bool = False,
     started_by: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
     """W5.3: Pure data layer for /api/history — testable outside make_handler.
 
     ``hide_blocked`` drops runs of frozen or paused projects — the history "active" view.
     ``started_by`` keeps runs whose task is attributed to that operator (R8 mine view).
+    ``status`` filters by run status in SQL (before LIMIT) when not all/empty.
     """
     from taskqueue.db import blocked_projects, count_recent_runs, get_recent_runs
 
     exclude = (blocked_projects(conn) or None) if hide_blocked and not project else None
+    st = (status or "").strip() or None
+    if st == "all":
+        st = None
     total = count_recent_runs(
-        conn, project=project, search=search, exclude_projects=exclude, started_by=started_by
+        conn, project=project, search=search, exclude_projects=exclude, started_by=started_by, status=st
     )
     rows = get_recent_runs(
         conn,
@@ -1146,18 +1311,13 @@ def _get_history_response(
         search=search,
         exclude_projects=exclude,
         started_by=started_by,
+        status=st,
     )
     runs = [dict(r) for r in rows]
-    from taskqueue.operator_features import run_anomaly
+    from taskqueue.operator_features import annotate_run_anomalies
 
-    for r in runs:
-        if r.get("status") == "completed":
-            flags = run_anomaly(conn, r)["flags"]
-            if flags:
-                r["anomalies"] = flags
+    annotate_run_anomalies(conn, runs)
     return {"runs": runs, "total": total, "offset": offset, "limit": limit}
-
-
 
 
 from taskqueue.worker_api import claim_next_remote_task as _claim_next_remote_task
@@ -1254,7 +1414,6 @@ class BoundedThreadingHTTPServer(HTTPServer):
     def server_close(self) -> None:
         super().server_close()
         self._pool.shutdown(wait=False, cancel_futures=True)
-
 
 
 def _is_loopback(host: str) -> bool:

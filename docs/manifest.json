@@ -7,6 +7,7 @@
     "dependencies": {"path": "help/dependencies.md"},
     "tq-metric": {"path": "help/tq-metric.md"},
     "prod-vs-dev": {"path": "help/prod-vs-dev.md"},
+    "queue-hygiene": {"path": "help/queue-hygiene.md"},
     "page-queue": {"path": "help/page-queue.md"},
     "page-dashboard": {"path": "help/page-dashboard.md"},
     "page-history": {"path": "help/page-history.md"},
@@ -27,25 +28,30 @@
     "web-ui": {
       "path": "operators/web-ui.md",
       "audience": "human",
+      "capability": "observe",
       "ui_pages": ["queue", "dashboard", "history", "workers", "groups", "deps", "resources", "usage", "tasks", "timeline", "schedule", "alerts", "audit", "api"]
     },
     "quickstart": {
       "path": "operators/quickstart.md",
       "audience": "human",
+      "capability": "submit",
       "ui_pages": []
     },
     "agent-recipes": {
       "path": "agents/recipes.md",
       "audience": "agent",
+      "capability": "wait_notify",
       "ui_pages": []
     }
   },
   "references": {
-    "errors": "errors.md",
-    "task-standards": "task_standards.md",
-    "scheduler": "scheduler.md",
-    "mcp": "mcp.md",
-    "security": "security.md"
+    "capabilities": {"path": "capabilities.md", "capability": "observe"},
+    "surface-map": {"path": "surface_map.json", "capability": "observe"},
+    "errors": {"path": "errors.md", "capability": "diagnose"},
+    "task-standards": {"path": "task_standards.md", "capability": "submit"},
+    "scheduler": {"path": "scheduler.md", "capability": "admit"},
+    "mcp": {"path": "mcp.md", "capability": "wait_notify"},
+    "security": {"path": "security.md", "capability": "auth"}
   },
-  "general_topic_ids": ["block-project", "force-run", "groups", "dependencies", "tq-metric", "prod-vs-dev"]
+  "general_topic_ids": ["block-project", "force-run", "groups", "dependencies", "tq-metric", "prod-vs-dev", "queue-hygiene"]
 }

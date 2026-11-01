@@ -1,4 +1,5 @@
 """Hardware monitoring snapshot for /api/hardware."""
+
 from __future__ import annotations
 
 import threading
@@ -7,21 +8,30 @@ from typing import Any
 _hw_cache: dict = {"ts": 0.0, "data": None}
 _hw_lock = threading.Lock()
 
+
 def gpu_fit_summary(hw: dict, vram_gib: float, ram_gib: float = 0.0) -> dict:
     """Which GPUs could host a task needing ``vram_gib`` (and ``ram_gib`` host RAM) right now."""
     gpus = []
     for i, g in enumerate(hw.get("gpu") or []):
         free = max(0.0, float(g.get("mem_total_gib") or 0) - float(g.get("mem_used_gib") or 0))
-        gpus.append({
-            "index": i, "name": g.get("name"), "free_gib": round(free, 2),
-            "total_gib": g.get("mem_total_gib"), "fits": free >= vram_gib,
-        })
+        gpus.append(
+            {
+                "index": i,
+                "name": g.get("name"),
+                "free_gib": round(free, 2),
+                "total_gib": g.get("mem_total_gib"),
+                "fits": free >= vram_gib,
+            }
+        )
     ram_free = hw.get("ram_available_gib")
     ram_ok = ram_free is None or float(ram_free) >= ram_gib
     fitting = [g["index"] for g in gpus if g["fits"]]
     return {
-        "vram_gib": vram_gib, "ram_gib": ram_gib, "ram_ok": ram_ok,
-        "gpus": gpus, "fits_now": ram_ok and (bool(fitting) or vram_gib <= 0),
+        "vram_gib": vram_gib,
+        "ram_gib": ram_gib,
+        "ram_ok": ram_ok,
+        "gpus": gpus,
+        "fits_now": ram_ok and (bool(fitting) or vram_gib <= 0),
         "best_gpu": min((g for g in gpus if g["fits"]), key=lambda g: g["free_gib"], default={}).get("index"),
     }
 
@@ -38,7 +48,9 @@ def _get_hardware_data() -> dict:
     import platform
 
     result: dict[str, Any] = {
-        "cpu_temp_c": None, "cpu_freq_mhz": None, "gpu": [],
+        "cpu_temp_c": None,
+        "cpu_freq_mhz": None,
+        "gpu": [],
         "os": platform.system() + " " + platform.release(),
         "arch": platform.machine(),
     }
@@ -57,14 +69,14 @@ def _get_hardware_data() -> dict:
         result["cpu_util_pct"] = round(sum(per_cpu) / len(per_cpu), 1) if per_cpu else 0.0
         result["cpu_per_core_pct"] = per_cpu if isinstance(per_cpu, list) else []
         vm = psutil.virtual_memory()
-        result["ram_total_gib"] = round(vm.total / (1024 ** 3), 2)
-        result["ram_used_gib"] = round(vm.used / (1024 ** 3), 2)
-        result["ram_available_gib"] = round(vm.available / (1024 ** 3), 2)
+        result["ram_total_gib"] = round(vm.total / (1024**3), 2)
+        result["ram_used_gib"] = round(vm.used / (1024**3), 2)
+        result["ram_available_gib"] = round(vm.available / (1024**3), 2)
         result["ram_pct"] = vm.percent
         try:
             sw = psutil.swap_memory()
-            result["swap_total_gib"] = round(sw.total / (1024 ** 3), 2)
-            result["swap_used_gib"] = round(sw.used / (1024 ** 3), 2)
+            result["swap_total_gib"] = round(sw.total / (1024**3), 2)
+            result["swap_used_gib"] = round(sw.used / (1024**3), 2)
             result["swap_pct"] = sw.percent
         except Exception:
             pass
@@ -121,8 +133,8 @@ def _get_hardware_data() -> dict:
                 "name": name,
                 "load_pct": util.gpu,
                 "mem_load_pct": util.memory,
-                "mem_used_gib": round(mem.used / (1024 ** 3), 2),
-                "mem_total_gib": round(mem.total / (1024 ** 3), 2),
+                "mem_used_gib": round(mem.used / (1024**3), 2),
+                "mem_total_gib": round(mem.total / (1024**3), 2),
                 "temp_c": temp,
                 "throttle_reasons": throttle_reasons,
             }
@@ -139,7 +151,9 @@ def _get_hardware_data() -> dict:
                 gpu_entry["clock_graphics_mhz"] = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
                 gpu_entry["clock_mem_mhz"] = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_MEM)
                 gpu_entry["clock_sm_mhz"] = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_SM)
-                gpu_entry["clock_max_graphics_mhz"] = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
+                gpu_entry["clock_max_graphics_mhz"] = pynvml.nvmlDeviceGetMaxClockInfo(
+                    handle, pynvml.NVML_CLOCK_GRAPHICS
+                )
                 gpu_entry["clock_max_mem_mhz"] = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_MEM)
             except Exception:
                 pass
@@ -177,18 +191,20 @@ def _get_hardware_data() -> dict:
     if not result["gpu"]:
         # pynvml unavailable — fall back to nvidia-smi for basic GPU info
         from taskqueue.resources import _detect_gpus
+
         for g in _detect_gpus():
-            result["gpu"].append({
-                "name": g.get("name", "GPU"),
-                "load_pct": 0,
-                "mem_used_gib": g.get("vram_used_gib", 0.0),
-                "mem_total_gib": g.get("vram_gib", 0.0),
-                "throttle_reasons": [],
-            })
+            result["gpu"].append(
+                {
+                    "name": g.get("name", "GPU"),
+                    "load_pct": 0,
+                    "mem_used_gib": g.get("vram_used_gib", 0.0),
+                    "mem_total_gib": g.get("vram_gib", 0.0),
+                    "throttle_reasons": [],
+                }
+            )
 
     with _hw_lock:
         _hw_cache["ts"] = time.monotonic()
         _hw_cache["data"] = result
 
     return result
-

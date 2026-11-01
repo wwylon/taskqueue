@@ -48,6 +48,32 @@ export function tqPaletteItems() {
   }));
   items.push({ kind: 'action', label: i18n.t('palette.refresh'), hint: i18n.t('palette.action'), run: () => refresh() });
   items.push({ kind: 'action', label: i18n.t('palette.shortcuts'), hint: i18n.t('palette.action'), run: () => tqToggleShortcuts() });
+  if (S.selectedProject && S.selectedProject !== 'all') {
+    const frozen = !!(S.cfg && S.cfg[`project_frozen_${S.selectedProject}`]);
+    const paused = !!(S.cfg && S.cfg[`project_paused_${S.selectedProject}`]);
+    items.push({
+      kind: 'action',
+      label: frozen ? (i18n.t('btn.unfreeze') || 'Unfreeze project') : (i18n.t('btn.freeze') || 'Freeze project'),
+      hint: S.selectedProject,
+      run: () => toggleProjectFreeze(),
+    });
+    items.push({
+      kind: 'action',
+      label: paused ? (i18n.t('btn.resumeProject') || 'Resume project') : (i18n.t('btn.pauseProject') || 'Pause project'),
+      hint: S.selectedProject,
+      run: () => toggleProjectPause(),
+    });
+  }
+  items.push({
+    kind: 'action',
+    label: i18n.t('palette.retryFailed') || 'Retry failed (visible)',
+    hint: i18n.t('palette.action'),
+    run: () => {
+      if (typeof setQueueFilter === 'function' && S.queueStatusFilter !== 'failed') setQueueFilter('failed');
+      // Defer so refresh from setQueueFilter can populate S.queueTotal before retry-all.
+      setTimeout(() => { if (typeof tqRetryAllFailed === 'function') tqRetryAllFailed(); }, 0);
+    },
+  });
   return items;
 }
 
