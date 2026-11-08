@@ -66,11 +66,23 @@ function _writeLogText(text) {
   const lines = String(text).split('\n');
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
   const html = lines.map(tqLogLineHtml).join('');
+  // Follow new output only while the reader is at the bottom; scrolling up to read stops the yank.
+  const following = (body.scrollHeight || 0) - (body.scrollTop || 0) - (body.clientHeight || 0) <= 24;
   const before = body.children.length;
   if (html) body.insertAdjacentHTML('beforeend', html);
   if (_filterRe) for (let i = before; i < body.children.length; i++) _applyFilterTo(body.children[i]);
   while (body.children.length > 200) body.removeChild(body.firstChild);
-  body.scrollTop = body.scrollHeight;
+  if (following) body.scrollTop = body.scrollHeight;
+}
+/** Scroll the dock to the first visible error line (same rules as the run's error count) and flash it. */
+export function tqLogJumpFirstError() {
+  const body = document.getElementById('tq-log-body');
+  if (!body) return;
+  const line = Array.from(body.children).find(el => el.classList && el.classList.contains('log-error') && !el.hidden);
+  if (!line) { showToast(i18n.t('log.noErrorsShown'), 'info'); return; }
+  if (typeof line.scrollIntoView === 'function') line.scrollIntoView({ block: 'center' });
+  line.classList.add('tq-log-flash');
+  setTimeout(() => line.classList.remove('tq-log-flash'), 1600);
 }
 export function tqCloseLog() {
   if (_logPanelEs) { _logPanelEs.close(); _logPanelEs = null; }

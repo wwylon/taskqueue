@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import re
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from taskqueue.db import open_db
-from taskqueue.web import _is_loopback, start_web_server, make_handler
-
+from taskqueue.web import _is_loopback, make_handler, start_web_server
 
 # ---------------------------------------------------------------------------
 # W1.1: bind-driven auth
@@ -85,7 +81,6 @@ class _FakeConn:
 
 def test_csrf_origin_rejected(tmp_path):
     """A POST with a foreign Origin and no token must return 403."""
-    import http.server
     import io
 
     HandlerClass = _make_handler(tmp_path)
@@ -165,7 +160,6 @@ def test_csrf_origin_rejected(tmp_path):
 
 def test_upload_rejects_traversal(tmp_path):
     """X-File-Path with .. must not escape project root."""
-    from taskqueue.config import Project
 
     proj_root = tmp_path / "proj"
     proj_root.mkdir()

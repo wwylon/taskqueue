@@ -11,7 +11,7 @@ guide_anchors:
 **API** creates a scoped token. The secret (`tq_live_…`) is shown once. The database stores a SHA-256 hash and a prefix.
 
 - **read** — GET
-- **write** — GET plus task changes (stop, retry, force, enable, priority, freeze, YAML; many tasks at once via `POST /api/tasks/bulk`)
+- **write** — GET plus task changes (stop with optional `?reason=`, hold/unhold, retry, force, enable, priority, freeze, YAML; many tasks at once via `POST /api/tasks/bulk`)
 - **admin** — config, project limits, alerts, and token create or revoke, plus write
 
 The optional **Projects** field (comma separated) limits a read or write token to those projects. Such a token may only read the queue, history and audit lists with a `project` filter naming an allowed project; every other route returns 403. It cannot be combined with admin. See [security](../security.md).

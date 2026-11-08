@@ -1,3 +1,4 @@
+// @ts-check
 // Per-project colours: the server assigns each project the colour farthest from those in use
 // (taskqueue/project_colors.py) and ships them in /api/status as `project_colors`.
 import { S } from '../core/state.js';

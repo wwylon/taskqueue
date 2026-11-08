@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -85,3 +84,20 @@ def test_unparseable_stored_list_fails_closed(env):
     db.execute("UPDATE api_tokens SET projects = 'not json'")
     db.commit()
     assert _call(handler, "GET", "/api/queue?project=proj", tok)[0] == 403
+
+
+def test_resolve_access_with_projects_single_query(tmp_path):
+    """F-230: scope, via and the project allowlist come from one api_tokens read."""
+    from taskqueue.db import open_db
+    from taskqueue.operator_features import create_token, resolve_access_with_projects
+
+    db = open_db(tmp_path / "q.db")
+    cfg = {"auth_token": "legacy-secret"}
+    assert resolve_access_with_projects(cfg, db, "legacy-secret") == ("admin", "legacy", None)
+    tok = create_token(db, "ro", "read", projects=["a"])
+    tok = tok["token"] if isinstance(tok, dict) else tok
+    traced = []
+    db.set_trace_callback(lambda sql: traced.append(sql) if "api_tokens" in sql and sql.startswith("SELECT") else None)
+    assert resolve_access_with_projects(cfg, db, tok) == ("read", "token", ["a"])
+    assert len(traced) == 1
+    assert resolve_access_with_projects(cfg, db, "nope") == (None, None, None)

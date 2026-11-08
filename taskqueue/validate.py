@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from typing import Any
 
-from taskqueue.config import load_projects, db_path
-from taskqueue.yaml_sync import iter_queue_files
+from taskqueue.config import db_path, load_projects
 from taskqueue.db import get_config, open_db, parse_task_yaml
+from taskqueue.yaml_sync import iter_queue_files
 
 
 def _get_historical_median_sec(conn, project: str, task_id: str) -> float | None:
@@ -56,7 +57,7 @@ def _allow_remote_notify(home: Path):
         conn = open_db(db_file)
         try:
             allow_remote = bool(get_config(conn).get("notify_allow_remote"))
-        except Exception:
+        except sqlite3.Error:
             pass
     return allow_remote, conn
 
@@ -80,7 +81,7 @@ def _cap_warnings(conn, project_name: str, task, yaml_path: Path, *, cap_warn_mu
                     ),
                 }
             )
-    except Exception:
+    except (sqlite3.Error, TypeError, ValueError):
         pass
     return warnings
 
@@ -98,7 +99,7 @@ def fix_file(yaml_path: Path, home: Path) -> dict[str, Any]:
             "changes": changes,
             "error": None,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any fix error is reported per file
         return {
             "project": project_name,
             "path": str(yaml_path),
@@ -128,7 +129,7 @@ def fix_home(home: Path) -> dict[str, Any]:
                             "changes": changes,
                         }
                     )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any fix error is reported per file
                 errors.append(
                     {
                         "project": name,
@@ -186,7 +187,7 @@ def validate_file(
                 cap_warn_multiplier=cap_warn_multiplier,
             )
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any parse error is reported per file
         errors.append(
             {
                 "project": project_name,
@@ -248,7 +249,7 @@ def validate_home(
                         cap_warn_multiplier=cap_warn_multiplier,
                     )
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any parse error is reported per file
                 errors.append(
                     {
                         "project": name,

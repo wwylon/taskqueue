@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from taskqueue._db_runs import force_task
-from taskqueue.config import Project
 from taskqueue._db_tasks import get_task, request_stop, set_task_status, upsert_task
+from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml, set_project_frozen
 from taskqueue.health import compute_health
 from taskqueue.models import STATUS_QUEUED, STATUS_STOPPED

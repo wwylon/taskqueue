@@ -144,3 +144,28 @@ def test_prevent_sleep_follows_active_runs(env_st):
     env, st, _, calls = env_st
     daemon.daemon_tick(env, st)
     assert ("sleep", False) in calls
+
+
+def test_periodic_sync_still_runs_after_yaml_wake(env_st, monkeypatch):
+    """F-216: the fast path stamped last_sync with wall time; the tick compares monotonic."""
+    env, st, _, _ = env_st
+    loads = []
+    monkeypatch.setattr(daemon, "load_projects", lambda home: loads.append(1) or {})
+    monkeypatch.setattr(daemon, "_fast_reap_and_admit", lambda *a, **k: False)
+    monkeypatch.setattr(sched_wake, "wait_or_timeout", lambda s: True)
+    env.sync_requested.set()
+    daemon.idle_wait_and_fast_admit(env, st)
+    assert loads == [1]
+    st.last_sync -= 61  # pretend a minute has passed
+    daemon.daemon_tick(env, st)
+    assert loads == [1, 1], "60 s periodic sync must still fire after a YAML wake"
+
+
+def test_log_rotation_does_not_depend_on_sync(env_st, monkeypatch):
+    env, st, _, _ = env_st
+    rotated = []
+    monkeypatch.setattr(daemon, "rotate_own_log", lambda home: rotated.append(home) or False)
+    st.last_sync = time.monotonic()  # sync not due
+    st.last_log_rotate = 0.0
+    daemon.daemon_tick(env, st)
+    assert rotated == [env.home]

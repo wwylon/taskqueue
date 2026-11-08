@@ -3,8 +3,8 @@
 Daemon
   tq start                          Start the daemon (background, detached)
   tq stop-daemon                    Ask daemon to shut down gracefully
-  tq restart [--force]              Stop (wait for exit) then start; refuses while tasks run
-  tq doctor [--json] [--torch]                         Version, home, uptime, DB size, projects, memory, port
+  tq restart [--force]              Stop (wait for exit) then start; refuses while tasks run (adoptable runs survive)
+  tq doctor [--json] [--torch] [--fix|--dry-run]     Health; --fix/--dry-run list remediations (no writes)
   tq log [--bytes N] [--grep PAT]   Tail daemon.log (scheduler stdout; not task logs)
   tq detect                         Detect host hardware
   tq master-status                  Who holds master_lease
@@ -39,6 +39,9 @@ Tasks
   tq stop <project/task_id> [--force]  Graceful stop (checkpoints first)
   tq stop --project P               Stop all running tasks in project P
   tq suspend <project/task_id>      Cooperative suspend (exit 75)
+  tq hold <project/task_id> [--for SEC] [--reason TEXT]
+                                    Cooperative in-process idle (keeps RAM/GPU; not project freeze)
+  tq unhold <project/task_id>       Clear a cooperative hold
   tq retry <project/task_id> [--downstream] [--enable-downstream]
                                     Re-queue (+ dependents; optional enable-then-retry)
   tq retry --project P              Retry all terminal-retryable in P
@@ -68,6 +71,8 @@ Projects
   tq resync <project> [--worker ID] Force allowlisted file re-sync to workers
   tq pause|resume <project>         Pause / resume scheduling
   tq freeze|unfreeze <project>      Freeze / unfreeze project
+  tq release <project>              Drop queue-dir watch (Windows folder move)
+  tq relocate <project> <new_root>  Rewrite root + yaml_source after a move
   tq suite list|…                   Named suites
   tq bundle <project>               Create a project bundle
 
@@ -102,29 +107,32 @@ Notes
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from taskqueue._cli_helpers import (  # noqa: F401
-    emit_json,
-    _home,
-    _db,
-    _pid_path,
-    _daemon_running,
-    _web_port,
-    _ui_url,
-    _ensure_python,
-    _split_key,
-)
-from taskqueue._cli_task import *  # noqa: F401,F403
-from taskqueue._cli_project import *  # noqa: F401,F403
-from taskqueue._cli_worker import *  # noqa: F401,F403
 from taskqueue._cli_admin import *  # noqa: F401,F403
-
+from taskqueue._cli_helpers import (  # noqa: F401
+    _daemon_running,
+    _db,
+    _ensure_python,
+    _home,
+    _pid_path,
+    _split_key,
+    _ui_url,
+    _web_port,
+    emit_json,
+)
+from taskqueue._cli_project import *  # noqa: F401,F403
+from taskqueue._cli_task import *  # noqa: F401,F403
+from taskqueue._cli_worker import *  # noqa: F401,F403
 
 # ── arg helpers (shared by command wrappers) ─────────────────────────────────
+
+
+_log = logging.getLogger(__name__)
 
 
 def _pop_project(lst: list[str]) -> tuple[str | None, list[str]]:
@@ -178,6 +186,15 @@ def _reject_args(name: str, rest: list[str]) -> int | None:
     return None
 
 
+def _reject_leftover(cmd: str, rest: list[str], *, usage: str, exit_code: int = 2) -> int | None:
+    """F-213: after flags/positional are consumed, refuse unexpected trailing argv."""
+    if not rest:
+        return None
+    print(f"Unexpected argument(s) for tq {cmd}: {' '.join(rest)}")
+    print(f"Usage: {usage}")
+    return exit_code
+
+
 def _cmd_start(home: Path, rest: list[str]) -> int:
     bad = _reject_args("start", rest)
     if bad is not None:
@@ -220,6 +237,9 @@ def _cmd_restart(home: Path, rest: list[str]) -> int:
 def _cmd_status(home: Path, rest: list[str]) -> int:
     project, rest = _pop_project(rest)
     as_json, rest = _pop_flag(rest, "--json")
+    bad = _reject_leftover("status", rest, usage="tq status [--project P] [--json]")
+    if bad is not None:
+        return bad
     return cmd_status(home, project, as_json=as_json)
 
 
@@ -292,7 +312,11 @@ def _cmd_describe(home: Path, rest: list[str]) -> int:
     if not rest:
         print("Usage: tq describe <project/task_id>")
         return 1
-    return cmd_describe(home, rest[0])
+    key, *extra = rest
+    bad = _reject_leftover("describe", extra, usage="tq describe <project/task_id>")
+    if bad is not None:
+        return bad
+    return cmd_describe(home, key)
 
 
 def _cmd_sync(home: Path, rest: list[str]) -> int:
@@ -452,14 +476,19 @@ def _cmd_stop(home: Path, rest: list[str]) -> int:
     project, rest2 = _pop_project(rest)
     force, rest2 = _pop_flag(rest2, "--force")
     stop_reason, rest2 = _pop_value(rest2, "--reason")
+    usage = "tq stop <project/task_id> [--force] [--reason TEXT] | tq stop --project P"
     if project and rest2:
         print("Error: --project and explicit task ID are mutually exclusive")
         return 1
     if project and not rest2:
         return cmd_stop_project(home, project)
     if rest2:
-        return cmd_stop(home, rest2[0], force=force, reason=stop_reason)
-    print("Usage: tq stop <project/task_id> [--force] [--reason TEXT] | tq stop --project P")
+        key, *extra = rest2
+        bad = _reject_leftover("stop", extra, usage=usage)
+        if bad is not None:
+            return bad
+        return cmd_stop(home, key, force=force, reason=stop_reason)
+    print(f"Usage: {usage}")
     return 1
 
 
@@ -467,7 +496,44 @@ def _cmd_suspend(home: Path, rest: list[str]) -> int:
     if not rest:
         print("Usage: tq suspend <project/task_id>")
         return 1
-    return cmd_suspend(home, rest[0])
+    key, *extra = rest
+    bad = _reject_leftover("suspend", extra, usage="tq suspend <project/task_id>")
+    if bad is not None:
+        return bad
+    return cmd_suspend(home, key)
+
+
+def _cmd_hold(home: Path, rest: list[str]) -> int:
+    dur_s, rest2 = _pop_value(rest, "--for")
+    reason, rest2 = _pop_value(rest2, "--reason")
+    usage = "tq hold <project/task_id> [--for SEC] [--reason TEXT]"
+    if not rest2:
+        print(f"Usage: {usage}")
+        return 1
+    try:
+        duration_sec = float(dur_s) if dur_s else 600.0
+    except ValueError:
+        print("Error: --for must be seconds (number)")
+        return 1
+    if duration_sec <= 0:
+        print("Error: --for must be > 0")
+        return 1
+    key, *extra = rest2
+    bad = _reject_leftover("hold", extra, usage=usage)
+    if bad is not None:
+        return bad
+    return cmd_hold(home, key, duration_sec=duration_sec, reason=reason)
+
+
+def _cmd_unhold(home: Path, rest: list[str]) -> int:
+    if not rest:
+        print("Usage: tq unhold <project/task_id>")
+        return 1
+    key, *extra = rest
+    bad = _reject_leftover("unhold", extra, usage="tq unhold <project/task_id>")
+    if bad is not None:
+        return bad
+    return cmd_unhold(home, key)
 
 
 def _cmd_pause(home: Path, rest: list[str]) -> int:
@@ -508,6 +574,27 @@ def _cmd_unfreeze(home: Path, rest: list[str]) -> int:
         print("Usage: tq unfreeze <project>")
         return 2
     return cmd_unfreeze(home, rest[0]) or 0
+
+
+def _cmd_release(home: Path, rest: list[str]) -> int:
+    if not rest:
+        print("Usage: tq release <project>")
+        return 1
+    if len(rest) > 1 or rest[0].startswith("-"):
+        print("Usage: tq release <project>")
+        return 2
+    from taskqueue._cli_project import cmd_release
+
+    return cmd_release(home, rest[0]) or 0
+
+
+def _cmd_relocate(home: Path, rest: list[str]) -> int:
+    if len(rest) != 2 or rest[0].startswith("-") or rest[1].startswith("-"):
+        print("Usage: tq relocate <project> <new_root>")
+        return 1 if not rest else 2
+    from taskqueue._cli_project import cmd_relocate
+
+    return cmd_relocate(home, rest[0], rest[1]) or 0
 
 
 def _cmd_patch(home: Path, rest: list[str]) -> int:
@@ -555,16 +642,24 @@ def _cmd_locks(home: Path, rest: list[str]) -> int:
 def _cmd_remove(home: Path, rest: list[str]) -> int:
     force, rest = _pop_flag(rest, "--force")
     project_flag, rest = _pop_value(rest, "--project")
+    usage = "tq remove <project/task_id> [--force] | tq remove --project P [--force]"
     if project_flag and rest:
         print("Error: --project and explicit task ID are mutually exclusive")
         return 1
     if project_flag:
+        bad = _reject_leftover("remove", rest, usage=usage)
+        if bad is not None:
+            return bad
         return cmd_remove_project(home, project_flag, force=force)
     if not rest:
         print("Usage: tq remove <project/task_id> [--force]")
         print("       tq remove --project P [--force]   (purge all tasks+runs for project P from DB)")
         return 1
-    return cmd_remove(home, rest[0], force=force)
+    key, *extra = rest
+    bad = _reject_leftover("remove", extra, usage=usage)
+    if bad is not None:
+        return bad
+    return cmd_remove(home, key, force=force)
 
 
 def _cmd_priority(home: Path, rest: list[str]) -> int:
@@ -655,21 +750,34 @@ def _cmd_detect(home: Path, rest: list[str]) -> int:
 def _cmd_doctor(home: Path, rest: list[str]) -> int:
     as_json, rest = _pop_flag(rest, "--json")
     check_torch, rest = _pop_flag(rest, "--torch")
-    bad = _reject_args("doctor [--json] [--torch]", rest)
+    fix, rest = _pop_flag(rest, "--fix")
+    dry_run, rest = _pop_flag(rest, "--dry-run")
+    propose = fix or dry_run
+    bad = _reject_args("doctor [--json] [--torch] [--fix|--dry-run]", rest)
     if bad is not None:
         return bad
-    from taskqueue.doctor_checks import run_checks
+    from taskqueue.doctor_checks import propose_remediations, run_checks
 
     result = run_checks(home)
+    proposals = propose_remediations(home, result["checks"]) if propose else []
+    if propose:
+        result = {**result, "remediations": proposals, "dry_run": True}
     if as_json:
-        import json as _json
-
         emit_json(result)
     else:
-        cmd_doctor(home, check_torch=check_torch)
+        if not propose:
+            cmd_doctor(home, check_torch=check_torch)
         print("checks:")
         for c in result["checks"]:
             print(f"  [{c['level']:>4}] {c['name']}: {c['detail']}")
+        if propose:
+            print("remediations (dry-run; nothing applied):")
+            if not proposals:
+                print("  (none)")
+            for p in proposals:
+                print(f"  - [{p['id']}] {p['summary']}")
+                if p.get("command"):
+                    print(f"      → {p['command']}")
     return 0 if result["ok"] else 1
 
 
@@ -831,8 +939,7 @@ def _cmd_hygiene_impl(
         print(f"multi_use (keep): {len(rep['multi_use'])}")
         for m in rep["multi_use"][:10]:
             print(
-                f"  {m['project']}/{m['task_id']}  completed={m['completed_runs']}  "
-                f"span_d={m['completed_span_days']}"
+                f"  {m['project']}/{m['task_id']}  completed={m['completed_runs']}  span_d={m['completed_span_days']}"
             )
     if rep["flaky"]:
         print(f"flaky (review): {len(rep['flaky'])}")
@@ -872,7 +979,7 @@ def _cmd_explain(home: Path, rest: list[str]) -> int:
     cat = None
     try:
         cat = tqerr.classify_error(code, None, None)
-    except Exception:
+    except Exception:  # noqa: BLE001 - error classification is advisory
         cat = None
     if "--json" in rest:
         emit_json({"code": code, "known": known, "description": desc, "category": cat})
@@ -1008,7 +1115,7 @@ def _worker_service_cmd(home: Path, rest: list[str]) -> int:
             try:
                 _wconf = _yaml.safe_load(conf_p.read_text(encoding="utf-8")) or {}
                 worker_id_arg = _wconf.get("worker_id")
-            except Exception:
+            except (OSError, AttributeError, _yaml.YAMLError):
                 pass
     if not worker_id_arg:
         print(f"Usage: tq worker {verb} --worker-id <id>", file=sys.stderr)
@@ -1180,7 +1287,7 @@ def _cmd_worker(home: Path, rest: list[str]) -> int:
                     worker_id = conf.get("worker_id")
                 if not auth_token:
                     auth_token = conf.get("auth_token")
-            except Exception:
+            except (OSError, AttributeError, yaml.YAMLError):
                 pass
 
     if not master_url or not worker_id:
@@ -1480,8 +1587,8 @@ def _record_cli_call(home: Path, cmd: str, rest: list[str], t0: float, rc: objec
             )
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - usage tracking is best-effort
+        _log.debug("usage tracking failed", exc_info=True)
 
 
 def _cmd_agents(home: Path, rest: list[str]) -> int:
@@ -1619,7 +1726,7 @@ def _cmd_usage(home: Path, rest: list[str]) -> int:
                 ts = e.get("ts", 0)
                 if ts > last_seen.get(c, 0):
                     last_seen[c] = ts
-            except Exception:
+            except (ValueError, AttributeError, TypeError):
                 pass
     print(f"{'command':<20} {'uses':>6}  last seen")
     print("-" * 46)
@@ -1769,10 +1876,14 @@ COMMANDS: dict[str, Callable[[Path, list[str]], int]] = {
     "submit": _cmd_add,
     "stop": _cmd_stop,
     "suspend": _cmd_suspend,
+    "hold": _cmd_hold,
+    "unhold": _cmd_unhold,
     "pause": _cmd_pause,
     "resume": _cmd_resume,
     "freeze": _cmd_freeze,
     "unfreeze": _cmd_unfreeze,
+    "release": _cmd_release,
+    "relocate": _cmd_relocate,
     "patch": _cmd_patch,
     "force": _cmd_force,
     "reverify": _cmd_reverify,
@@ -1867,7 +1978,7 @@ def main(argv: list[str] | None = None) -> int:
             entry = {"ts": round(time.time()), "cmd": command, "flags": [f for f in flags if f.startswith("-")]}
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry) + "\n")
-        except Exception:
+        except OSError:
             pass
 
     if cmd not in (

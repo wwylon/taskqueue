@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from taskqueue._db_tasks import get_queued_tasks, get_running_tasks
 from taskqueue.db import open_db, parse_task_yaml, upsert_task
 from taskqueue.rows import admit_task_select_sql, row_resources
-from taskqueue._db_tasks import get_queued_tasks, get_running_tasks
 from tests.test_queue import _project, _yaml
 
 

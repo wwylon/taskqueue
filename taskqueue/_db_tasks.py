@@ -5,22 +5,24 @@ in ``db.py``, so callers continue to use ``from taskqueue.db import X``.
 """
 
 from __future__ import annotations
-from taskqueue.deprefs import row_dep_refs
-from taskqueue.jsonutil import json_list
-from taskqueue.project_limits import get_all_project_limits
 
 import json
+import logging
 import sqlite3
 from collections import deque
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from taskqueue.models import STATUS_QUEUED, QueueTask, TaskResources  # noqa: F401
 from taskqueue._time import _now  # noqa: F401  # canonical ISO timestamp helper
-
+from taskqueue.deprefs import row_dep_refs
+from taskqueue.models import STATUS_QUEUED, QueueTask, TaskResources  # noqa: F401
+from taskqueue.project_limits import get_all_project_limits
 
 SUBMIT_CHANNELS = frozenset({"cli", "mcp", "web", "api", "yaml", "daemon"})
+
+
+_log = logging.getLogger(__name__)
 
 
 def stamp_provenance(
@@ -240,7 +242,7 @@ def failed_attempt_counts_bulk(
 # --- task upsert / sync ---
 
 
-def _yaml_num_from_source(yaml_source: str) -> "int | None":
+def _yaml_num_from_source(yaml_source: str) -> int | None:
     import re as _re
 
     m = _re.match(r"^(\d+)", Path(yaml_source).name) if yaml_source else None
@@ -296,6 +298,7 @@ _UPSERT_TASK_COLUMNS = (
     "teardown",
     "auto_retry_on_cap",
     "max_auto_retries",
+    "retry_backoff_sec",
     "data",
     "min_trust",
     "task_class",
@@ -381,6 +384,7 @@ def _upsert_task_params(task: QueueTask) -> tuple:
         json.dumps(task.teardown) if task.teardown else None,
         int(bool(task.auto_retry_on_cap)),
         int(task.max_auto_retries if task.max_auto_retries is not None else 20),
+        int(getattr(task, "retry_backoff_sec", 0) or 0),
         json.dumps(task.data) if task.data is not None else None,
         task.min_trust or "",
         task.task_class or "normal",
@@ -405,7 +409,7 @@ def upsert_task(conn: sqlite3.Connection, task: QueueTask) -> None:
     conn.commit()
 
 
-def _upsert_task_no_commit(conn: sqlite3.Connection, task: "QueueTask") -> None:
+def _upsert_task_no_commit(conn: sqlite3.Connection, task: QueueTask) -> None:
     """Like upsert_task but skips conn.commit() — caller batches the commit."""
     _upsert_task_sql(conn, task)
 
@@ -461,6 +465,58 @@ def get_queued_tasks(
                     break
         return head + extra
     return conn.execute(sql, tuple(statuses)).fetchall()
+
+
+def get_queued_window(
+    conn: sqlite3.Connection,
+    *,
+    limit: int,
+    statuses: tuple[str, ...] = ("queued", "stopped"),
+    skip_projects: set[str] | frozenset[str] | None = None,
+    extra_scan: int = 5000,
+) -> tuple[list[sqlite3.Row], dict[tuple[str, str], str]]:
+    """The admit candidate window and its dependency status map, from one sorted scan (F-234).
+
+    Same selection as ``get_queued_tasks(limit=…)`` followed by
+    ``get_queued_tasks(limit=…, status_map=…, skip_projects=…)``: the first *limit* rows,
+    plus up to *limit* runnable rows from the next *extra_scan* (deps met, project not
+    skipped). The sort runs on a slim projection; full admit rows are loaded only for
+    the chosen window (sorting every queued row with all its columns, twice, dominated
+    the admit pass on large queues).
+    """
+    from taskqueue.rows import admit_task_select_sql
+    from taskqueue.scheduler import build_task_status_map
+
+    n = max(1, int(limit))
+    marks = ",".join("?" for _ in statuses)
+    slim = conn.execute(
+        "SELECT rowid AS rid, project, task_id, depends_on, depends_on_any FROM tasks "
+        f"WHERE status IN ({marks}) AND enabled = 1 ORDER BY priority DESC, enqueued_at ASC LIMIT ?",
+        (*statuses, n + max(0, int(extra_scan))),
+    ).fetchall()
+    head = slim[:n]
+    status_map = build_task_status_map(conn, head) if head else {}
+    picked = list(head)
+    if len(head) == n:
+        skip = skip_projects or ()
+        extra = 0
+        for row in slim[n:]:
+            if row["project"] in skip:
+                continue
+            if unmet_dependency_label(conn, row["project"], row["task_id"], status_map=status_map, row=row) is None:
+                picked.append(row)
+                extra += 1
+                if extra >= n:
+                    break
+    base = admit_task_select_sql(conn)
+    full: dict[tuple[str, str], sqlite3.Row] = {}
+    rids = [int(r["rid"]) for r in picked]
+    for i in range(0, len(rids), 900):  # stay under SQLite's bound-parameter limit
+        chunk = rids[i : i + 900]
+        for row in conn.execute(f"{base} WHERE rowid IN ({','.join('?' * len(chunk))})", chunk):
+            full[(row["project"], row["task_id"])] = row
+    keys = [(r["project"], r["task_id"]) for r in picked]
+    return [full[k] for k in keys if k in full], status_map
 
 
 def count_queued_tasks(conn: sqlite3.Connection, project: str | None = None) -> int:
@@ -553,6 +609,45 @@ def set_task_status(conn: sqlite3.Connection, project: str, task_id: str, status
     conn.commit()
 
 
+# Columns transition_task may set besides status / updated_at / finished_at (names go into the SQL).
+_TRANSITION_FIELDS = frozenset({"stop_requested", "last_error_code", "block_reason", "force_run", "enabled"})
+
+
+def transition_task(
+    conn: sqlite3.Connection,
+    project: str,
+    task_id: str,
+    *,
+    to: str,
+    from_: str | Iterable[str],
+    finished: bool = False,
+    now: str | None = None,
+    **fields: Any,
+) -> bool:
+    """Guarded status change: move the task to ``to`` only while it is in ``from_`` (no commit).
+
+    Also stamps ``updated_at`` (and ``finished_at`` with ``finished=True``) and sets ``fields``
+    (stop_requested, last_error_code, block_reason, force_run, enabled). Returns whether the row
+    changed, so callers can tell a task someone else just moved.
+    """
+    bad = set(fields) - _TRANSITION_FIELDS
+    if bad:
+        raise ValueError(f"transition_task cannot set {sorted(bad)}")
+    states = [from_] if isinstance(from_, str) else list(from_)
+    now = now or _now()
+    sets = ["status = ?", "updated_at = ?"] + (["finished_at = ?"] if finished else [])
+    values: list[Any] = [to, now] + ([now] if finished else [])
+    for name, value in sorted(fields.items()):
+        sets.append(f"{name} = ?")
+        values.append(value)
+    cur = conn.execute(
+        f"UPDATE tasks SET {', '.join(sets)} WHERE project = ? AND task_id = ? "
+        f"AND status IN ({', '.join('?' * len(states))})",
+        (*values, project, task_id, *states),
+    )
+    return (cur.rowcount or 0) > 0
+
+
 def claim_task_running(
     conn: sqlite3.Connection,
     project: str,
@@ -590,35 +685,35 @@ def claim_and_insert_local_run(
     On failure after claim (unexpected), rolls back so the task is not left
     ``running`` without a run row.
     """
-    if conn.in_transaction:
-        conn.rollback()
-    conn.execute("BEGIN IMMEDIATE")
+    from taskqueue.dbtxn import write_transaction
+
     try:
-        if not claim_task_running(conn, project, task_id, commit=False):
-            conn.rollback()
-            return None
-        cur = conn.execute(
-            "INSERT INTO runs (project, task_id, started_at, status, log_path, worker_id) "
-            "VALUES (?, ?, ?, 'running', ?, NULL)",
-            (project, task_id, _now(), log_path),
-        )
-        run_id = int(cur.lastrowid or 0)
-        conn.execute(
-            "UPDATE tasks SET last_run_id = ?, total_run_count = COALESCE(total_run_count, 0) + 1 "
-            "WHERE project = ? AND task_id = ?",
-            (run_id, project, task_id),
-        )
-        if clear_args_override:
-            conn.execute(
-                "UPDATE tasks SET args_override = NULL WHERE project = ? AND task_id = ?",
-                (project, task_id),
+        with write_transaction(conn):
+            if not claim_task_running(conn, project, task_id, commit=False):
+                conn.rollback()
+                return None
+            cur = conn.execute(
+                "INSERT INTO runs (project, task_id, started_at, status, log_path, worker_id) "
+                "VALUES (?, ?, ?, 'running', ?, NULL)",
+                (project, task_id, _now(), log_path),
             )
-        conn.commit()
-        return run_id
+            run_id = int(cur.lastrowid or 0)
+            conn.execute(
+                "UPDATE tasks SET last_run_id = ?, total_run_count = COALESCE(total_run_count, 0) + 1 "
+                "WHERE project = ? AND task_id = ?",
+                (run_id, project, task_id),
+            )
+            if clear_args_override:
+                conn.execute(
+                    "UPDATE tasks SET args_override = NULL WHERE project = ? AND task_id = ?",
+                    (project, task_id),
+                )
+            return run_id
     except Exception:
         try:
-            conn.rollback()
-        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+        except sqlite3.Error:
             pass
         raise
 
@@ -829,8 +924,8 @@ def retry_task(
         from taskqueue.sched_wake import wake_scheduler
 
         wake_scheduler()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - scheduler wake is best-effort
+        _log.debug("scheduler wake failed", exc_info=True)
     return True
 
 
@@ -872,7 +967,7 @@ def retry_tasks_batch(
 
     try:
         conn.commit()
-    except Exception:
+    except sqlite3.Error:
         pass
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -895,7 +990,7 @@ def retry_tasks_batch(
     except Exception:
         try:
             conn.rollback()
-        except Exception:
+        except sqlite3.Error:
             pass
         raise
     for key in requeued:
@@ -906,8 +1001,8 @@ def retry_tasks_batch(
             from taskqueue.sched_wake import wake_scheduler
 
             wake_scheduler()
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - scheduler wake is best-effort
+            _log.debug("scheduler wake failed", exc_info=True)
     return {"requeued": requeued, "skipped": skipped}
 
 
@@ -1248,7 +1343,7 @@ def lock_occupancy(conn: sqlite3.Connection) -> dict[str, dict]:
     for row in running:
         try:
             res = json.loads(row["resources"] or "{}")
-        except Exception:
+        except (TypeError, ValueError):
             res = {}
         locks = res.get("locks") or []
         if not isinstance(locks, list):
@@ -1267,7 +1362,7 @@ def lock_occupancy(conn: sqlite3.Connection) -> dict[str, dict]:
     for row in waiting:
         try:
             res = json.loads(row["resources"] or "{}")
-        except Exception:
+        except (TypeError, ValueError):
             res = {}
         locks = res.get("locks") or []
         if not isinstance(locks, list):
@@ -1329,16 +1424,45 @@ def lock_contention_summary(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def write_control_action(home: Path, project: str, task_id: str, action: str, requested_by: str | None = None) -> Path:
-    """Write cooperative control JSON for a running task (``requested_by`` names who asked, for the log)."""
+def write_control_action(
+    home: Path,
+    project: str,
+    task_id: str,
+    action: str,
+    requested_by: str | None = None,
+    *,
+    until: float | None = None,
+    duration_sec: float | None = None,
+    reason: str | None = None,
+) -> Path:
+    """Write cooperative control JSON for a running task (``requested_by`` names who asked, for the log).
+
+    For ``action=hold``: pass ``until`` (unix epoch) and/or ``duration_sec`` (from now).
+    ``suspend`` still wins over hold when rewritten; clients check suspend first.
+    """
     import json as _json
+    import time as _time
+
     from taskqueue.config import control_path, controls_dir
 
     controls_dir(home).mkdir(parents=True, exist_ok=True)
     path = control_path(home, project, task_id)
-    payload = {"action": action}
+    payload: dict = {"action": action}
     if requested_by:
         payload["requested_by"] = str(requested_by)[:120]
+    if reason:
+        payload["reason"] = str(reason)[:200]
+    if action == "hold":
+        now = _time.time()
+        if until is not None:
+            payload["until"] = float(until)
+        elif duration_sec is not None and float(duration_sec) > 0:
+            payload["until"] = now + float(duration_sec)
+            payload["duration_sec"] = float(duration_sec)
+        else:
+            # Default 10 minutes when hold has no explicit window.
+            payload["until"] = now + 600.0
+            payload["duration_sec"] = 600.0
     path.write_text(_json.dumps(payload), encoding="utf-8")
     return path
 
@@ -1359,7 +1483,6 @@ def enable_task(conn: sqlite3.Connection, project: str, task_id: str) -> tuple[b
     Returns (True, None) on success. Idempotent when already queued and enabled
     (e.g. YAML sync promoted the task before the UI Enable click).
     """
-    import re
 
     row = get_task(conn, project, task_id)
     if row is None:

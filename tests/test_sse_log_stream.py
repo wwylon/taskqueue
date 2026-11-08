@@ -57,8 +57,8 @@ def test_stream_finished_run_sends_log_then_closes(tmp_path: Path) -> None:
 def test_stream_resumes_from_last_event_id_and_keeps_utf8_and_partial_lines(tmp_path: Path) -> None:
     H, db, _ = make_handler_env(tmp_path)
     log = tmp_path / "run.log"
-    first = "old line\n".encode("utf-8")
-    log.write_bytes(first + "żółw\r\ntail-no-newline".encode("utf-8"))
+    first = b"old line\n"
+    log.write_bytes(first + "żółw\r\ntail-no-newline".encode())
     seed_queued_task(db, project="p", task_id="t", dispatch="local")
     run_id = insert_run(db, "p", "t", str(log))
     db.execute("UPDATE runs SET status='completed' WHERE run_id=?", (run_id,))

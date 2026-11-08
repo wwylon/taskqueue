@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 import sys
 import threading
 from pathlib import Path
+
+import pytest
 
 from taskqueue.worker_slot import WorkerSlot
 

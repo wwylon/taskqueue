@@ -5,15 +5,13 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
-from unittest import mock
 
 import pytest
 import yaml
 
-from taskqueue.config import Project
 from taskqueue._db_tasks import get_queued_tasks, get_task, upsert_task
+from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import STATUS_COMPLETED
 from taskqueue.priority_migrate import invert_priority, migrate_priority_invert

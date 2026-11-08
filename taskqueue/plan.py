@@ -64,6 +64,7 @@ def build_plan(
         cpu, ram, gpu = declared_resources(row)
         budget.reserve(cpu, gpu, ram)
     occ = occupancy_from_running_rows(running)
+    headroom_now = budget.headroom()  # after running tasks, before any queued start
     usage = {
         r["project"]: float(r["gpu_seconds"])
         for r in conn.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
@@ -101,6 +102,8 @@ def build_plan(
                 )
                 entries.append(entry)
                 continue
+            entry["need"] = {"cpu_cores": round(cpu, 2), "ram_gib": round(ram, 2), "gpu_vram_gib": round(gpu, 2)}
+            entry["free"] = budget.headroom()  # after the starts ranked ahead of it
             ok, why = budget.fits(cpu, gpu, ram)
             if ok:
                 budget.reserve(cpu, gpu, ram)
@@ -117,5 +120,6 @@ def build_plan(
         "would_start": sum(1 for e in entries if e["verdict"] == "start"),
         "approximate": True,
         "gpu_budget": gpu_budget,
+        "headroom": headroom_now,
         "tasks": entries,
     }

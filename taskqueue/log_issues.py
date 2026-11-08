@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # Log-level tokens, not English "error"/"errors" (``0 errors`` must not count).
@@ -222,6 +223,6 @@ def _as_metrics_dict(raw: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(raw)
             return parsed if isinstance(parsed, dict) else {}
-        except Exception:
+        except (TypeError, ValueError):
             return {}
     return {}

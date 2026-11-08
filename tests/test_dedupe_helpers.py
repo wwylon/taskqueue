@@ -43,9 +43,9 @@ def test_stop_excess_stops_only_up_to_excess_and_survives_errors(monkeypatch, ca
 
 
 def test_upsert_columns_match_params_and_schema(tmp_path):
-    from tests.test_cap_auto_retry import _project, _write_task
     from taskqueue import _db_tasks as dt
     from taskqueue.db import parse_task_yaml
+    from tests.test_cap_auto_retry import _project, _write_task
 
     db = open_db(tmp_path / "q.db")
     task = parse_task_yaml(_write_task(tmp_path, "t1"), _project("p", tmp_path))
@@ -59,8 +59,10 @@ def test_upsert_columns_match_params_and_schema(tmp_path):
 
 
 def test_taskspec_helpers_validate(tmp_path):
-    import pytest
     from pathlib import Path
+
+    import pytest
+
     from taskqueue import taskspec as ts
 
     p = Path("t.yaml")
@@ -121,8 +123,8 @@ def test_restartability_levels(tmp_path):
 
 
 def test_get_last_runs_batch_matches_single_lookup(tmp_path):
-    from taskqueue.db import failed_attempt_count, get_last_run_for_task, insert_run
     from taskqueue._db_runs import get_last_runs_for_tasks
+    from taskqueue.db import failed_attempt_count, get_last_run_for_task, insert_run
 
     db = open_db(tmp_path / "q.db")
     for t in ("a", "b", "c"):
@@ -144,3 +146,18 @@ def test_get_last_runs_batch_matches_single_lookup(tmp_path):
     assert failed_attempt_count(db, "p", "a") == 1
     assert failed_attempt_count(db, "p", "a", baseline=1) == 1
     assert failed_attempt_count(db, "p", "a", baseline=0) == 2
+
+
+def test_stop_excess_counts_already_stopping_victims(monkeypatch):
+    """F-224: a victim already draining is not re-asked (and not re-logged) every tick."""
+    import taskqueue.db as db
+
+    calls = []
+    monkeypatch.setattr(db, "request_stop_with_control", lambda c, h, p, t: calls.append(t))
+    rows = [
+        {"project": "a", "task_id": "1", "stop_requested": 1},
+        {"project": "a", "task_id": "2", "stop_requested": 0},
+        {"project": "a", "task_id": "3", "stop_requested": 0},
+    ]
+    assert scheduler._stop_excess(None, None, rows, 2, lambda p, t, left: "x", "excess-stop") == 2
+    assert calls == ["2"]

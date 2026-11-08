@@ -17,6 +17,12 @@ queue (not in-session shells). Prefer MCP `submit_task` to create; use
 
 Set `TQ_OPERATOR` in MCP env so `my_tasks` attribution works.
 
+## Author a checkpointable job
+
+Long jobs must use [`tq_client`](../../clients/README.md) (progress, checkpoint cadence, `maybe_suspend`). Copy [`examples/checkpointable/`](../../examples/checkpointable/) or follow [task-script-cookbook.md](task-script-cookbook.md).
+
+YAML essentials: `resume_args`, `execution_semantics: checkpointable`, `auto_retry_on_cap: true`, `wall_clock_cap_sec`. Then `submit_task` / `tq sync` and `wait_for_task`.
+
 ## Create a new task
 
 **Preferred (MCP):** `list_projects` → `submit_task` → follow `next` / `wait_for_task`.

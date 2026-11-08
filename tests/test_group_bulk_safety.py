@@ -13,9 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from taskqueue.web import make_handler
 from taskqueue.db import open_db
-
+from taskqueue.web import make_handler
 from tests.test_web_routes import _make_request
 
 

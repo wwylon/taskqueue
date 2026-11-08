@@ -1,10 +1,7 @@
 """Pure response/helpers used by web routes (no Handler)."""
 
 from __future__ import annotations
-from taskqueue.jsonutil import json_list
 
-import hashlib
-import hmac
 import json
 import os
 import re
@@ -13,50 +10,22 @@ import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 from http.server import HTTPServer
 from pathlib import Path
-from typing import Any, Callable
-from urllib.parse import parse_qs, unquote, urlparse
+from typing import Any
 
-from taskqueue.auth import check_token, extract_request_token
-from taskqueue.capacity import build_capacity
-from taskqueue.config import load_projects, validate_config
-from taskqueue.db import (
-    SCHEMA_VERSION,
-    _PROJECT_LIMIT_FIELDS,
-    blocked_projects,
-    get_all_project_limits,
-    get_config,
-    holds_master_lease,
-    open_db,
-    set_project_frozen,
-    set_config,
-    set_project_limit,
-)
 from taskqueue._db_tasks import (
     bulk_prior_run_seconds,
-    check_ownership,
-    enable_task,
-    get_queued_tasks,
-    count_queued_tasks,
-    get_running_tasks,
-    get_task,
-    lock_contention_summary,
     lock_occupancy,
-    request_stop_with_control,
-    retry_task,
-    set_task_priority,
-    set_task_status,
 )
-from taskqueue._db_runs import force_task, get_recent_runs
-from taskqueue.diagnose import build_diagnose
-from taskqueue.notify import notify_log_path
-from taskqueue.queries import list_attention
-from taskqueue.reports import build_report
-from taskqueue.resources import ram_used_gib, task_requires_gpu
-from taskqueue.win_console import hide_console_check_output_kwargs
+from taskqueue.db import (
+    blocked_projects,
+    get_config,
+)
+from taskqueue.jsonutil import json_list
+from taskqueue.resources import task_requires_gpu
 from taskqueue.rows import row_get
+from taskqueue.win_console import hide_console_check_output_kwargs
 
 
 def _read_git_sha() -> str:
@@ -73,7 +42,7 @@ def _read_git_sha() -> str:
             .decode()
             .strip()
         )
-    except Exception:
+    except (OSError, ValueError, _sp.SubprocessError):
         return "unknown"
 
 
@@ -138,7 +107,7 @@ def _task_dict(row: sqlite3.Row, *, strip_secrets: bool = False) -> dict[str, An
         if isinstance(raw, str):
             try:
                 d[field] = json.loads(raw or ("{}" if field in ("resources", "requires") else "[]"))
-            except Exception:
+            except (TypeError, ValueError):
                 if field in ("depends_on", "depends_on_any"):
                     d[field] = []
         elif field in ("depends_on", "depends_on_any") and raw is None:
@@ -444,7 +413,7 @@ def _blocker_scores(rows: list[Any]) -> dict[str, int]:
             continue
         try:
             deps = json_list(row["depends_on"])
-        except Exception:
+        except (TypeError, ValueError):
             deps = []
         for dep in deps:
             key = _dep_ref_key(row["project"], str(dep))
@@ -452,7 +421,7 @@ def _blocker_scores(rows: list[Any]) -> dict[str, int]:
                 scores[key] = scores.get(key, 0) + 1
         try:
             deps_any = json_list(row["depends_on_any"]) if "depends_on_any" in row.keys() else []
-        except Exception:
+        except (TypeError, ValueError):
             deps_any = []
         for dep in deps_any if isinstance(deps_any, list) else []:
             key = _dep_ref_key(row["project"], str(dep))
@@ -477,6 +446,30 @@ _STATUS_RANK_MAP = {
 HEAVY_SORT_TOTAL_THRESHOLD = 2000
 
 
+# Task columns the slim (dashboard) queue payload actually uses: _queue_row_dict plus what the
+# enrichment reads (yaml_source -> yaml_num, resources -> requires_gpu / locks). Skips wide columns
+# such as args, env, metadata and data that the list view never shows.
+_QUEUE_SLIM_COLUMNS = (
+    "project",
+    "task_id",
+    "status",
+    "priority",
+    "yaml_source",
+    "description",
+    "tags",
+    "depends_on",
+    "depends_on_any",
+    "spawned_by",
+    "grp",
+    "block_reason",
+    "last_error_code",
+    "enqueued_at",
+    "finished_at",
+    "processed_at",
+    "resources",
+)
+
+
 def _get_queue_response(
     conn: sqlite3.Connection,
     *,
@@ -496,8 +489,12 @@ def _get_queue_response(
     sort_dir: str = "asc",
     active_runs: dict | None = None,
     timings: dict[str, float] | None = None,
+    slim: bool = False,
 ) -> dict[str, Any]:
     """W4.1: core queue query — extracted for testability.
+
+    ``slim=True`` (the dashboard payload, which _queue_row_dict projects anyway) loads only
+    ``_QUEUE_SLIM_COLUMNS`` instead of ``t.*``; ``/api/queue`` keeps the full rows.
 
     Returns {"tasks": [...], "total": int, "limit": int, "offset": int}.
     active_runs dict is optional; live elapsed/progress fields omitted when absent.
@@ -544,8 +541,12 @@ def _get_queue_response(
         where.append("(t.task_id LIKE ? OR t.description LIKE ?)")
         params.extend([pat, pat])
     if worker:
-        where.append("(lr.worker_id = ?)")
-        params.append(worker)
+        # F-258: ``master`` = local runs (no worker_id); else exact worker id.
+        if worker == "master":
+            where.append("(lr.worker_id IS NULL OR lr.worker_id = '')")
+        else:
+            where.append("(lr.worker_id = ?)")
+            params.append(worker)
     if tag:
         where.append("(t.tags LIKE ?)")
         params.append(f'%"{tag}"%')
@@ -582,10 +583,7 @@ def _get_queue_response(
             "limit": limit,
             "offset": offset,
             "error": "project_required_for_sort",
-            "message": (
-                f"sort={sort} requires project= when total > {HEAVY_SORT_TOTAL_THRESHOLD} "
-                f"(have {total})"
-            ),
+            "message": (f"sort={sort} requires project= when total > {HEAVY_SORT_TOTAL_THRESHOLD} (have {total})"),
         }
     # Forecast map is expensive; only compute it when actually needed for sort=order.
     forecast_map: dict[tuple[str, str], dict[str, float | int]] = {}
@@ -594,10 +592,11 @@ def _get_queue_response(
             from taskqueue.timeline_forecast import forecast_order_map
 
             forecast_map = forecast_order_map(conn, hours=24, project=project)
-        except Exception:
+        except Exception:  # noqa: BLE001 - forecast order is optional
             forecast_map = {}
 
-    data_sql = f"SELECT t.*, {_lr_cols} FROM tasks t {_lr_join} {where_sql} "
+    task_cols = ", ".join(f"t.{c}" for c in _QUEUE_SLIM_COLUMNS) if slim else "t.*"
+    data_sql = f"SELECT {task_cols}, {_lr_cols} FROM tasks t {_lr_join} {where_sql} "
     if use_deps_sort:
         # Sort on slim columns (no last-run join, no t.*), then load full rows for the page only.
         # The worker filter references lr.*, so that case keeps the full-row path.
@@ -630,7 +629,7 @@ def _get_queue_response(
         if slim and rows:
             keys = [(r["project"], r["task_id"]) for r in rows]
             full = conn.execute(
-                f"SELECT t.*, {_lr_cols} "
+                f"SELECT {task_cols}, {_lr_cols} "
                 f"FROM tasks t {_lr_join} "
                 "WHERE " + " OR ".join("(t.project = ? AND t.task_id = ?)" for _ in keys),
                 [v for k in keys for v in k],
@@ -651,8 +650,16 @@ def _get_queue_response(
         rows.sort(key=_order_key)
         rows = rows[offset : offset + limit]
     else:
-        data_sql += f"ORDER BY {_queue_order_by(sort, sort_dir)} LIMIT ? OFFSET ?"
-        rows = conn.execute(data_sql, params + [limit, offset]).fetchall()
+        # F-231: sort and page on row ids alone, then load full rows (t.* + last run) for the
+        # page only. Sorting the joined wide rows built a temp B-tree over every task.
+        order = f"{_queue_order_by(sort, sort_dir)}, t.rowid"
+        inner_join = _lr_join if (worker or sort in ("started_at", "finished_at")) else ""
+        page_sql = (
+            f"SELECT {task_cols}, {_lr_cols} FROM ("
+            f"SELECT t.rowid AS rid FROM tasks t {inner_join} {where_sql} ORDER BY {order} LIMIT ? OFFSET ?"
+            f") k JOIN tasks t ON t.rowid = k.rid {_lr_join} ORDER BY {order}"
+        )
+        rows = conn.execute(page_sql, params + [limit, offset]).fetchall()
 
     if timings is not None:
         timings["queue_sql"] = round((time.perf_counter() - _t_sql0) * 1000.0)
@@ -724,12 +731,12 @@ def _get_queue_response(
         from taskqueue.queries import find_broken_deps_cached
 
         broken = find_broken_deps_cached(conn, project=project)
-        broken_by_id = {b["task_id"]: b for b in broken}
-    except Exception:
+        broken_by_key = {(b["project"], b["task_id"]): b for b in broken}
+    except Exception:  # noqa: BLE001 - broken-deps info is advisory
         broken = []
-        broken_by_id = {}
+        broken_by_key = {}
     for d in result:
-        b = broken_by_id.get(d["task_id"])
+        b = broken_by_key.get((d["project"], d["task_id"]))
         d["missing_deps"] = b["missing"] if b else []
 
     # Dependency statuses straight from the DB: the UI only holds one queue page, so it cannot
@@ -741,7 +748,7 @@ def _get_queue_response(
             if isinstance(raw, str):
                 try:
                     raw = json.loads(raw)
-                except Exception:
+                except (TypeError, ValueError):
                     return []
             return [str(x) for x in raw] if isinstance(raw, list) else []
 
@@ -757,7 +764,7 @@ def _get_queue_response(
         smap = _fetch_status_map(conn, needed) if needed else {}
         for i, d in enumerate(result):
             d["dep_status"] = {ref: smap[k] for ref, k in per_task[i] if k in smap}
-    except Exception:
+    except Exception:  # noqa: BLE001 - dependency status is advisory
         for d in result:
             d.setdefault("dep_status", {})
 
@@ -939,7 +946,7 @@ def _get_usage_response(
                 "gpu_hours": round(float(row["gpu_seconds"]) / 3600.0, 4),
             }
         )
-    from taskqueue.db import get_all_project_limits, gpu_hours_today
+    from taskqueue.db import get_all_project_limits, gpu_hours_today  # late-bound: tests patch taskqueue.db
 
     limits = get_all_project_limits(conn)
     gpu_today: dict[str, dict] = {}
@@ -1142,11 +1149,11 @@ def _get_deps_response(
         try:
             transfer_raw = row["transfer"] if "transfer" in row.keys() else "[]"
             transfer = json_list(transfer_raw)
-        except Exception:
+        except (TypeError, ValueError):
             transfer = []
         try:
             tags = json_list(row["tags"]) if "tags" in row.keys() else []
-        except Exception:
+        except (TypeError, ValueError):
             tags = []
         status = row["status"]
         status_by_id[full_id] = status
@@ -1184,7 +1191,7 @@ def _get_deps_response(
                     if kind == "any":
                         edge["kind"] = "any"
                     edges.append(edge)
-            except Exception:
+            except (TypeError, ValueError, KeyError, IndexError):
                 pass
 
     # suite already applied in SQL when provided; keep a defensive filter for stubs.
@@ -1287,12 +1294,17 @@ def _get_history_response(
     hide_blocked: bool = False,
     started_by: str | None = None,
     status: str | None = None,
+    sort: str = "run_id",
+    sort_dir: str = "desc",
+    worker: str | None = None,
 ) -> dict[str, Any]:
     """W5.3: Pure data layer for /api/history — testable outside make_handler.
 
     ``hide_blocked`` drops runs of frozen or paused projects — the history "active" view.
     ``started_by`` keeps runs whose task is attributed to that operator (R8 mine view).
     ``status`` filters by run status in SQL (before LIMIT) when not all/empty.
+    ``sort`` / ``sort_dir`` (F-258) apply before LIMIT so paging is consistent.
+    ``worker`` filters by ``runs.worker_id`` (``master`` = local / empty).
     """
     from taskqueue.db import blocked_projects, count_recent_runs, get_recent_runs
 
@@ -1301,7 +1313,13 @@ def _get_history_response(
     if st == "all":
         st = None
     total = count_recent_runs(
-        conn, project=project, search=search, exclude_projects=exclude, started_by=started_by, status=st
+        conn,
+        project=project,
+        search=search,
+        exclude_projects=exclude,
+        started_by=started_by,
+        status=st,
+        worker=worker,
     )
     rows = get_recent_runs(
         conn,
@@ -1312,6 +1330,9 @@ def _get_history_response(
         exclude_projects=exclude,
         started_by=started_by,
         status=st,
+        sort=sort,
+        sort_dir=sort_dir,
+        worker=worker,
     )
     runs = [dict(r) for r in rows]
     from taskqueue.operator_features import annotate_run_anomalies
@@ -1320,7 +1341,9 @@ def _get_history_response(
     return {"runs": runs, "total": total, "offset": offset, "limit": limit}
 
 
-from taskqueue.worker_api import claim_next_remote_task as _claim_next_remote_task
+from taskqueue.worker_api import (
+    claim_next_remote_task as _claim_next_remote_task,  # noqa: E402,F401 (re-exported via deps)
+)
 
 # F-073: fixed chunk size for streaming request bodies to disk.
 _UPLOAD_CHUNK = 1024 * 1024
@@ -1357,6 +1380,11 @@ def stream_request_body_to_file(rfile, length: int, dest: Path, *, chunk: int = 
 
 class BoundedThreadingHTTPServer(HTTPServer):
     """F-073: ThreadPoolExecutor-backed HTTP server (bounded concurrency)."""
+
+    # F-239: socketserver's default listen(5) backlog. A cold page load requests ~50 ES modules at
+    # once; on Windows a full backlog refuses the connection outright, so modules failed to load and
+    # the UI never booted. The executor and _max_inflight still bound the work actually done.
+    request_queue_size = 128
 
     def __init__(
         self,
@@ -1396,7 +1424,7 @@ class BoundedThreadingHTTPServer(HTTPServer):
     def _process_request_worker(self, request, client_address) -> None:
         try:
             self.finish_request(request, client_address)
-        except Exception:
+        except Exception:  # noqa: BLE001 - per-request guard, as in socketserver
             self.handle_error(request, client_address)
         finally:
             self.shutdown_request(request)

@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT))
 
 from taskqueue.docs_loader import (  # noqa: E402
     load_manifest,
-    validate_manifest,
     static_dir,
+    validate_manifest,
 )
 
 LOCALES = ROOT / "taskqueue" / "static" / "locales"

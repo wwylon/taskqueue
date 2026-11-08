@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from taskqueue.docs_loader import (
     build_help_payload,
     expand_topic_includes,

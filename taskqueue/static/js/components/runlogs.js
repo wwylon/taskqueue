@@ -107,18 +107,18 @@ export function _renderTaskRunHistoryHtml(project, taskId, runs, stats, total) {
 
 export function _taskStatsStripHtml(stats) {
   if (!stats) {
-    return `<div class="tasks-stats-strip"><span>${escHtml(i18n.t('tasks.noStats') || 'No duration stats yet')}</span></div>`;
+    return `<div class="tasks-stats-strip"><span>${escHtml(i18n.t('tasks.noStats'))}</span></div>`;
   }
   const avg = stats.mean_sec != null ? dur(stats.mean_sec) : '—';
   const p50 = stats.p50_sec != null ? dur(stats.p50_sec) : '—';
   const p95 = stats.p95_sec != null ? dur(stats.p95_sec) : '—';
   const success = Math.round((stats.success_rate || 0) * 100) + '%';
   return `<div class="tasks-stats-strip">
-    <span>${escHtml(i18n.t('tasks.colMean') || 'Average')}: <strong>${escHtml(avg)}</strong></span>
+    <span>${escHtml(i18n.t('tasks.colMean'))}: <strong>${escHtml(avg)}</strong></span>
     <span>P50: <strong>${escHtml(p50)}</strong></span>
     <span>P95: <strong>${escHtml(p95)}</strong></span>
-    <span>${escHtml(i18n.t('tasks.colCount') || 'Runs')}: <strong>${escHtml(String(stats.count || 0))}</strong></span>
-    <span>${escHtml(i18n.t('tasks.colSuccess') || 'Success')}: <strong>${escHtml(success)}</strong></span>
+    <span>${escHtml(i18n.t('tasks.colCount'))}: <strong>${escHtml(String(stats.count || 0))}</strong></span>
+    <span>${escHtml(i18n.t('tasks.colSuccess'))}: <strong>${escHtml(success)}</strong></span>
   </div>`;
 }
 
@@ -163,7 +163,7 @@ export async function toggleCardHistory(project, taskId) {
   wrap.style.display = 'block';
   if (btn) btn.textContent = i18n.t('btn.hideHistory');
   const content = document.getElementById(`qc-hist-content-${domIdPart(project)}-${domIdPart(taskId)}`);
-  if (content) content.innerHTML = '<em>loading…</em>';
+  if (content) content.innerHTML = `<em>${i18n.t('log.loading')}</em>`;
   const html = await _loadTaskRunHistoryHtml(project, taskId);
   if (S._histGen[key] !== gen || !wrap || wrap.style.display === 'none') return;
   S.expandedHistory[key] = html;
@@ -271,7 +271,7 @@ export async function _fetchLog(runId, preId) {
       pre.scrollTop = scrollTop;
     }
   } catch(e) {
-    if (live()) { pre._logSig = null; pre.textContent = `error loading log: ${e}`; }
+    if (live()) { pre._logSig = null; pre.textContent = i18n.t('log.loadError', {error: String(e)}); }
   }
 }
 
@@ -302,7 +302,7 @@ export async function copyTaskName(project, taskId, btn) {
 
 /** Copy last N lines of a log panel to the clipboard (plain text, no ANSI). */
 export async function copyLogTail(runId, preId, btn) {
-  let text = '';
+  let text;
   const key = _panelKey(preId, runId);
   if (S.expandedLogs[key] && typeof S.expandedLogs[key].content === 'string' && S.expandedLogs[key].content) {
     text = S.expandedLogs[key].content;

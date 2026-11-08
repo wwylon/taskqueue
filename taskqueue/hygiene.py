@@ -6,6 +6,7 @@ Never auto-archives. Proposals must match what ``tq archive --max-completed-runs
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -60,11 +61,7 @@ def build_hygiene_report(
         multi_keys=multi_keys,
         older_than_days=older_than_days,
     )
-    proposals = [
-        p
-        for p in projects
-        if int(p.get("archivable_count") or 0) > 0
-    ][:ARCHIVE_PROPOSAL_PROJECTS]
+    proposals = [p for p in projects if int(p.get("archivable_count") or 0) > 0][:ARCHIVE_PROPOSAL_PROJECTS]
 
     payload = {
         "kind": "hygiene",
@@ -293,9 +290,13 @@ def _classify_tasks(
         }
         if is_multi:
             multi.append(item)
-        elif total >= FLAKY_MIN_TOTAL and completed <= 1:
-            flaky.append(item)
-        elif total >= FLAKY_MIN_TOTAL and completed > 0 and (completed / total) < 0.4:
+        elif (
+            total >= FLAKY_MIN_TOTAL
+            and completed <= 1
+            or total >= FLAKY_MIN_TOTAL
+            and completed > 0
+            and (completed / total) < 0.4
+        ):
             flaky.append(item)
 
     multi.sort(key=lambda x: (-x["completed_runs"], x["project"], x["task_id"]))
@@ -320,15 +321,11 @@ def _project_ranks(
     fleet = max(1, sum(totals.values()))
     completed = {
         str(r["project"]): int(r["n"])
-        for r in conn.execute(
-            "SELECT project, COUNT(*) AS n FROM tasks WHERE status = 'completed' GROUP BY project"
-        )
+        for r in conn.execute("SELECT project, COUNT(*) AS n FROM tasks WHERE status = 'completed' GROUP BY project")
     }
     disabled = {
         str(r["project"]): int(r["n"])
-        for r in conn.execute(
-            "SELECT project, COUNT(*) AS n FROM tasks WHERE status = 'disabled' GROUP BY project"
-        )
+        for r in conn.execute("SELECT project, COUNT(*) AS n FROM tasks WHERE status = 'disabled' GROUP BY project")
     }
     runs_win = {
         str(r["project"]): int(r["n"])
@@ -341,7 +338,7 @@ def _project_ranks(
     try:
         for r in conn.execute("SELECT project, gpu_seconds FROM project_usage"):
             gpu[str(r["project"])] = float(r["gpu_seconds"] or 0)
-    except Exception:
+    except (sqlite3.Error, TypeError, ValueError):
         pass
 
     # Candidates for archive: completed + old enough.
@@ -398,15 +395,12 @@ def _project_ranks(
     out = []
     for p in per_proj.values():
         score = (
-            0.5 * (p["archivable_count"] / max_arch)
-            + 0.3 * p["task_share"]
-            + 0.2 * (p["runs_in_window"] / max_runs)
+            0.5 * (p["archivable_count"] / max_arch) + 0.3 * p["task_share"] + 0.2 * (p["runs_in_window"] / max_runs)
         )
         p["overuse_score"] = round(score, 4)
         days_s = int(older_than_days) if float(older_than_days).is_integer() else older_than_days
         p["dry_run_command"] = (
-            f"tq archive {p['project']} --older-than {days_s}d "
-            f"--status completed --max-completed-runs 1 --dry-run"
+            f"tq archive {p['project']} --older-than {days_s}d --status completed --max-completed-runs 1 --dry-run"
         )
         out.append(p)
     out.sort(key=lambda x: (-x["overuse_score"], -x["archivable_count"], x["project"]))
@@ -437,9 +431,7 @@ def _agent_prompt(payload: dict[str, Any]) -> str:
                 f"(skip multi-use={p['skipped_multi_use_count']}, "
                 f"shared YAML={p['skipped_shared_yaml_count']}) → `{p['dry_run_command']}`"
             )
-        lines.append(
-            "Ask the operator before dropping --dry-run. Never auto-archive."
-        )
+        lines.append("Ask the operator before dropping --dry-run. Never auto-archive.")
     else:
         lines.append("No archive proposals (no stale one-shot completed tasks matched).")
     return "\n".join(lines)

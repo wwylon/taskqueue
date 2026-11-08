@@ -6,7 +6,6 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
 from taskqueue.placement import (
     clear_remote_reservation,
     get_remote_reservation,
@@ -113,7 +112,6 @@ def test_f140_remote_reservation_keyed_by_db(tmp_path: Path) -> None:
 
 def test_f138_svc_cache_miss_probes(monkeypatch) -> None:
     """Missing key must call check_services_cached, not treat as healthy."""
-    from taskqueue import worker_api
 
     probed: list[str] = []
 

@@ -1,0 +1,9 @@
+# Expand at tq sync into train_seed0 … train_seed2 (args get --seed=N).
+task_id: train
+command: python
+args: [scripts/train.py]
+matrix:
+  seed: [0, 1, 2]
+resources:
+  cpu_cores: 2
+  ram_gib: 4.0

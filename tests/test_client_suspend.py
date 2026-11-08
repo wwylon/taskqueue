@@ -8,14 +8,13 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue.config import Project, control_path, state_home
 from taskqueue._db_tasks import (
     get_task,
     retry_task,
-    set_task_status,
     upsert_task,
     write_control_action,
 )
+from taskqueue.config import Project, control_path, state_home
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import EXIT_SUSPENDED, STATUS_QUEUED, STATUS_SUSPENDED
 from taskqueue.runner import ActiveRun
@@ -79,7 +78,6 @@ def test_exit_75_marks_suspended(tmp_path: Path, monkeypatch) -> None:
     )
     assert run.start(use_resume=False) is None
     write_control_action(home, "p", "suspend_me", "suspend")
-    import time
 
     wait_until(run.poll, timeout=30, interval=0.05)
     assert run.poll()

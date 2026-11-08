@@ -2,6 +2,7 @@
 // and run cards. Uses app.js globals at call time (i18n, tqAct, dur, tqRecordSparks, getResourceModalRunId, ...).
 import { S } from '../core/state.js';
 import { escHtml } from '../util/format.js';
+import { tqRefreshFitsNow } from './fitsnow.js';
 
 /**
  * Seconds left for a running task, or null. Uses the whole running time — earlier runs it resumed
@@ -50,14 +51,14 @@ export function _gpuBadgeHtml(t) {
   if (!t || !t.requires_gpu) return '';
   const g = t.resources && t.resources.gpu_vram_gib;
   const label = (g != null && g !== '') ? ('GPU ' + g + 'G') : 'GPU';
-  return `<span class="gpu-badge" title="This task requests GPU VRAM">${escHtml(String(label))}</span>`;
+  return `<span class="gpu-badge" title="${escHtml(i18n.t('metrics.gpuRequested'))}">${escHtml(String(label))}</span>`;
 }
 
 export function _logChipsHtml(t, ctx) {
   const log = (t && t.log) || {};
   const w = log.warnings || 0, e = log.errors || 0, o = log.other || 0;
   if (!w && !e && !o) return '';
-  const title = 'errors: ERROR, FATAL, CRITICAL, REJECT · warnings: WARN/WARNING · other: LOW SCORE';
+  const title = i18n.t('metrics.logLevelsTitle');
   const runId = (ctx && ctx.runId != null) ? ctx.runId : (t && t.run_id);
   const panel = ctx && ctx.panel;
   const clickable = !!(runId && panel);
@@ -91,7 +92,7 @@ export function _usageHtml(t, ctx) {
     `<span style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 8px;white-space:nowrap">` +
     `<span style="color:var(--muted);font-size:10px">${label} </span>` +
     `<span style="color:${color};font-weight:600">${val}</span>` +
-    (peak ? `<span style="color:var(--muted);font-size:10px"> /${peak} pk</span>` : '') +
+    (peak ? `<span style="color:var(--muted);font-size:10px"> ${i18n.t('metrics.peakSuffix', {v: peak})}</span>` : '') +
     `</span>`;
   const parts = [];
   if (cpu != null) {
@@ -101,7 +102,7 @@ export function _usageHtml(t, ctx) {
     parts.push(`<span style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 8px;white-space:nowrap" title="${cpuTitle}">` +
       `<span style="color:var(--muted);font-size:10px">CPU </span>` +
       `<span style="color:${cpu > 80 ? 'var(--warn)' : 'var(--text)'};font-weight:600">${coresUsed}</span>` +
-      (peakStr ? `<span style="color:var(--muted);font-size:10px"> /${peakStr} pk</span>` : '') +
+      (peakStr ? `<span style="color:var(--muted);font-size:10px"> ${i18n.t('metrics.peakSuffix', {v: peakStr})}</span>` : '') +
       `</span>`);
   } else if (peakCpu != null) {
     const peakStr = fmtCpu(peakCpu);
@@ -158,6 +159,7 @@ export function _computeGaugeModel() {
 
 /** In-place gauge + run-card live fields — avoids innerHTML wipe that flashes the UI. */
 export function _patchDashboardLive() {
+  tqRefreshFitsNow();  // throttled; live ticks only keep the strip from going stale
   const g = _computeGaugeModel();
   const setText = (sel, text) => { const el = document.querySelector(sel); if (el) el.textContent = text; };
   const setWidth = (sel, pct) => { const el = document.querySelector(sel); if (el) el.style.width = pct + '%'; };

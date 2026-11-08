@@ -2,7 +2,9 @@
 // Uses app.js globals at call time (i18n, badge, tqAct, _computeGaugeModel, _patchDashboardLive, _fetchLog, etc.).
 import { S } from '../core/state.js';
 import { projStyle } from '../util/projcolor.js';
-import { escHtml, jsq, taskKey, domIdPart, fmt, dur, progressHealthHtml } from '../util/format.js';
+import { escHtml, domIdPart, dur, progressHealthHtml } from '../util/format.js';
+import { tqRefreshFitsNow } from '../components/fitsnow.js';
+import { openLogStream } from '../components/logpanel.js';
 
 export async function renderDashboard() {
   const g = _computeGaugeModel();
@@ -34,7 +36,7 @@ export async function renderDashboard() {
       <div class="spark-range" data-spark-cap="ram"></div>
     </div>
     <div class="gauge" data-gauge="queued">
-      <div class="gauge-label">Queued</div>
+      <div class="gauge-label">${i18n.t('gauge.queued')}</div>
       <div class="gauge-val" data-g="val">${S.status.queued_count||0}</div>
       <div class="gauge-sub" data-g="sub">${(S.status.running||[]).length} running</div>
       <div class="gauge-bar"><div class="gauge-bar-fill bar-cpu" style="width:0%"></div></div>
@@ -43,13 +45,14 @@ export async function renderDashboard() {
       <div class="spark-legend"><span class="spark-key spark-key-queued">${i18n.t('filter.queued')}</span><span class="spark-key spark-key-running">${i18n.t('filter.running')}</span></div>
     </div>
     <div class="gauge" data-gauge="daemon">
-      <div class="gauge-label">Daemon</div>
+      <div class="gauge-label">${i18n.t('gauge.daemon')}</div>
       <div class="gauge-val" data-g="val">${S.status.daemon_rss_mb != null ? S.status.daemon_rss_mb.toFixed(0)+' MB' : '—'}</div>
       <div class="gauge-sub" data-g="sub">${S.status.daemon_cpu_pct != null ? 'CPU '+S.status.daemon_cpu_pct+'%' : ''} RSS</div>
       <div class="gauge-bar"><div class="gauge-bar-fill bar-ram" data-g="fill" style="width:${Math.min(100,(S.status.daemon_rss_mb||0)/5).toFixed(1)}%"></div></div>
       <svg class="spark" data-spark="daemon" viewBox="0 0 100 48" preserveAspectRatio="none" aria-hidden="true"></svg>
       <div class="spark-range" data-spark-cap="daemon"></div>
     </div>`;
+  tqRefreshFitsNow(true);  // a structural change (start / finish / limits) moves the headroom
 
   let running = S.status.running || [];
   if (S.globalWorkerFilter) {
@@ -91,7 +94,7 @@ export async function renderDashboard() {
       <div class="run-top">
         ${t.run_id ? `<span class="run-num" title="run_id">#${t.run_id}</span>` : ''}
         ${_taskCopyIconBtn(t.project || '', t.task_id)}
-        <span class="run-proj run-proj-link" style="border-left:3px solid var(--pc);padding-left:5px;${projStyle(t.project||'')}" title="Open project in Queue" data-click="${tqAct([['gotoQueueProject', String(t.project||'')]])}" data-click-stop>${escHtml(t.project||'')}</span>
+        <span class="run-proj run-proj-link" style="border-left:3px solid var(--pc);padding-left:5px;${projStyle(t.project||'')}" title="${escHtml(i18n.t('dash.openInQueue'))}" data-click="${tqAct([['gotoQueueProject', String(t.project||'')]])}" data-click-stop>${escHtml(t.project||'')}</span>
         <span class="run-id">${escHtml(t.task_id)}</span>
         ${_gpuBadgeHtml(t)}
         <span class="run-worker" style="background:${t.worker_id ? '#4F46E5' : '#6B7280'};color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:bold;margin-left:8px">${escHtml(t.worker_id || 'master')}</span>
@@ -128,11 +131,22 @@ export async function renderDashboard() {
     </div>`;
   }).join('');
 
-  // Fetch log content for any expanded dashboard log that needs it
+  // F-257: after full card rebuild, re-attach dashboard log SSE (DOM <pre> was replaced).
   running.forEach(t => {
-    if (t.run_id && S.expandedLogs[`d:${t.run_id}`] && !S.expandedLogs[`d:${t.run_id}`].content) {
-      _fetchLog(t.run_id, `d-log-pre-${t.run_id}`);
+    if (!t.run_id || !S.expandedLogs[`d:${t.run_id}`]) return;
+    if (typeof EventSource === 'undefined') {
+      if (!S.expandedLogs[`d:${t.run_id}`].content) _fetchLog(t.run_id, `d-log-pre-${t.run_id}`);
+      return;
     }
+    openLogStream({
+      runId: t.run_id,
+      maps: [S.logSseMap, S.cardLogSseMap, S.dashLogSseMap],
+      map: S.dashLogSseMap,
+      preId: `d-log-pre-${t.run_id}`,
+      followId: `d-log-follow-${t.run_id}`,
+      expanded: S.expandedLogs,
+      stateKey: `d:${t.run_id}`,
+    });
   });
 
   S.prevRunningStr = _runningIdentity(S.status.running, S.cfg);
@@ -191,7 +205,7 @@ export async function toggleDashHist(project, taskId) {
   wrap.style.display = 'block';
   if (btn) btn.textContent = i18n.t('btn.hideHistory');
   const content = document.getElementById(`d-hist-content-${domIdPart(project)}-${domIdPart(taskId)}`);
-  if (content) content.innerHTML = '<em>loading…</em>';
+  if (content) content.innerHTML = `<em>${i18n.t('log.loading')}</em>`;
   S.expandedHistory[key] = await _loadTaskRunHistoryHtml(project, taskId);
   if (content) content.innerHTML = S.expandedHistory[key];
 }
@@ -219,10 +233,10 @@ export function renderWorkers() {
     
     const versionBadge = w.version
       ? (w.version_ok === false
-          ? `<span style="color:#ef4444;font-size:11px" title="${escHtml(w.version_note||'')}">⚠ ${escHtml(w.version||'')} (schema ${escHtml(String(w.schema_version||'?'))})</span>`
+          ? `<span style="color:#ef4444;font-size:11px" title="${escHtml(w.version_note||'')}">⚠ ${escHtml(w.version||'')} ${i18n.t('dash.schemaSuffix', {schema: escHtml(String(w.schema_version||'?'))})}</span>`
           : (w.version_note
               ? `<span style="color:#f59e0b;font-size:11px" title="${escHtml(w.version_note)}">${escHtml(w.version||'')} ↑</span>`
-              : `<span style="font-size:11px;color:var(--text2)">${escHtml(w.version||'')} (schema ${escHtml(String(w.schema_version||'?'))})</span>`))
+              : `<span style="font-size:11px;color:var(--text2)">${escHtml(w.version||'')} ${i18n.t('dash.schemaSuffix', {schema: escHtml(String(w.schema_version||'?'))})}</span>`))
       : '<span style="font-size:11px;color:var(--text2)">—</span>';
     const syncBtn = `<button data-click="${tqAct([['workerSync', TQ_THIS, String(w.worker_id)]])}" style="font-size:10px;padding:2px 7px;border:none;border-radius:4px;background:#3b82f6;color:#fff;cursor:pointer;margin-left:4px" title="${i18n.t('workers.syncTitle')}">sync</button>`;
     return `

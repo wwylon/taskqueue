@@ -10,10 +10,10 @@ from unittest.mock import patch
 import yaml
 
 from taskqueue import errors as tqerr
+from taskqueue._db_runs import insert_run, reclaim_expired_leases, renew_run_lease
+from taskqueue._db_tasks import claim_task_running, get_task, set_task_status, upsert_task
 from taskqueue.config import Project
 from taskqueue.daemon import requeue_orphaned_running
-from taskqueue._db_tasks import claim_task_running, get_task, set_task_status, upsert_task
-from taskqueue._db_runs import insert_run, reclaim_expired_leases, renew_run_lease
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import STATUS_QUEUED, STATUS_RUNNING
 from taskqueue.runner import ActiveRun

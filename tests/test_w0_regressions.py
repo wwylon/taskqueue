@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db
 from taskqueue._db_runs import get_recent_runs, reclaim_expired_leases
-
+from taskqueue.db import open_db
 
 # ---------------------------------------------------------------------------
 # W0.1: missing indexes
@@ -39,7 +36,6 @@ def test_tasks_indexes_exist(tmp_path):
 
 
 def _seed_runs(db, project: str, count: int) -> None:
-    import time
 
     for i in range(count):
         db.execute(
@@ -107,7 +103,7 @@ def test_migration_failure_raises(tmp_path, monkeypatch):
 
     monkeypatch.setattr(tqdb.sqlite3, "connect", bad_connect)
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.OperationalError):
         tqdb.open_db(tmp_path / "q.db")
 
 
@@ -154,7 +150,6 @@ def test_active_runs_list_wrap():
 
 def test_stop_requested_cleared_on_reclaim(tmp_path):
     from datetime import UTC, datetime, timedelta
-    import json
 
     db = open_db(tmp_path / "q.db")
 

@@ -133,7 +133,7 @@ def build_capacity(
         # Build per-device GPU entries from gpus_json; fall back to aggregate total.
         try:
             gpus_devices = json.loads(w["gpus_json"] if "gpus_json" in w.keys() else "[]") or []
-        except Exception:
+        except (TypeError, ValueError):
             gpus_devices = []
         if gpus_devices and online:
             worker_gpus = []

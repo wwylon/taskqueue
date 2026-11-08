@@ -7,6 +7,8 @@ from pathlib import Path
 
 from taskqueue import config as tqconfig
 from taskqueue import errors as tqerr
+from taskqueue._db_runs import finish_run, insert_run
+from taskqueue._db_tasks import get_task, set_task_status, upsert_task
 from taskqueue.daemon import classify_daemon_boot, requeue_orphaned_running
 from taskqueue.db import (
     DAEMON_EVENT_CLEAN_SHUTDOWN,
@@ -20,8 +22,6 @@ from taskqueue.db import (
     parse_task_yaml,
     prune_daemon_events,
 )
-from taskqueue._db_runs import finish_run, insert_run
-from taskqueue._db_tasks import get_task, set_task_status, upsert_task
 from taskqueue.models import STATUS_QUEUED, STATUS_RUNNING
 
 

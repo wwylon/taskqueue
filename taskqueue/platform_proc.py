@@ -9,13 +9,13 @@ reaches all descendants.
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import subprocess
 import sys
 import time
 from typing import Any
-
 
 if sys.platform == "win32":
     import ctypes
@@ -59,10 +59,12 @@ if sys.platform == "win32":
             ("PeakJobMemoryUsed", ctypes.c_size_t),
         ]
 
-    def _create_job_object() -> wintypes.HANDLE:
+    def _create_job_object(kill_on_close: bool = True) -> wintypes.HANDLE:
         handle = _kernel32.CreateJobObjectW(None, None)
         if not handle:
             raise OSError(f"CreateJobObjectW failed: {ctypes.get_last_error()}")
+        if not kill_on_close:
+            return handle  # tree containment only; the task outlives the daemon (adopt_on_restart)
 
         info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
@@ -87,20 +89,26 @@ if sys.platform == "win32":
             _kernel32.CloseHandle(proc_handle)
 
 
-def spawn_with_guard(args: list[str], **popen_kwargs: Any) -> tuple[subprocess.Popen, Any]:
+_log = logging.getLogger(__name__)
+
+
+def spawn_with_guard(
+    args: list[str], *, kill_on_close: bool = True, **popen_kwargs: Any
+) -> tuple[subprocess.Popen, Any]:
     """Spawn a subprocess with OS-level containment.
 
     Returns (proc, guard_handle). Pass guard_handle to terminate_guarded().
-    On Windows: guard_handle is a Job Object HANDLE (int).
+    On Windows: guard_handle is a Job Object HANDLE (int); with ``kill_on_close`` (default) the
+    tree dies when the daemon exits, without it the job only groups the tree for terminate_guarded.
     On Linux/macOS: guard_handle is the process group id (int).
     """
     if sys.platform == "win32":
-        job = _create_job_object()
+        job = _create_job_object(kill_on_close)
         proc = subprocess.Popen(args, **popen_kwargs)
         try:
             _assign_to_job(job, proc)
-        except Exception:
-            pass  # best-effort; still useful even if assignment fails
+        except Exception:  # noqa: BLE001 - job assignment is best-effort; the child still runs
+            _log.debug("job assignment failed (best-effort; the child still runs)", exc_info=True)
         return proc, job
     else:
         # New session → new pgid; kill(-pgid) reaches all descendants
@@ -126,26 +134,28 @@ def terminate_guarded(
             import ctypes as _ctypes
 
             _ctypes.windll.kernel32.GenerateConsoleCtrlEvent(0, proc.pid)  # CTRL_C_EVENT
-        except Exception:
+        except (AttributeError, OSError):
             pass
         deadline = time.monotonic() + graceful_sec
         while time.monotonic() < deadline:
             if proc.poll() is not None:
                 break
             time.sleep(0.1)
-        # Close Job Object — OS kills entire tree
+        # Terminate the job (explicitly: a job without kill-on-close survives CloseHandle), then close it.
         if guard:
             try:
                 import ctypes as _ctypes
 
-                _ctypes.WinDLL("kernel32").CloseHandle(guard)
-            except Exception:
+                _k32 = _ctypes.WinDLL("kernel32")
+                _k32.TerminateJobObject(guard, 1)  # also reaches grandchildren the root left behind
+                _k32.CloseHandle(guard)
+            except (AttributeError, OSError):
                 pass
         # Final fallback
         if proc.poll() is None:
             try:
                 proc.kill()
-            except Exception:
+            except OSError:
                 pass
     else:
         pgid = guard
@@ -179,6 +189,6 @@ def close_guard(guard: Any) -> None:
             import ctypes as _ctypes
 
             _ctypes.WinDLL("kernel32").CloseHandle(guard)
-        except Exception:
+        except (AttributeError, OSError):
             pass
     # On POSIX, pgid is just an int — nothing to release

@@ -8,12 +8,16 @@ Single registry: [`manifest.json`](manifest.json). Help topics live in [`help/`]
 |-------|------|
 | Quickstart | [operators/quickstart.md](operators/quickstart.md) |
 | Web UI tour | [operators/web-ui.md](operators/web-ui.md) |
+| CLI reference | [operators/cli.md](operators/cli.md) |
+
+Root README translations: [EN](../README.md) · [PL](../README.pl.md) · [ZH](../README.zh.md) · [AR](../README.ar.md). When the English pitch changes, update siblings in the same change or remove a stale sibling.
 
 ## Agents
 
 | Entry | Path |
 |-------|------|
 | Bootstrap | [../AGENTS.md](../AGENTS.md) |
+| **Task script cookbook** | [agents/task-script-cookbook.md](agents/task-script-cookbook.md) |
 | Recipes | [agents/recipes.md](agents/recipes.md) |
 | MCP | [mcp.md](mcp.md) |
 
@@ -21,7 +25,9 @@ Single registry: [`manifest.json`](manifest.json). Help topics live in [`help/`]
 
 | Topic | Path |
 |-------|------|
-| YAML fields | [task_standards.md](task_standards.md) |
+| YAML fields (themed) | [task_standards.md](task_standards.md) |
+| Task clients (`tq_client`) | [../clients/README.md](../clients/README.md) |
+| Examples | [../examples/](../examples/) |
 | Scheduler | [scheduler.md](scheduler.md) |
 | Error codes | [errors.md](errors.md) |
 | Security | [security.md](security.md) |

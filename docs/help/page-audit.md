@@ -8,7 +8,7 @@ guide_anchors:
   web-ui: page-audit
 ---
 
-**Audit** lists operator actions: stop, retry, force, enable, priority, freeze, config, project limits, and alert or token changes. The actor is the `X-TQ-Operator` header when it is set, otherwise `web`. Heartbeats are not recorded.
+**Audit** lists operator actions: stop, hold, unhold, retry, force, enable, priority, freeze, config, project limits, and alert or token changes. The actor is the `X-TQ-Operator` header when it is set, otherwise `web`. Heartbeats are not recorded.
 
 **Export CSV** downloads the rows loaded on the page. This is not the daemon event log. A token secret is never stored in the detail.
 

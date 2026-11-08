@@ -11,8 +11,8 @@ Scenarios covered:
 
 from __future__ import annotations
 
-import sys
 import subprocess
+import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -21,10 +21,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from taskqueue._db_runs import reclaim_expired_leases
+from taskqueue._db_tasks import get_task, request_stop_with_control, retry_task, upsert_task
 from taskqueue.config import Project
 from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
-from taskqueue._db_tasks import get_task, request_stop_with_control, retry_task, upsert_task
-from taskqueue._db_runs import reclaim_expired_leases
 
 pytestmark = pytest.mark.stress
 
@@ -198,6 +198,7 @@ def test_large_log_tail_clamped(tmp_path: Path) -> None:
 def test_large_log_memory_stable(tmp_path: Path) -> None:
     """Reading a large log tail does not load the full file into memory."""
     import os
+
     from taskqueue.logio import read_log_tail
 
     log_file = tmp_path / "huge.log"
@@ -417,7 +418,6 @@ def test_worker_alive_lease_not_reclaimed(tmp_path: Path) -> None:
 def test_migration_failure_is_loud(tmp_path: Path) -> None:
     """A failing migration must raise, not silently swallow the error."""
     import sqlite3
-    from unittest.mock import patch
 
     db_path = tmp_path / "q.db"
 
@@ -433,7 +433,7 @@ def test_migration_failure_is_loud(tmp_path: Path) -> None:
         try:
             conn.execute("ALTER TABLE nonexistent ADD COLUMN foo TEXT")
         except sqlite3.OperationalError:
-            raise RuntimeError("Migration failed loudly as expected")
+            raise RuntimeError("Migration failed loudly as expected") from None
         return conn
 
     with pytest.raises(RuntimeError, match="Migration failed loudly"):

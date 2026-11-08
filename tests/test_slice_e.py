@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue.config import Project
+from taskqueue._db_runs import finish_run, insert_run
 from taskqueue._db_tasks import (
     failed_attempt_count,
     get_task,
@@ -15,9 +15,9 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
-from taskqueue._db_runs import finish_run, insert_run
+from taskqueue.config import Project
 from taskqueue.db import is_project_paused, open_db, parse_task_yaml, set_project_paused
-from taskqueue.models import STATUS_FAILED, STATUS_STOPPED
+from taskqueue.models import STATUS_FAILED
 from taskqueue.yaml_patch import patch_task_yaml
 
 

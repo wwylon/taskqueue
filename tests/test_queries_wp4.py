@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db
 from taskqueue._db_tasks import request_stop_with_control
+from taskqueue.db import open_db
 from taskqueue.mcp_server import TOOLS, _call_tool
 from taskqueue.queries import list_attention, list_operator_tasks
 

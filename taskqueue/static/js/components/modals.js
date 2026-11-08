@@ -128,14 +128,14 @@ export async function openYamlModal(project, taskId) {
   // Reset edit mode
   document.getElementById('yaml-modal-edit').style.display = 'none';
   document.getElementById('yaml-modal-pre').style.display = '';
-  document.getElementById('yaml-edit-btn').textContent = 'Edit';
+  document.getElementById('yaml-edit-btn').textContent = i18n.t('sched.edit');
   document.getElementById('yaml-save-btn').style.display = 'none';
   const modal = document.getElementById('yaml-modal');
   const pre = document.getElementById('yaml-modal-pre');
   const err = document.getElementById('yaml-modal-error');
   const title = document.getElementById('yaml-modal-title');
-  title.textContent = `YAML — ${project} / ${taskId}`;
-  pre.textContent = 'Loading…';
+  title.textContent = i18n.t('yaml.modalTitle', {project, task: taskId});
+  pre.textContent = i18n.t('status.loading');
   err.style.display = 'none';
   modal.style.display = 'flex';
   try {
@@ -143,7 +143,7 @@ export async function openYamlModal(project, taskId) {
     if (!r.ok) {
       const msg = await r.text().catch(() => r.statusText);
       pre.textContent = '';
-      err.textContent = `Error ${r.status}: ${msg}`;
+      err.textContent = i18n.t('yaml.errorStatus', {status: r.status, msg});
       err.style.display = 'block';
       return;
     }
@@ -152,7 +152,7 @@ export async function openYamlModal(project, taskId) {
     pre.textContent = text;
   } catch(e) {
     pre.textContent = '';
-    err.textContent = 'Fetch failed: ' + e;
+    err.textContent = i18n.t('yaml.fetchFailed', {error: String(e)});
     err.style.display = 'block';
   }
 }
@@ -168,17 +168,50 @@ export function yamlModalToggleEdit() {
   const ta = document.getElementById('yaml-modal-edit');
   const btn = document.getElementById('yaml-edit-btn');
   const saveBtn = document.getElementById('yaml-save-btn');
+  const checkBtn = document.getElementById('yaml-check-btn');
+  const ok = document.getElementById('yaml-modal-ok');
+  if (ok) ok.style.display = 'none';
   if (ta.style.display === 'none') {
     ta.value = pre.textContent;
     ta.style.display = 'block';
     pre.style.display = 'none';
-    btn.textContent = 'Cancel';
+    btn.textContent = i18n.t('btn.cancel');
     saveBtn.style.display = '';
+    if (checkBtn) checkBtn.style.display = '';
   } else {
     ta.style.display = 'none';
     pre.style.display = '';
-    btn.textContent = 'Edit';
+    btn.textContent = i18n.t('btn.edit');
     saveBtn.style.display = 'none';
+    if (checkBtn) checkBtn.style.display = 'none';
+  }
+}
+
+/** Dry-run parse of the edited text (POST /api/validate): show the error, or the task ids the file would define. */
+export async function yamlModalCheck() {
+  if (!_yamlModalProject) return;
+  const ta = document.getElementById('yaml-modal-edit');
+  const err = document.getElementById('yaml-modal-error');
+  const ok = document.getElementById('yaml-modal-ok');
+  err.style.display = 'none'; if (ok) ok.style.display = 'none';
+  try {
+    const r = await fetch('/api/validate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({project: _yamlModalProject, yaml_text: ta.value}),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.valid) {
+      err.textContent = j.error || i18n.t('yaml.errorStatus', {status: r.status, msg: ''});
+      err.style.display = 'block';
+      return;
+    }
+    const ids = j.task_ids || [];
+    let msg = i18n.t('yaml.checkOk', {n: ids.length, ids: ids.join(', ')});
+    if (_yamlModalTaskId && !ids.includes(_yamlModalTaskId)) msg += ' ' + i18n.t('yaml.checkRenamed', {task: _yamlModalTaskId});
+    if (ok) { ok.textContent = msg; ok.style.display = 'block'; }
+  } catch (e) {
+    err.textContent = i18n.t('yaml.saveFailed', {error: String(e)});
+    err.style.display = 'block';
   }
 }
 
@@ -209,7 +242,7 @@ export async function yamlModalSave() {
       yamlModalToggleEdit();
     }
   } catch(e) {
-    err.textContent = 'Save failed: ' + e;
+    err.textContent = i18n.t('yaml.saveFailed', {error: String(e)});
     err.style.display = 'block';
   } finally {
     saveBtn.disabled = false; saveBtn.textContent = i18n.t('btn.save');
@@ -248,7 +281,7 @@ export function showResourceModal(runId) {
   const modal = document.getElementById('resource-modal');
   const title = document.getElementById('resource-modal-title');
   const body = document.getElementById('resource-modal-body');
-  title.textContent = `Metrics — ${t.project||''}/${t.task_id||''} run #${runId}`;
+  title.textContent = i18n.t('metrics.modalTitle', {project: t.project||'', task: t.task_id||'', run: runId});
   const html = _resourceModalBodyHtml(t);
   body.innerHTML = html;
   body.dataset.lastHtml = html;

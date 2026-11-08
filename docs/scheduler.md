@@ -285,10 +285,12 @@ host gets wedged.
 
 ### Shadow mode
 
-`tq config set admission_shadow_mode=1` logs every decision as
-`SHADOW would-block` without enforcing (see `{home}/daemon.log` via
-`tq log --grep SHADOW`). Use it for one night on a real
-workload before enabling enforcement, and diff intent against what actually ran.
+`tq config set admission_shadow_mode=1` **logs** resource-fit decisions that
+*would* block (`SHADOW would-block` in `{home}/daemon.log` via
+`tq log --grep SHADOW`) but **still admits** those tasks — soak mode for
+validating a new gate against a live queue before you rely on enforcement.
+It is not “observe and refuse.” Diff the log against what actually ran for
+one night, then turn the mode off so `fits()` blocks again.
 
 `tq force <project/task_id>` bypasses the gates; the daemon logs a WARN naming
 the gate that was overridden.
@@ -361,7 +363,7 @@ good decision from a lucky one.
 | `scheduler_interval_sec` | `5` | Full tick period and max sleep between ticks. Handoff after local exit is usually much faster via the fast path (§1). |
 | `ram_limit_pct` | `80` | Soft gate; admission stops above it. |
 | `ram_hard_limit_pct` | `95` | Hard gate; tasks are stopped above it. Must be ≥ soft. |
-| `max_concurrent_tasks` | `0` | Cap on local running tasks; `0` = unlimited. |
+| `max_concurrent_tasks` | `0` | Legacy: counts every running task (local and remote), like `max_running_tasks`, but `force` bypasses it and it never stops excess runs. Prefer `max_running_tasks`; `tq doctor` flags it. `0` = unlimited. |
 | `default_task_ram_gib` | `1.0` | Floor estimate for a task with no history and no declaration. |
 | `resource_predict_runs` | `5` | Runs sampled for the p95 prediction. |
 | `admit_max_per_tick` | `1` | Admissions per tick — the stagger. |
@@ -370,7 +372,9 @@ good decision from a lucky one.
 | `settle_window_sec` | `180` | How long a run is treated as not yet at peak. |
 | `stop_max_per_tick` | `2` | Stops per tick under hard pressure. |
 | `recovery_cooldown_sec` | `30` | Admission freeze after a pressure stop. |
-| `admission_shadow_mode` | `0` | `1` logs decisions without enforcing. |
+| `admission_shadow_mode` | `0` | `1` logs would-block resource decisions but still admits (soak). |
+| `service_probe_background` | `1` | `requires_services` probes run off the scheduler tick; a first check shows `service probe pending`. `0` probes inline. |
+| `adopt_on_restart` | `0` | `1`: new local runs start through a small wrapper so they survive the daemon; `tq restart` (and a daemon crash) leaves them running and the next daemon adopts them. See [Adopting running tasks](#adopting-running-tasks-across-a-restart). |
 | `placement_mode` | `binpack` | Remote claim: `binpack` (best-fit among peers) or `first_fit` (legacy). |
 | `placement_age_sec` | `120` | Wait before best-fit may be bypassed (0 = always aged). |
 | `placement_shadow_mode` | `0` | `1` logs would-skip placement without enforcing. |
@@ -501,9 +505,24 @@ These are real and not yet addressed — do not read the above as full protectio
 - **No estimate telemetry.** Predicted-vs-actual is not recorded, so estimator
   drift is invisible.
 
+## Adopting running tasks across a restart
+
+By default a running task cannot outlive the daemon: on Windows it runs in a job object that kills the whole tree when the daemon exits, and on Linux/macOS its output goes through a pipe to the daemon. So `tq restart` refuses while tasks run (unless `--force`, which stops and re-queues them), and a daemon crash loses them.
+
+With `tq config set adopt_on_restart=1`, **new** local runs start through a small wrapper (`python -m taskqueue.run_wrapper`) instead:
+
+- the task appends its output straight to its log file (on every OS), and nothing kills it when the daemon exits;
+- the wrapper waits for the task and writes its exit code to `<log>.exit`, because a restarted daemon cannot read the exit code of a process it did not start.
+
+On startup the daemon adopts every local `running` run whose wrapper is still alive (same pid **and** process create time, so a reused pid is never mistaken for it, and the wrapper on its command line) or whose exit file exists (the task finished during the restart). It tails the log from where it stands, polls the pid, and finalizes the run through the normal path with the recorded exit code, so a task that finished while no daemon was running still lands `completed` / `failed` rather than `interrupted`. Runs without a live wrapper or exit file are reaped and re-queued as before.
+
+`tq restart` now refuses only for running tasks that cannot be adopted (started before the setting was on, or remote); it asks the stopping daemon to leave adoptable runs alive for its successor. `tq stop-daemon` still stops every task. After a crash, adoptable tasks keep running and the next daemon adopts them.
+
+Costs and limits: one small Python wrapper process per run (counted in the task's RAM); output lines are not timestamped by the daemon (as on Windows today); TQ_METRIC series and warn/error counts collected before the restart are kept in the database but the in-memory series restarts. Remote workers are unaffected (they use leases).
+
 ## Dry-run: `tq plan` / `GET /api/plan`
 
-`tq plan [N] [--json]` (and `GET /api/plan?limit=N`, 1–200) shows, read-only, which queued tasks the scheduler would start next. It uses the real queue order (priority, then fairshare), applies dependency and project-limit gates, and charges each candidate its **declared** `resources` against the live CPU/RAM/VRAM budget. Learned resource estimates, mutexes, services and the P6 headroom hold are not simulated, so the output has `approximate: true`: a task shown as `START` may still be held back by the real tick.
+`tq plan [N] [--json]` (and `GET /api/plan?limit=N`, 1–200) shows, read-only, which queued tasks the scheduler would start next. It uses the real queue order (priority, then fairshare), applies dependency and project-limit gates, and charges each candidate its **declared** `resources` against the live CPU/RAM/VRAM budget. Learned resource estimates, mutexes, services and the P6 headroom hold are not simulated, so the output has `approximate: true`: a task shown as `START` may still be held back by the real tick. The JSON also carries `headroom` (CPU cores / RAM GiB / VRAM GiB free after running tasks), and each resource-checked task carries `need` (its declared resources) and `free` (headroom left after the tasks ranked ahead of it would start). `tq why` and the drawer's **Why?** button show the same need-vs-free numbers.
 
 ## Daily GPU-hour budget (`max_gpu_hours_day`)
 

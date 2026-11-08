@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from taskqueue.config import Project
-from taskqueue.yaml_sync import _sync_project, _yaml_mtime_cache, clear_yaml_mtime_cache
 from taskqueue.db import open_db
 from taskqueue.runner import ActiveRun
+from taskqueue.yaml_sync import _sync_project, _yaml_mtime_cache, clear_yaml_mtime_cache
 
 
 def test_drain_cpu_seconds_from_cpu_times() -> None:
@@ -97,13 +97,15 @@ def test_claim_uses_bounded_candidate_window(tmp_path, monkeypatch) -> None:
     seed_queued_task(db, dispatch="remote")
     seed_worker(db)
     seen: list = []
-    real = _db_tasks.get_queued_tasks
+    # F-234: the bounded fetch is get_queued_window; an unbounded get_queued_tasks must not run.
+    real = _db_tasks.get_queued_window
 
     def spy(conn, *a, **kw):
         seen.append(kw.get("limit"))
         return real(conn, *a, **kw)
 
-    monkeypatch.setattr(_db_tasks, "get_queued_tasks", spy)
+    monkeypatch.setattr(_db_tasks, "get_queued_window", spy)
+    monkeypatch.setattr(_db_tasks, "get_queued_tasks", lambda *a, **k: seen.append(None) or [])
     worker = db.execute("SELECT * FROM workers WHERE worker_id='w1'").fetchone()
     claim_next_remote_task(tmp_path / "queue.db", worker, lambda: {"proj": None})
     assert seen and all(isinstance(n, int) and 0 < n <= 256 for n in seen)

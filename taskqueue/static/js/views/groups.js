@@ -23,7 +23,7 @@ export async function loadGroups() {
       // Project to select in the queue: the row's own, else the only project using the group, else keep the current one.
       const gProjects = g.projects || [];
       const viewProject = apiProject || (gProjects.length === 1 ? gProjects[0] : (gProjects.includes(S.selectedProject) ? S.selectedProject : ''));
-      const groupLabel = escHtml(g.name || '(ungrouped)');
+      const groupLabel = escHtml(g.name || i18n.t('filter.ungrouped'));
       const projTag = g.project
         ? ` <span class="proj-tag" style="display:inline;${projStyle(g.project)}">${escHtml(g.project)}</span>`
         : (gProjects.length
@@ -42,11 +42,11 @@ export async function loadGroups() {
           <button style="${btnStyle}background:var(--bg3);color:var(--text)" data-click="${tqAct([['viewGroupInQueue', apiName, viewProject]])}">${i18n.t('groups.btnViewQueue')}</button>
           <button style="${btnStyle}background:#c0392b;color:#fff" data-click="${tqAct([['groupStop', TQ_THIS, apiName, apiProject]])}">${i18n.t('groups.btnStopAll')}</button>
           <button style="${btnStyle}background:#2980b9;color:#fff" data-click="${tqAct([['groupRetry', TQ_THIS, apiName, false, apiProject]])}">${i18n.t('groups.btnRetryFailed')}</button>
-          <button style="${btnStyle}background:#6d28d9;color:#fff" data-click="${tqAct([['groupRetry', TQ_THIS, apiName, true, apiProject]])}">${i18n.t('groups.btnRestartAll') || 'Restart all'}</button>
+          <button style="${btnStyle}background:#6d28d9;color:#fff" data-click="${tqAct([['groupRetry', TQ_THIS, apiName, true, apiProject]])}">${i18n.t('groups.btnRestartAll')}</button>
         </div>
       </div>`;
     }).join('');
-  } catch(e) { el.innerHTML = `<p style="color:red">Error: ${escHtml(String(e))}</p>`; }
+  } catch(e) { el.innerHTML = `<p style="color:red">${escHtml(i18n.t('status.errorMsg', {error: String(e)}))}</p>`; }
 }
 
 export function groupStop(btn, name, project) {
@@ -94,7 +94,7 @@ export async function groupRetry(btn, name, includeCompleted, project) {
         `Restart ${pre.would_retry} task(s) in "${label}", including ${pre.completed_included} COMPLETED task(s)? ` +
         `They will run again and may overwrite their outputs.`,
         () => resolve(true),
-        {title: 'Restart all', confirmLabel: i18n.t('groups.btnRestartAll') || 'Restart all', onCancel: () => resolve(false)}
+        {title: 'Restart all', confirmLabel: i18n.t('groups.btnRestartAll'), onCancel: () => resolve(false)}
       ));
       if (!go) return;
       q.set('confirm', String(pre.would_retry));
@@ -139,7 +139,7 @@ export function _updateGroupChips() {
   }
   const expanded = bar.dataset.expanded === '1';
   const cur = S.groupFilter;
-  const label = String(i18n.t('filter.labelGroup') || 'group').replace(/[:：]\s*$/, '');
+  const label = String(i18n.t('filter.labelGroup')).replace(/[:：]\s*$/, '');
   let html = `<span class="filter-label" data-click="${tqAct([['_toggleGroupBar']])}" style="cursor:pointer;user-select:none">${escHtml(label)}${expanded ? ' ▴' : ' ▾'}:</span>`;
   if (expanded) {
     html += `<button class="filter-chip${!cur ? ' active' : ''}" data-group="" data-click="${tqAct([['setGroupFilter', null, TQ_THIS]])}">${i18n.t('filter.all')}</button>`;

@@ -29,7 +29,7 @@ def set_prevent_sleep(enable: bool) -> bool:
         kernel32.SetThreadExecutionState(_ES_CONTINUOUS)
         _inhibiting = False
         return True
-    except Exception as exc:
+    except (AttributeError, OSError) as exc:
         print(f"[queue] warn: prevent_sleep failed: {exc}", file=sys.stderr)
         _inhibiting = False
         return False

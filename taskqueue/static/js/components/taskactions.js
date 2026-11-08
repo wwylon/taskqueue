@@ -3,7 +3,10 @@
 // openConfirm/openAlert/showToast, _dagRefreshAfterAction, ...).
 import { S } from '../core/state.js';
 import { fetchJson } from '../core/api.js';
-import { qrowId } from '../util/format.js';
+import { qrowId, escHtml } from '../util/format.js';
+import { openModal } from './modals.js';
+// showToast / showUndoToast / openConfirm / openAlert / _postJson / toastResult stay
+// call-time globals so tests can stub g.showToast etc.
 
 // ---- Task actions ----
 
@@ -125,8 +128,60 @@ function _stopUndoMs() {
   return v == null ? 5000 : Number(v) || 0;
 }
 
+/** Preset stop reasons (sent as ?reason=). "other" uses the custom field. */
+export const STOP_REASON_PRESETS = [
+  { id: 'owner_request', labelKey: 'stopReason.owner_request' },
+  { id: 'gate:lagging', labelKey: 'stopReason.gate_lagging' },
+  { id: 'wrong_params', labelKey: 'stopReason.wrong_params' },
+  { id: 'superseded', labelKey: 'stopReason.superseded' },
+  { id: 'resource_conflict', labelKey: 'stopReason.resource_conflict' },
+  { id: 'other', labelKey: 'stopReason.other' },
+];
+
+function _promptStopReason() {
+  // Tests / automation: set window.tqStopReasonDefault (string or null to cancel).
+  if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, 'tqStopReasonDefault')) {
+    return Promise.resolve(window.tqStopReasonDefault);
+  }
+  return new Promise(resolve => {
+    const chips = STOP_REASON_PRESETS.map((p, i) =>
+      `<label class="stop-reason-chip" style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;cursor:pointer">
+        <input type="radio" name="tq-stop-reason" value="${escHtml(p.id)}"${i === 0 ? ' checked' : ''}>
+        ${escHtml(i18n.t(p.labelKey) || p.id)}</label>`
+    ).join('');
+    const body = document.createElement('div');
+    body.innerHTML = `<div style="margin-bottom:8px">${escHtml(i18n.t('stopReason.prompt'))}</div>
+      <div style="margin-bottom:8px">${chips}</div>
+      <input id="tq-stop-reason-custom" type="text" maxlength="200" placeholder="${escHtml(i18n.t('stopReason.customPlaceholder'))}"
+        style="width:100%;box-sizing:border-box;padding:6px 8px">`;
+    let settled = false;
+    const finish = (val) => { if (!settled) { settled = true; resolve(val); } };
+    openModal({
+      title: i18n.t('stopReason.title'),
+      body,
+      onDismiss: () => finish(null),
+      actions: [
+        { label: i18n.t('btn.cancel'), onClick: () => finish(null) },
+        { label: i18n.t('btn.stop'), primary: true, onClick: () => {
+          const picked = body.querySelector('input[name="tq-stop-reason"]:checked');
+          const id = picked ? picked.value : 'owner_request';
+          const custom = (body.querySelector('#tq-stop-reason-custom') || {}).value || '';
+          const detail = String(custom).trim().slice(0, 180);
+          if (id === 'other') finish(detail || 'other');
+          else finish(detail ? `${id}: ${detail}` : id);
+        } },
+      ],
+    });
+  });
+}
+
 export async function stopTask(btn, project, taskId) {
   if (!_btnPending(btn, i18n.t('btn.stopping'))) return;
+  const reason = await _promptStopReason();
+  if (reason == null) {
+    _btnDone(btn);
+    return;
+  }
   const delay = _stopUndoMs();
   if (delay > 0) {
     const undone = await new Promise(resolve => {
@@ -142,13 +197,62 @@ export async function stopTask(btn, project, taskId) {
     }
   }
   try {
-    await _postJson(`/api/stop/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}`);
+    const q = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    await _postJson(`/api/stop/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}${q}`);
     showToast(i18n.t('toast.stopped'), 'ok');
   } catch (e) {
     showToast(String(e.message || e), 'err');
   } finally { _btnDone(btn); }
   refresh();
 }
+export async function holdTask(btn, project, taskId, durationSec) {
+  if (!_btnPending(btn, i18n.t('btn.hold'))) return;
+  let sec = Number(durationSec);
+  if (!(sec > 0)) {
+    if (typeof window !== 'undefined' && window.tqHoldDurationDefault != null) {
+      sec = Number(window.tqHoldDurationDefault) || 600;
+    } else {
+      const picked = await new Promise(resolve => {
+        openModal({
+          title: i18n.t('holdReason.title'),
+          body: `<div style="margin-bottom:8px">${escHtml(i18n.t('holdReason.prompt'))}</div>
+            <label><input type="radio" name="tq-hold-dur" value="300" checked> ${escHtml(i18n.t('hold.duration.5m'))}</label><br>
+            <label><input type="radio" name="tq-hold-dur" value="900"> ${escHtml(i18n.t('hold.duration.15m'))}</label><br>
+            <label><input type="radio" name="tq-hold-dur" value="3600"> ${escHtml(i18n.t('hold.duration.1h'))}</label>`,
+          onDismiss: () => resolve(null),
+          actions: [
+            { label: i18n.t('btn.cancel'), onClick: () => resolve(null) },
+            { label: i18n.t('btn.hold'), primary: true, onClick: () => {
+              const el = document.querySelector('input[name="tq-hold-dur"]:checked');
+              resolve(el ? Number(el.value) : 600);
+            } },
+          ],
+        });
+      });
+      if (picked == null) { _btnDone(btn); return; }
+      sec = picked;
+    }
+  }
+  try {
+    await _postJson(`/api/hold/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}?duration_sec=${encodeURIComponent(sec)}`);
+    showToast(i18n.t('toast.held'), 'ok');
+  } catch (e) {
+    showToast(String(e.message || e), 'err');
+  } finally { _btnDone(btn); }
+  refresh();
+}
+
+export async function unholdTask(btn, project, taskId) {
+  if (!_btnPending(btn, i18n.t('btn.unhold'))) return;
+  try {
+    await _postJson(`/api/unhold/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}`);
+    showToast(i18n.t('toast.unheld'), 'ok');
+  } catch (e) {
+    showToast(String(e.message || e), 'err');
+  } finally { _btnDone(btn); }
+  refresh();
+}
+
 export async function retryTask(project, taskId, btn) {
   if (!_btnPending(btn, i18n.t('btn.retrying'))) return;
   try {
@@ -281,11 +385,11 @@ export async function _showProjectRoot(projName) {
   const frozen = !!(S.cfg && S.cfg[`project_frozen_${projName}`]);
   const freezeNote = frozen ? ` · ${i18n.t('freeze.blockedBanner')}` : '';
   if (root) {
-    txt.textContent = `📁 ${projName} root: ${root}${freezeNote}`;
+    txt.textContent = i18n.t('task.rootPath', {project: projName, root}) + freezeNote;
     bar.style.display = '';
     bar.style.color = frozen ? 'var(--warn)' : '';
   } else {
-    txt.textContent = `⚠ "${projName}" has no registered root path${freezeNote}`;
+    txt.textContent = i18n.t('task.noRootPath', {project: projName}) + freezeNote;
     bar.style.display = '';
     bar.style.color = frozen ? 'var(--warn)' : '';
   }
@@ -382,7 +486,7 @@ export function tqSetPriority(project, taskId, prio) {
   prio = Math.max(0, Math.min(100, parseInt(prio, 10) || 0));
   return _postJson(`/api/priority/${encodeURIComponent(project)}/${encodeURIComponent(taskId)}/${prio}`)
     .then(() => {
-      showToast((i18n.t('ctx.prioSet') || 'Priority set to {n}').replace('{n}', prio), 'ok');
+      showToast((i18n.t('ctx.prioSet')).replace('{n}', prio), 'ok');
       if (S.drawerTask && S.drawerTask.project === project && S.drawerTask.task_id === taskId) {
         S.drawerTask.priority = prio; tqPaintDrawerHead(); tqPaintDrawerBody();
       }
@@ -392,7 +496,7 @@ export function tqSetPriority(project, taskId, prio) {
     .catch(err => showToast(String(err.message || err), 'err'));
 }
 export function tqPromptPriority(project, taskId, cur) {
-  const v = window.prompt((i18n.t('ctx.promptPriority') || 'Priority (0–100)'), String(cur));
+  const v = window.prompt((i18n.t('ctx.promptPriority')), String(cur));
   if (v === null) return;
   tqSetPriority(project, taskId, v);
 }

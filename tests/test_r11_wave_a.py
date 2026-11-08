@@ -14,7 +14,7 @@ from taskqueue.config import Project
 from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
 from taskqueue.queries import cancel_negative_dependents
 from taskqueue.web.responses import _STATUS_RANK, _history_row_dict, _task_dict
-from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache
+from taskqueue.yaml_sync import clear_yaml_mtime_cache
 from tests.helpers.master_worker import http_request, make_handler_env
 from tests.test_queue import _project, _yaml
 

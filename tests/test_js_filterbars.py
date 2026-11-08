@@ -57,7 +57,8 @@ $('worker-select').value = 'w1'; g.onWorkerChange();
 r.calls = calls; r.worker = S.globalWorkerFilter;
 """)
     )
-    assert out["calls"] == ["active", "p:x", "p:all", "q", "h", "d"] and out["worker"] == "w1"
+    # F-258: worker change resets pages and calls refresh() (not local render*).
+    assert out["calls"] == ["active", "p:x", "p:all"] and out["worker"] == "w1"
 
 
 def test_project_chips_filter_by_tag_mark_active_and_frozen():
@@ -87,9 +88,9 @@ S.allTags = [];
 g._updateTagChips(); r.hidden = bar.style.display;
 S.allTags = ['gpu', 'a<b'];
 g._updateTagChips();
-r.collapsed = [bar.style.display, bar.innerHTML.includes('filter-chip'), bar.innerHTML.includes('tags ▾')];
+r.collapsed = [bar.style.display, bar.innerHTML.includes('filter-chip'), bar.innerHTML.includes('filter.tagsLabel'), bar.dataset.expanded];
 g._toggleTagBar();
-r.expanded = [bar.dataset.expanded, bar.innerHTML.includes('a&lt;b'), bar.innerHTML.includes('tags ▴')];
+r.expanded = [bar.dataset.expanded, bar.innerHTML.includes('a&lt;b'), bar.innerHTML.includes('filter.tagsLabel')];
 let refreshed = 0; g.refresh = () => { refreshed++; };
 g._resetQueueSearchForFilter = () => {}; const urls = []; g._syncUrl = o => urls.push(o);
 let chips = 0; g._populateProjectChips = () => { chips++; };
@@ -100,7 +101,7 @@ g.toggleTagFilter('gpu');
 r.off = [S.tagFilter, g.localStorage.getItem('tq_tag')];
 """)
     )
-    assert out["hidden"] == "none" and out["collapsed"] == ["", False, True]
+    assert out["hidden"] == "none" and out["collapsed"][:3] == ["", False, True] and out["collapsed"][3] != "1"
     assert out["expanded"] == ["1", True, True]
     assert out["on"] == ["gpu", 0, "gpu", 1, [{"replace": False}], True]
     assert out["off"] == [None, ""]

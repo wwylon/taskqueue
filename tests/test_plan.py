@@ -69,3 +69,20 @@ def test_plan_gpu_daily_budget_blocks_gpu_task_only(tmp_path, monkeypatch):
     assert by["g"]["verdict"] == "blocked" and "max_gpu_hours_day" in by["g"]["reason"]
     assert by["cpu"]["verdict"] == "start"
     assert plan["gpu_budget"]["p"] == {"limit_hours": 2.0, "used_hours": 2.5, "remaining_hours": 0.0}
+
+
+def test_plan_reports_need_and_free_headroom(tmp_path, monkeypatch):
+    """Wave 6: each resource-checked entry shows what it needs vs what was free when its turn came."""
+    _, db, _ = make_handler_env(tmp_path)
+    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 4.0)
+    _add(db, "first", prio=5, ram=50.0)
+    _add(db, "second", prio=1, ram=20.0)
+    plan = build_plan(db, CFG, SYSTEM)
+    by = {e["task_id"]: e for e in plan["tasks"]}
+    assert plan["headroom"] == {"cpu_cores": 8.0, "ram_gib": 60.0, "gpu_vram_gib": 0.0}
+    assert by["first"]["verdict"] == "start"
+    assert by["first"]["need"] == {"cpu_cores": 1.0, "ram_gib": 50.0, "gpu_vram_gib": 0.0}
+    assert by["first"]["free"]["ram_gib"] == 60.0
+    # "first" took 50 GiB of the 60 free, so "second" (20 GiB) sees 10 GiB and is blocked
+    assert by["second"]["verdict"] == "blocked" and by["second"]["free"]["ram_gib"] == 10.0
+    assert by["second"]["free"]["cpu_cores"] == 7.0

@@ -59,6 +59,7 @@ _KNOWN_YAML_KEYS = frozenset(
         "matrix",
         "auto_retry_on_cap",
         "max_auto_retries",
+        "retry_backoff_sec",
         "min_trust",
         "data",
         "class",
@@ -115,7 +116,7 @@ def _expand_service(s: object) -> dict:
     return dict(s)  # type: ignore[arg-type]
 
 
-def _relativize_path(p_str: str, project: "Project") -> Path:
+def _relativize_path(p_str: str, project: Project) -> Path:
     """Store requires_paths relative to project root (POSIX separators)."""
     try:
         abs_p = project.resolve(p_str)
@@ -210,7 +211,7 @@ def _validated_task_id(raw: dict, path: Path) -> str:
     return str(raw_id)
 
 
-def _parse_command(raw: dict, path: Path, project: "Project") -> Path:
+def _parse_command(raw: dict, path: Path, project: Project) -> Path:
     """``command:`` -> resolved path (or bare name for PATH lookup)."""
     raw_cmd = str(raw["command"])
     # A2: Validate command uses forward slashes (only for relative/bare paths, not absolute)
@@ -221,7 +222,8 @@ def _parse_command(raw: dict, path: Path, project: "Project") -> Path:
         if len(str(_arg)) > 2 and str(_arg)[1] == ":" and str(_arg)[0].isalpha():
             warnings.warn(
                 f"{path.name}: arg[{_i}] looks like a Windows absolute path: {_arg!r}. "
-                "Use project-relative paths for cross-platform compatibility."
+                "Use project-relative paths for cross-platform compatibility.",
+                stacklevel=2,
             )
     # Absolute path or contains a separator -> resolve vs project root.
     # Bare command name (no separators) -> keep bare so shutil.which resolves
@@ -291,10 +293,10 @@ def _parse_class_and_trust(raw: dict, path: Path, execution_semantics: str) -> t
 def _parse_raw_task_dict(
     raw: dict | None,
     path: Path,
-    project: "Project",
+    project: Project,
     *,
     allow_remote_notify: bool = False,
-) -> "QueueTask":
+) -> QueueTask:
     """Parse a single already-loaded YAML mapping into a QueueTask."""
     from taskqueue.notify import validate_notify_url
 
@@ -363,6 +365,9 @@ def _parse_raw_task_dict(
             raise ValueError(f"{path.name}: max_auto_retries must be >= 0")
     else:
         max_auto_retries = 20
+    retry_backoff_sec = int(raw.get("retry_backoff_sec") or 0)
+    if retry_backoff_sec < 0:
+        raise ValueError(f"{path.name}: retry_backoff_sec must be >= 0")
 
     notify_url = None
     raw_notify = raw.get("notify_url")
@@ -439,6 +444,7 @@ def _parse_raw_task_dict(
         teardown=dict(raw["teardown"]) if isinstance(raw.get("teardown"), dict) else None,
         auto_retry_on_cap=auto_retry_on_cap,
         max_auto_retries=max_auto_retries,
+        retry_backoff_sec=retry_backoff_sec,
         data=raw_data,
         min_trust=min_trust,
         task_class=task_class,
@@ -450,11 +456,10 @@ def _parse_raw_task_dict(
 
 def parse_task_yaml(
     path: Path,
-    project: "Project",
+    project: Project,
     *,
     allow_remote_notify: bool = False,
-) -> "QueueTask":
-    import yaml
+) -> QueueTask:
 
     docs = _load_yaml_docs(path.read_text(encoding="utf-8"))
     if len(docs) > 1:
@@ -487,7 +492,6 @@ def parse_task_yaml_many(
     Task IDs become `{base_id}_{key}{value}` (single axis) or `{base_id}_{idx}` (multi-axis).
     Each matrix value is appended to `args` as `--{key}={value}` and stored in `metadata`.
     """
-    import yaml
 
     docs = _load_yaml_docs(path.read_text(encoding="utf-8"))
 
@@ -529,9 +533,7 @@ def parse_task_yaml_many(
     for idx, combo in enumerate(combos):
         suffix = f"_{keys[0]}{_safe_matrix_part(combo[0])}" if len(keys) == 1 else f"_{idx}"
         extra_args = tuple(f"--{k}={v}" for k, v in zip(keys, combo))
-        merged_meta = dict(base.metadata)
-        for k, v in zip(keys, combo):
-            merged_meta[k] = v
+        merged_meta = {**base.metadata, **dict(zip(keys, combo))}
         tasks.append(
             _dc_replace(
                 base,

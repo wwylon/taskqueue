@@ -6,11 +6,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from taskqueue import errors as tqerr
-from taskqueue.models import STATUS_INTERRUPTED, STATUS_QUEUED, STATUS_RUNNING
-from taskqueue.daemon import _count_recent_clock_jump_runs, is_clock_jump, requeue_orphaned_running
-from taskqueue._db_tasks import get_task, set_task_status, upsert_task
 from taskqueue._db_runs import insert_run
+from taskqueue._db_tasks import get_task, set_task_status, upsert_task
+from taskqueue.daemon import _count_recent_clock_jump_runs, is_clock_jump, requeue_orphaned_running
 from taskqueue.db import open_db, parse_task_yaml, set_config
+from taskqueue.models import STATUS_INTERRUPTED, STATUS_QUEUED, STATUS_RUNNING
 
 
 def _project(name: str, tmp_path: Path):
@@ -59,7 +59,7 @@ def test_clock_jump_flap_leaves_interrupted(tmp_path: Path) -> None:
     upsert_task(db, parse_task_yaml(path, proj))
 
     now = datetime.now(UTC).isoformat()
-    for i in range(2):
+    for _ in range(2):
         db.execute(
             "INSERT INTO runs (project, task_id, started_at, finished_at, status, "
             "exit_code, log_path, last_error_code) "

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 import pytest
 import yaml
 
 from taskqueue import errors as tqerr
-from taskqueue.config import Project
 from taskqueue._db_tasks import get_task, set_task_error, upsert_task
+from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
 from taskqueue.resources import ResourceBudget

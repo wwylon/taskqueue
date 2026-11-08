@@ -157,3 +157,33 @@ r.empty = g.tqLogFilterRegex('  ');
     assert out["filtered"] == [True, False, False] and out["cleared"] is False
     assert out["level"] == [True, False] and out["nowrap"] is True
     assert out["bad"] == r"/a\(b/i" and out["empty"] is None
+
+
+def test_follow_only_when_at_bottom_and_jump_to_first_error():
+    out = run_js(
+        _js("""
+const kids = [];
+const fake = { children: kids, insertAdjacentHTML() {}, removeChild() {}, get firstChild() { return kids[0]; },
+  scrollHeight: 1000, clientHeight: 100, scrollTop: 0 };
+const realGet = doc.getElementById.bind(doc);
+doc.getElementById = id => (id === 'tq-log-body' ? fake : realGet(id));
+g.tqAppendLogText('a\\n'); await frame();
+r.scrolledUpStays = fake.scrollTop;                     // reader scrolled up: no yank
+fake.scrollTop = 890; g.tqAppendLogText('b\\n'); await frame();
+r.atBottomFollows = fake.scrollTop;                    // within 24 px of the bottom: follow
+const line = cls => { const d = doc.createElement('div'); d.classList.add('tq-log-line'); if (cls) d.classList.add(cls); d.scrolled = 0;
+  d.scrollIntoView = () => { d.scrolled++; }; return d; };
+const hiddenErr = line('log-error'); hiddenErr.hidden = true;  // filtered out by the regex box
+const err1 = line('log-error'), err2 = line('log-error');
+kids.splice(0, kids.length, line(''), hiddenErr, line('log-warn'), err1, err2);
+g.tqLogJumpFirstError();
+r.jump = [hiddenErr.scrolled, err1.scrolled, err1.classList.contains('tq-log-flash'), err2.scrolled];
+kids.splice(0, kids.length, line(''));
+const toasts = []; g.showToast = (m, k) => toasts.push([m, k]);
+g.tqLogJumpFirstError();
+r.none = toasts;
+""")
+    )
+    assert out["scrolledUpStays"] == 0 and out["atBottomFollows"] == 1000
+    assert out["jump"] == [0, 1, True, 0]
+    assert out["none"] == [["log.noErrorsShown", "info"]]

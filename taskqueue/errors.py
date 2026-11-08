@@ -14,6 +14,7 @@ BLOCK_SERVICE_VRAM = "tq.block.service_vram"  # S1: service up but VRAM headroom
 BLOCK_MUTEX = "tq.block.mutex"  # S2: named resource lock held by another running task
 BLOCK_SCAVENGER = "tq.block.scavenger"  # T-204: scavenger waits while other work contends
 BLOCK_MAX_ATTEMPTS = "tq.block.max_attempts"  # F-099: max_attempts exhausted
+BLOCK_BACKOFF = "tq.block.backoff"  # retry_backoff_sec: waiting before the next attempt
 
 # Run / process outcomes
 RUN_NONZERO = "tq.run.nonzero"
@@ -51,6 +52,7 @@ _DESCRIPTIONS: dict[str, str] = {
     BLOCK_SERVICE_VRAM: "Service is up but GPU VRAM headroom is insufficient — resident model weights still loaded",
     BLOCK_MUTEX: "Named resource lock held by another running task — waiting for exclusive access",
     BLOCK_MAX_ATTEMPTS: "max_attempts exhausted — use tq patch … max_attempts=0 then tq retry to unstick",
+    BLOCK_BACKOFF: "Waiting out retry_backoff_sec after failed runs — tq retry starts it now",
     BLOCK_SCAVENGER: "Scavenger task waits: other (non-scavenger) work is waiting on capacity",
     RUN_NONZERO: "Process exited with a non-zero status",
     RUN_CAP: "Stopped after wall_clock_cap_sec",
@@ -136,6 +138,7 @@ _BLOCK_KIND_MAP: dict[str, str] = {
     BLOCK_MUTEX: "lock",
     BLOCK_SCAVENGER: "resources",
     BLOCK_MAX_ATTEMPTS: "max_attempts",
+    BLOCK_BACKOFF: "max_attempts",  # same family: retry policy, not capacity
     RUN_FROZEN: "frozen",
 }
 

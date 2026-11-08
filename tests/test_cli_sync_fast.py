@@ -101,6 +101,28 @@ def test_sync_single_project_and_unknown(tmp_path: Path, monkeypatch) -> None:
     db.close()
 
 
+def test_sync_reloads_projects_yaml_for_new_name(tmp_path: Path) -> None:
+    """F-242: a project added to projects.yaml syncs without waiting for the 60s tick."""
+    clear_yaml_mtime_cache()
+    a = _project(tmp_path, "a", 1)
+    b = _project(tmp_path, "b", 2)
+    # Live registry starts with only a; b exists only on disk.
+    live = {"a": a}
+    HandlerClass, db, home = make_handler_env(tmp_path, projects=live)
+    (home / "projects.yaml").write_text(
+        "projects:\n"
+        f"  a:\n    root: {a.root.as_posix()}\n    queue_dir: {a.queue_dir.as_posix()}\n"
+        f"  b:\n    root: {b.root.as_posix()}\n    queue_dir: {b.queue_dir.as_posix()}\n",
+        encoding="utf-8",
+    )
+    code, data = http_request(HandlerClass, "POST", "/api/cli/sync", {"projects": ["b"]})
+    assert code == 200 and data["ok"] is True
+    assert data["projects"] == {"b": 2}
+    assert "b" in live
+    assert db.execute("SELECT COUNT(*) FROM tasks WHERE project='b'").fetchone()[0] == 2
+    db.close()
+
+
 def test_cli_sync_passes_projects_and_force(tmp_path: Path, monkeypatch) -> None:
     from taskqueue import _cli_project
 

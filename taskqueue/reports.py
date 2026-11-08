@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from taskqueue.dt_utils import iso_utc
@@ -16,7 +16,7 @@ def build_report(
     days: int = 7,
 ) -> dict[str, Any]:
     days = max(1, min(int(days), 365))
-    since = iso_utc(datetime.now(timezone.utc) - timedelta(days=days))  # same format as stored started_at
+    since = iso_utc(datetime.now(UTC) - timedelta(days=days))  # same format as stored started_at
 
     params: list[Any] = [since]
     proj_sql = ""

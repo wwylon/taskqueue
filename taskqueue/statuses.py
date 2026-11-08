@@ -6,7 +6,7 @@ status sets do not drift.
 
 from __future__ import annotations
 
-from taskqueue._db_tasks import RETRYABLE_STATUSES, _TERMINAL_STATUSES
+from taskqueue._db_tasks import _TERMINAL_STATUSES, RETRYABLE_STATUSES
 
 TERMINAL_STATUSES = _TERMINAL_STATUSES
 

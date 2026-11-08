@@ -100,14 +100,14 @@ def pick_victim(
     score, ascending — the caller should log the runner-up, since without it an
     operator cannot tell a good decision from a lucky one.
     """
-    from taskqueue.db import get_last_run_for_task, get_task
+    from taskqueue.db import get_task
 
     scored: list[tuple[tuple, float]] = []
     for key, run in candidates:
         project, task_id = key
         try:
             task_row = get_task(conn, project, task_id)
-        except Exception:
+        except sqlite3.Error:
             task_row = None
 
         if resource == "vram":
@@ -117,7 +117,7 @@ def pick_victim(
 
         try:
             elapsed = float(run.elapsed_sec())
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             elapsed = 0.0
 
         scored.append(

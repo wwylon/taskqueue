@@ -5,7 +5,8 @@ from __future__ import annotations
 import functools
 import json
 import math
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def row_get(row: Any, key: str, default: Any = None) -> Any:

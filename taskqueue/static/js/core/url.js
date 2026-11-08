@@ -1,6 +1,8 @@
+// @ts-check
 // Shareable UI URL state (page/project/status/q/group/tag/doc), tab activation, and unified project selection.
 // Uses app.js globals at call time (refresh, loadDeps, loadGroups, tqBusy, _updateFreezeBtn, _showProjectRoot, ...).
 import { S } from '../core/state.js';
+import { inputValue } from '../util/format.js';
 
 export const UI_TABS = ['queue','dashboard','history','workers','groups','deps','resources','usage','tasks','timeline','schedule','alerts','audit','api','docs'];
 
@@ -57,7 +59,7 @@ export function _buildUiSearchParams() {
   sp.set('page', tabName);
   if (S.selectedProject && S.selectedProject !== 'all') sp.set('project', S.selectedProject);
   if (S.queueStatusFilter && S.queueStatusFilter !== 'all') sp.set('status', S.queueStatusFilter);
-  const q = ((document.getElementById('queue-search') || {}).value || '').trim();
+  const q = (inputValue('queue-search') || '').trim();
   if (q) sp.set('q', q);
   if (S.groupFilter) sp.set('group', S.groupFilter);
   if (S.tagFilter) sp.set('tag', S.tagFilter);
@@ -123,7 +125,7 @@ export function _applyUiVars(state) {
     if (groupBar) groupBar.dataset.expanded = '1';
   }
   _updateTagChips();
-  const inp = document.getElementById('queue-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   if (inp) inp.value = state.q != null ? state.q : '';
   _syncQueueSearchClear();
   S.docsCurrentId = state.doc || null;
@@ -176,7 +178,7 @@ export function setProject(val, opts) {
   if (S.status) _updatePageTitle(S.status);
   else _updatePageTitle({});
   // Sync deps "all projects" checkbox with the global project filter
-  const depsAllEl = document.getElementById('deps-all-projects');
+  const depsAllEl = /** @type {HTMLInputElement | null} */ (document.getElementById('deps-all-projects'));
   if (depsAllEl) depsAllEl.checked = (S.selectedProject === 'all');
   tqBusy(Promise.all([refresh(), loadDeps(), loadGroups()]));
   // The timeline is fetched per project, so reload it now instead of waiting for the periodic tick.
@@ -193,7 +195,7 @@ export function setProject(val, opts) {
 
 /** Mark the project chips in the queue and History bars: "all" and "active" are mutually exclusive views. */
 export function _syncProjBarChips() {
-  document.querySelectorAll('#queue-proj-bar .filter-chip, #history-proj-bar .filter-chip').forEach(b => {
+  /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#queue-proj-bar .filter-chip, #history-proj-bar .filter-chip')).forEach(b => {
     const on = b.dataset.queueView === 'active' || b.dataset.historyView === 'active'
       ? S.queueActiveOnly
       : (!S.queueActiveOnly && (b.dataset.project || 'all') === S.selectedProject);
@@ -203,7 +205,7 @@ export function _syncProjBarChips() {
 
 /** Header project select: "" = all, "active" = the active view, otherwise a project name. */
 export function _syncProjSelect() {
-  const sel = document.getElementById('project-select');
+  const sel = /** @type {HTMLSelectElement | null} */ (document.getElementById('project-select'));
   if (!sel) return;
   sel.value = S.queueActiveOnly ? 'active' : (S.selectedProject === 'all' ? '' : S.selectedProject);
 }

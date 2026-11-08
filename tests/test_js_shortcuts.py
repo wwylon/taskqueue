@@ -151,5 +151,5 @@ S.kbdTaskKey = null; r.noHighlight = key('r').prevented;
     assert out["enter"] == [["p", "a"], True]
     assert out["retry"] == [["/api/retry/p/a"], ["toast.retried", "ok"], 1]
     assert out["stopOnFailed"] == 1 and out["retryRunning"] == 1
-    assert out["stop"] == [["/api/retry/p/a", "/api/stop/p/b"], ["toast.stopped", "ok"]]
+    assert out["stop"] == [["/api/retry/p/a", "/api/stop/p/b?reason=owner_request"], ["toast.stopped", "ok"]]
     assert out["err"] == ["nope", "err"] and out["noHighlight"] is False

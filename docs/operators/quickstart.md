@@ -11,7 +11,7 @@ uv sync
 tq doctor
 ```
 
-`tq doctor` prints your state home (`~/.taskqueue`), schema version, daemon pid, and port. Run it first whenever something seems off — it's the fastest way to confirm the daemon is up before issuing any commands.
+`tq doctor` prints your state home (`~/.taskqueue`), schema version, daemon pid, and port. Run it first whenever something seems off — it's the fastest way to confirm the daemon is up before issuing any commands. `tq doctor --fix` (alias `--dry-run`) lists proposed remediations without changing anything.
 
 ## Register a project
 
@@ -46,6 +46,14 @@ If the task stays `waiting` with `tq.block.resources`, the host is over the soft
 > **Note:** `enabled: true` in a YAML **does not re-queue a task that has already finished** (`completed`, `failed`, `interrupted`, …). To re-run a terminal task, use `tq retry project/task_id`. Toggling `enabled` only affects non-terminal tasks (e.g. `disabled` → `queued`).
 
 Watch the **Dashboard** tab or run `tq status` to follow progress.
+
+## Write a real (long) task
+
+For anything longer than a smoke test, use the shared clients — not hand-printed `(N%)`:
+
+1. Read [task-script-cookbook.md](../agents/task-script-cookbook.md).
+2. Copy [`examples/checkpointable/`](../../examples/checkpointable/) (or `pipeline` / `scheduled`).
+3. Import [`tq_client`](../../clients/README.md) for progress, checkpoints, and cooperative suspend/hold.
 
 ## Create your own task
 

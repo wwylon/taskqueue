@@ -36,12 +36,13 @@ class StandbyHandler(BaseHTTPRequestHandler):
     def _check_standby_auth(self) -> bool:
         """F-053: enforce the same auth_token as the main daemon (timing-safe)."""
         import hmac
+
         from taskqueue.auth import extract_request_token
 
         try:
             row = type(self)._conn_box[0].execute("SELECT value FROM config WHERE key='auth_token'").fetchone()
             token = json.loads(row[0]) if row else ""
-        except Exception:
+        except (sqlite3.Error, TypeError, ValueError, IndexError):
             token = ""
         if not token:
             return True
@@ -58,7 +59,7 @@ class StandbyHandler(BaseHTTPRequestHandler):
             schema_row = c.execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
             schema_v = int(schema_row[0]) if schema_row else 0
             return {"tasks_count": tasks, "runs_count": runs, "schema_version": schema_v}
-        except Exception:
+        except (sqlite3.Error, TypeError, ValueError, IndexError):
             return {}
 
     def do_GET(self) -> None:
@@ -105,8 +106,8 @@ class StandbyHandler(BaseHTTPRequestHandler):
                 fd, tmp_name = tempfile.mkstemp(prefix="tq-import-", suffix=".tar.gz")
                 os.close(fd)
                 tmp_path = Path(tmp_name)
-                from taskqueue.export_import import import_home
                 from taskqueue.db import open_db as _open_db
+                from taskqueue.export_import import import_home
 
                 try:
                     stream_request_body_to_file(self.rfile, length, tmp_path)
@@ -115,11 +116,11 @@ class StandbyHandler(BaseHTTPRequestHandler):
                     tmp_path.unlink(missing_ok=True)
                 try:
                     type(self)._conn_box[0].close()
-                except Exception:
+                except (sqlite3.Error, AttributeError, IndexError):
                     pass
                 type(self)._conn_box[0] = _open_db(type(self)._home / "queue.db")
                 self._send_json(200, {"ok": True, "imported": info})
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - any import error becomes a 500
                 self._send_json(500, {"error": str(exc)})
         elif path == "/api/promote":
             ev = type(self)._promote_event

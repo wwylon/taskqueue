@@ -36,7 +36,7 @@ export function applyLogSearch(preId, query, currentIdx) {
       start = idx + query.length;
     }
   }
-  if (!matches.length) { if (countEl) countEl.textContent = '0 matches'; return; }
+  if (!matches.length) { if (countEl) countEl.textContent = i18n.t('log.zeroMatches'); return; }
 
   currentIdx = Math.max(0, Math.min(currentIdx, matches.length - 1));
   if (S.logSearch[preId]) S.logSearch[preId].current = currentIdx;
@@ -236,13 +236,28 @@ export async function toggleDashLog(runId, project, taskId) {
     delete S.expandedLogs[key];
     wrap.classList.remove('open');
     if (btn) btn.textContent = i18n.t('btn.log');
+    // F-257: close dashboard log SSE
+    if (S.dashLogSseMap[runId]) { S.dashLogSseMap[runId].close(); delete S.dashLogSseMap[runId]; }
     return;
   }
   S.expandedLogs[key] = { content: '', isRunning: true };
   wrap.classList.add('open');
   if (btn) btn.textContent = i18n.t('btn.hideLog');
   wrap.scrollIntoView({ block: 'nearest' });
-  await _fetchLog(runId, `d-log-pre-${runId}`);
+  // F-257: stream like queue (no per-SSE-tick _fetchLog from refresh.js).
+  if (typeof EventSource !== 'undefined') {
+    openLogStream({
+      runId,
+      maps: [S.logSseMap, S.cardLogSseMap, S.dashLogSseMap],
+      map: S.dashLogSseMap,
+      preId: `d-log-pre-${runId}`,
+      followId: `d-log-follow-${runId}`,
+      expanded: S.expandedLogs,
+      stateKey: key,
+    });
+  } else {
+    await _fetchLog(runId, `d-log-pre-${runId}`);
+  }
 }
 
 export async function refreshDashLog(runId) {

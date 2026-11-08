@@ -8,6 +8,7 @@
   "tq.block.paused": "Project paused",
   "tq.block.mutex": "Waiting on named lock",
   "tq.block.scavenger": "Waiting — capacity contended",
+  "tq.block.backoff": "Waiting — retry backoff",
   "tq.run.nonzero": "Non-zero exit",
   "tq.run.cap": "Hit wall-clock cap",
   "tq.run.preflight": "Preflight failed",
@@ -26,5 +27,6 @@
   "tq.infra.clock_jump": "Host slept/woke — re-queued",
   "tq.infra.clock_jump_flap": "Clock-jump flap — use tq retry",
   "tq.infra.orphan": "Orphan run — re-queued",
-  "tq.infra.hung": "Hung task — re-queued"
+  "tq.infra.hung": "Hung task — re-queued",
+  "tq.wait.removed": "Removed while waiting"
 }

@@ -10,8 +10,8 @@ from taskqueue import errors as tqerr
 from taskqueue._db_tasks import (
     collect_running_dependents,
     invalidate_running_dependents,
-    revalidate_running_dependencies,
     retry_task,
+    revalidate_running_dependencies,
     unmet_dependency_label,
 )
 from taskqueue.db import open_db

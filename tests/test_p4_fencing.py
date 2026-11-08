@@ -8,10 +8,10 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
 from taskqueue._db_runs import reclaim_expired_leases
 from taskqueue._db_tasks import retry_task, upsert_task
+from taskqueue.config import Project
+from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.fencing import (
     lost_attempt_task_status,
     may_auto_requeue,

@@ -1,0 +1,13 @@
+task_id: train-demo
+description: Checkpointable demo using tq_client (cadence + resume_args + auto_retry_on_cap)
+command: python
+args: [scripts/train_demo.py, --out, runs/train_demo, --steps, "20"]
+resume_args: [scripts/train_demo.py, --out, runs/train_demo, --steps, "20", --resume]
+wall_clock_cap_sec: 3600
+execution_semantics: checkpointable
+auto_retry_on_cap: true
+enabled: false
+priority: 40
+resources:
+  cpu_cores: 1
+  ram_gib: 0.5

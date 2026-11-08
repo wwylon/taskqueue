@@ -1,9 +1,13 @@
 // Queue tab: task table, mobile cards, search, filters, pagination, row flash and dependency jumps.
 // Uses app.js globals at call time (i18n, badge, refresh, _syncUrl, _pageSize, _stripLive helpers, etc.).
 import { S } from '../core/state.js';
+import { _isRestartStatus, _requeueLabel } from '../core/nav.js';
 import { projStyle } from '../util/projcolor.js';
-import { escHtml, jsq, taskKey, qrowId, domIdPart, fmt, dur, isMobileLayout, onLayoutChange, progressHealthHtml } from '../util/format.js';
+import { escHtml, taskKey, qrowId, domIdPart, fmt, dur, isMobileLayout, onLayoutChange, progressHealthHtml } from '../util/format.js';
+import { _taskCopyIconBtn } from '../util/labels.js';
 import { showToast } from '../components/modals.js';
+import { _gpuBadgeHtml, _logChipsHtml } from '../components/runmetrics.js';
+import { _ansiToHtml } from '../components/runlogs.js';
 
 /** Must match queue table <th> count in index.html (incl. Started / Finished). */
 export const QUEUE_COLS = 9;
@@ -95,7 +99,7 @@ export function sortQueue(field) {
       && (!S.selectedProject || S.selectedProject === 'all')
       && (S.queueTotal || 0) > 2000) {
     try {
-      showToast(i18n.t('queue.heavySortNeedProject') || 'Pick a project before sorting by deps / start order on large queues.', 'warn');
+      showToast(i18n.t('queue.heavySortNeedProject'), 'warn');
     } catch (_) {}
     return;
   }
@@ -106,27 +110,8 @@ export function sortQueue(field) {
 }
 
 export function renderQueue() {
+  // F-258: worker filter is applied server-side via ?worker= (refresh.js).
   let rows = [...S.queue];
-  if (S.globalWorkerFilter) {
-    if (S.globalWorkerFilter === 'master') {
-      rows = rows.filter(t => {
-        if (t.status === 'running') {
-          const run = (S.status.running || []).find(r => r.project === t.project && r.task_id === t.task_id);
-          return run && !run.worker_id;
-        }
-        return true;
-      });
-    } else {
-      rows = rows.filter(t => {
-        if (t.status === 'running') {
-          const run = (S.status.running || []).find(r => r.project === t.project && r.task_id === t.task_id);
-          return run && run.worker_id === S.globalWorkerFilter;
-        }
-        // For non-running tasks, match against the last recorded worker_id from the run record
-        return t.last_worker_id === S.globalWorkerFilter;
-      });
-    }
-  }
   if (S.savedToday) {
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -160,7 +145,7 @@ export function renderQueue() {
   const mobileCards = document.getElementById('queue-mobile-cards');
   if (!rows.length) {
     const headingEmpty = document.getElementById('queue-all-tasks-heading');
-    if (headingEmpty) headingEmpty.textContent = `All tasks (0 of ${S.queueTotal})`;
+    if (headingEmpty) headingEmpty.textContent = i18n.t('queue.allTasksEmpty', {total: S.queueTotal});
     if (tableWrap) tableWrap.style.display = 'none';
     if (mobileCards) { mobileCards.innerHTML = ''; mobileCards.style.display = 'none'; }
     if (emptyEl) emptyEl.hidden = false;
@@ -321,9 +306,9 @@ export function _queueDepHtml(t, statusMap) {
     return `<button type="button" class="${cls}" style="max-width:7rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"
       title="${escHtml(tip)} — ${escHtml(d)}" data-click="${tqAct([['gotoQueueDep', String(t.project), String(d)]])}">${escHtml(d)}</button>`;
   }).join(' ');
-  const moreBit = more ? ` <span class="dep-more" title="${escHtml(i18n.t('task.depsMore') || 'more dependencies')}">…</span>` : '';
+  const moreBit = more ? ` <span class="dep-more" title="${escHtml(i18n.t('task.depsMore'))}">…</span>` : '';
   const forecast = (t.forecast_order != null)
-    ? ` <span class="dep-count" title="Timeline forecast start order">#${escHtml(String(t.forecast_order))}</span>`
+    ? ` <span class="dep-count" title="${escHtml(i18n.t('queue.forecastOrderTitle'))}">#${escHtml(String(t.forecast_order))}</span>`
     : '';
   return `<div class="dep-line"><span class="dep-count">${countLabel}</span>${forecast}${chips ? ' ' + chips : ''}${moreBit}</div>`;
 }
@@ -336,7 +321,6 @@ export function _queueCheckHtml(t) {
 }
 
 export function _buildQueueRow(t, statusMap) {
-    const key = taskKey(t.project, t.task_id);
     const actions = [];
     if (t.status === 'running' || t.status === 'queued') {
       actions.push(`<button class="action-btn" data-click="${tqAct([['stopTask', TQ_THIS, String(t.project), String(t.task_id)]])}">${i18n.t('btn.stop')}</button>`);
@@ -351,7 +335,7 @@ export function _buildQueueRow(t, statusMap) {
     }
     if (t.status === 'completed') {
       if (t.processed_at) {
-        actions.push(`<span title="Processed ${fmt(t.processed_at)}" style="font-size:10px;color:var(--muted);padding:2px 4px">✓ processed</span>`);
+        actions.push(`<span title="Processed ${fmt(t.processed_at)}" style="font-size:10px;color:var(--muted);padding:2px 4px">${i18n.t('status.processed')}</span>`);
       } else {
         actions.push(`<button class="action-btn" title="Mark as processed by your project" data-click="${tqAct([['markProcessed', TQ_THIS, String(t.project), String(t.task_id)]])}">${i18n.t('btn.markDone')}</button>`);
       }
@@ -371,10 +355,6 @@ export function _buildQueueRow(t, statusMap) {
     if (t.run_id) {
       actions.push(`<button class="action-btn blue" id="q-logbtn-${t.run_id}" data-click="${tqAct([['toggleQueueLog', t.run_id, String(rowId), t.status==='running']])}">${logOpen ? i18n.t('btn.hideLog') : i18n.t('btn.log')}</button>`);
     }
-    const taskTags = Array.isArray(t.tags) ? t.tags : [];
-    const tagChipsHtml = taskTags.length ? `<div style="display:inline-flex;flex-wrap:wrap;gap:2px;margin-left:4px;vertical-align:middle">${taskTags.map(tag =>
-      `<button type="button" data-click="${tqAct([['toggleTagFilter', String(tag)]])}" style="font-size:9px;padding:1px 5px;border-radius:8px;border:1px solid var(--accent);color:var(--accent);background:transparent;cursor:pointer;line-height:1.4">${escHtml(tag)}</button>`
-    ).join('')}</div>` : '';
     const depHtml = _queueDepHtml(t, statusMap);
 
     const logRowHtml = t.run_id ? `<tr class="inline-log-row${S.expandedLogs[`q:${t.run_id}`]?' open':''}" id="${rowId}">
@@ -513,7 +493,7 @@ export function _buildQueueCard(t, liveMap, statusMap) {
     acts.push(_forceBtnHtml(t));
   if (t.status === 'completed') {
     if (t.processed_at)
-      acts.push(`<span style="font-size:10px;color:var(--muted)">✓ processed</span>`);
+      acts.push(`<span style="font-size:10px;color:var(--muted)">${i18n.t('status.processed')}</span>`);
     else
       acts.push(`<button class="action-btn" data-click="${tqAct([['markProcessed', TQ_THIS, String(t.project), String(t.task_id)]])}">${i18n.t('btn.markDone')}</button>`);
   }

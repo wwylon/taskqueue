@@ -19,6 +19,7 @@ These appear as `block_reason` on `queued` tasks, not on runs.
 | `tq.block.paused` | Project paused | Project paused via `tq pause` | `tq resume <project>` |
 | `tq.block.mutex` | Waiting on named lock | Named `resources.locks` held by another running task | Wait; or rename lock if it is a config error |
 | `tq.block.scavenger` | Waiting — capacity contended | A `class: scavenger` task waits because other (non-scavenger) work is blocked on capacity. | Self-clears when the queue is idle |
+| `tq.block.backoff` | Waiting — retry backoff | `retry_backoff_sec`: the task failed recently and waits `base × 2^(n-1)` before its next attempt | Self-clears; `tq retry` starts it now |
 
 ## `tq.run.*` — execution outcome
 
@@ -80,11 +81,13 @@ Every `tq` command follows one contract (constants in `taskqueue/_cli_helpers.py
 | Code | Meaning |
 |------|---------|
 | 0 | every selected task `completed` |
-| 1 | a settled task is `failed` / `interrupted` / `stopped` / `suspended` / `unknown` / `disabled` |
+| 1 | a settled task is `failed` / `interrupted` / `stopped` / `suspended` / `unknown` / `disabled` / `removed` (deleted after wait had seen it; `tq.wait.removed`) |
 | 2 | `--timeout` elapsed with tasks still pending |
-| 3 | task not found, no DB, or bad arguments |
+| 3 | task never existed (or no DB / bad arguments) — not the same as mid-wait remove |
 
-`--raw-exit` (single task) restores the legacy codes: the task's own exit code, `124` on timeout, `1` if not found. With `--json` the task exit code is in `tasks[].exit_code`.
+`--raw-exit` (single task) restores the legacy codes: the task's own exit code, `124` on timeout, `1` if not found or removed. With `--json` the task exit code is in `tasks[].exit_code`.
+
+If wait observed a task and it is later deleted (`tq remove`, YAML sync), the result lists it under `tasks` with `status: removed` and `last_error_code: tq.wait.removed` (exit **1**). A key that was never in the DB stays in `not_found` (exit **3**).
 
 ## HTTP API error responses
 

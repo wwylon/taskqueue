@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from datetime import datetime, timedelta, timezone
-
+from datetime import UTC, datetime, timedelta
 
 _CRON_RANGES = ((0, 59), (0, 23), (1, 31), (1, 12), (0, 7))
 
@@ -51,7 +50,7 @@ def cron_valid(expr: object) -> bool:
     return isinstance(expr, str) and _parse_cron(expr) is not None
 
 
-def cron_matches(expr: str, dt: "datetime") -> bool:  # type: ignore[name-defined]
+def cron_matches(expr: str, dt: datetime) -> bool:  # type: ignore[name-defined]
     """Return True if dt matches a 5-field cron expression (MIN HOUR DOM MON DOW).
 
     Invalid expressions never match. When both DOM and DOW are restricted, either
@@ -78,7 +77,7 @@ def check_cron_schedule(conn: sqlite3.Connection, state: dict) -> None:
     from taskqueue._db_tasks import retry_task
     from taskqueue.models import task_key
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     last: datetime | None = state.get("ts")
     state["ts"] = now
     if last is None:
@@ -89,7 +88,7 @@ def check_cron_schedule(conn: sqlite3.Connection, state: dict) -> None:
             "SELECT project, task_id, status, schedule FROM tasks "
             "WHERE schedule IS NOT NULL AND schedule != '' AND schedule != 'null'"
         ).fetchall()
-    except Exception:
+    except sqlite3.Error:
         return
 
     for row in rows:
@@ -102,7 +101,7 @@ def check_cron_schedule(conn: sqlite3.Connection, state: dict) -> None:
             cron_expr = sched.get("cron")
             if not cron_expr:
                 continue
-        except Exception:
+        except (TypeError, ValueError):
             continue
 
         check = (last + timedelta(seconds=60)).replace(second=0, microsecond=0)

@@ -66,7 +66,7 @@ def build_diagnose(
         from taskqueue.metrics_snapshot import build_run_metrics
 
         metrics = build_run_metrics(conn, project, task_id, home=home, samples=60)
-    except Exception:
+    except Exception:  # noqa: BLE001 - metrics are optional in the diagnose bundle
         metrics = None
     return {
         "project": project,

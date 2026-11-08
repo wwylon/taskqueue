@@ -9,6 +9,7 @@ with the ``TASKQUEUE_HOME`` environment variable):
       daemon.pid
       daemon.log
       logs/<project>/<task_id>_<ts>.log
+      locks/gpu.lock    # present while a local GPU task runs (F-241)
 
 ``projects.yaml`` format::
 
@@ -88,6 +89,9 @@ VALID_CONFIG_KEYS = {
     "recovery_cooldown_sec": (int, 0, 3600),
     "scavenger_preempt_cooldown_sec": (int, 0, 3600),
     "admission_shadow_mode": (int, 0, 1),
+    "service_probe_background": (int, 0, 1),
+    "adopt_on_restart": (int, 0, 1),
+    "submit_key_ttl_sec": (int, 60, 30 * 86400),
     # P6-P8
     "reservation_max_ticks": (int, 0, 3600),
     "cpu_measure_ema_sec": (float, 1.0, 600.0),
@@ -119,6 +123,8 @@ VALID_CONFIG_KEYS = {
     "retention_projects": (str, 0, 4096),
     # 0 = off; when set, finished task logs larger than this are truncated to a byte tail.
     "retention_log_max_bytes": (int, 0, 64 * 1024 * 1024),
+    # 0 = off; finished logs older than this many days are gzipped (readers decompress transparently).
+    "retention_log_gzip_days": (int, 0, 36500),
     # Aggregated agent/API usage counters (api_usage); see docs/security.md.
     "usage_tracking": (int, 0, 1),
     "retention_usage_days": (int, 1, 36500),
@@ -144,7 +150,7 @@ def validate_config(key: str, val: any) -> str | None:
             parsed = float(val)
         else:
             parsed = str(val)
-    except Exception:
+    except (TypeError, ValueError):
         return f"Invalid value '{val}' for '{key}' (expected {expected_type.__name__})"
     if expected_type in (int, float):
         if parsed < min_val or parsed > max_val:
@@ -190,6 +196,16 @@ def controls_dir(home: Path) -> Path:
     return home / "controls"
 
 
+def locks_dir(home: Path) -> Path:
+    """Directory for host-local lock files (F-241 gpu.lock, …)."""
+    return home / "locks"
+
+
+def gpu_lock_path(home: Path) -> Path:
+    """Presence file while any local (or this-host worker) GPU task is running."""
+    return locks_dir(home) / "gpu.lock"
+
+
 def control_path(home: Path, project: str, task_id: str) -> Path:
     """Per-run cooperative control file (suspend request, etc.)."""
     # project/task_id can come from URLs: never let separators or ".." leave controls/.
@@ -232,7 +248,7 @@ def load_project_file_config(root: Path) -> dict:
         return {}
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
+    except (OSError, yaml.YAMLError):
         return {}
     return raw if isinstance(raw, dict) else {}
 

@@ -29,7 +29,7 @@ def get_all_project_limits(conn: sqlite3.Connection) -> dict[str, dict[str, floa
                     result[project] = {f: 0.0 for f in _PROJECT_LIMIT_FIELDS}
                 try:
                     result[project][field] = float(json.loads(r["value"]))
-                except Exception:
+                except (TypeError, ValueError):
                     pass
                 break
     return result

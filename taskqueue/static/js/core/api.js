@@ -1,3 +1,4 @@
+// @ts-check
 // Fetch auth wrapper, SSE helper and JSON fetch helpers.
 
 // Every fetch carries the stored bearer token. Installed once at import time.
@@ -93,8 +94,10 @@ export function openStream(path, handlers = {}) {
       h.readyState = es.readyState;
       if (h.onerror) h.onerror(ev);
       // CLOSED: remint ticket and reconnect (native retry would reuse spent ticket).
-      if (!h._closed && es.readyState === 2) {
+      // Ignore errors from a superseded EventSource after a newer connect() replaced h._es.
+      if (!h._closed && h._es === es && es.readyState === 2) {
         try { es.close(); } catch (_) {}
+        if (h._reconnectTimer) clearTimeout(h._reconnectTimer);
         h._reconnectTimer = setTimeout(connect, h._backoff);
         h._backoff = Math.min(h._backoff * 2, 15000);
       }

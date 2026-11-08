@@ -7,9 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from taskqueue._db_tasks import upsert_task
 from taskqueue.config import Project
 from taskqueue.db import parse_task_yaml
-from taskqueue._db_tasks import upsert_task
 from taskqueue.master_client import via_master
 from tests.helpers.master_worker import http_request, make_handler_env
 

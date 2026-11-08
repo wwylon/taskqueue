@@ -1,3 +1,4 @@
+// @ts-check
 // Delegated event actions: replaces inline onclick/onchange/... attributes.
 //
 //   <button data-click='[["fn", "arg", 1, {"$":"this"}]]'>      calls window.fn("arg", 1, <element>)

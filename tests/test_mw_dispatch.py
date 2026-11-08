@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-from taskqueue.config import Project
 from taskqueue.scheduler import MASTER_NODE_ID, FilterContext, Node, filter_task
 from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import (

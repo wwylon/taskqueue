@@ -1,3 +1,4 @@
+// @ts-check
 // Shared UI state. app.js reads and writes these through `S` (window.tqState); modules import it directly.
 export const S = {
   status: null,
@@ -53,6 +54,7 @@ export const S = {
   expandedLogs: {},      // run log panels, key = panel prefix + run_id (d:/q:/qc:/h:)
   logSseMap: {},         // live log EventSources by runId (queue panel)
   cardLogSseMap: {},     // live log EventSources by runId (run cards)
+  dashLogSseMap: {},     // live log EventSources by runId (dashboard) — F-257
   expandedHistory: {},   // per-task run history panels, key = project/task_id
   _histGen: {},          // F-133: generation tokens for async history panels
   _groupChipScope: '',   // F-174: last project scope used for /api/groups chip fetch
@@ -67,6 +69,7 @@ export const S = {
   refreshResolvers: [],
   prevRunningStr: '',     // structural identity of the running set (not live metrics)
   prevGaugeStructStr: '',
+  fitsNowAt: 0,           // last /api/plan fetch for the dashboard "Fits now" strip (ms)
   prevWorkersStr: '',
   dashboardEtag: '',
   dashboardEtagUrl: '',
@@ -86,4 +89,5 @@ export const S = {
   bulkRows: {},          // queue: status by selection key for rows selected via 'select all matching'
   drawerSeries: null,     // drawer: TQ_METRIC sparkline samples of the task's latest run ({key: [[ts, v], ...]})
   drawerSeriesAt: 0,
+  drawerPrevSeries: null, // drawer: previous run's TQ_METRIC series, dashed under each sparkline ({runId, series})
 };

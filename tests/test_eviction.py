@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from taskqueue.daemon import _evict_one_suspend
 from taskqueue.db import open_db
-from taskqueue._db_tasks import request_stop
 
 
 def _seed_running(db, project="proj", task_id="T1", priority=50):

@@ -1,15 +1,17 @@
 """Atomic remote-worker task claim logic, extracted from web.py."""
 
 from __future__ import annotations
-from taskqueue._db_tasks import get_task
-from taskqueue.jsonutil import json_list
 
 import json
+import logging
 import sqlite3
-from typing import Any
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
+from typing import Any
+
+from taskqueue._db_tasks import get_task
+from taskqueue.jsonutil import json_list
 from taskqueue.rows import row_get
 
 # F-100: GC orphan overlays every N claim attempts (cheap I/O; not every call).
@@ -26,8 +28,11 @@ _QUEUED_SVC_CACHE_TTL = 3.0
 # inside BEGIN IMMEDIATE) is always fresh and must NOT use these caches.
 # Keyed by str(db_path) so different test databases (tmp_path) never share entries.
 _CONFIG_CACHE: dict[str, tuple[float, dict]] = {}
-_OCC_CACHE: dict[str, tuple[float, list]] = {}
+_OCC_CACHE: dict[str, tuple[float, Any]] = {}
 _CLAIM_CACHE_TTL = 5.0
+
+
+_log = logging.getLogger(__name__)
 
 
 def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], dict]) -> tuple[dict | None, str | None]:
@@ -40,6 +45,7 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
     code_package: dict | None = None
     package_hash: str | None = None
     proj_obj = projects_ref().get(proj)
+    from taskqueue.config import state_home
     from taskqueue.provision import (
         PROVIDER_BUNDLE,
         PROVIDER_GIT_PATCH,
@@ -48,7 +54,6 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
         package_from_bundle,
         resolve_code_provider,
     )
-    from taskqueue.config import state_home
 
     bh = None
     if "bundle_hash" in selected_task.keys():
@@ -99,7 +104,7 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
 def _svc_key(raw: str) -> str:
     try:
         return json.dumps(json_list(raw), sort_keys=True)
-    except Exception:
+    except (TypeError, ValueError):
         return raw or "[]"
 
 
@@ -115,7 +120,8 @@ def _precheck_services(rdb: sqlite3.Connection, db_key: str, cfg: dict) -> dict[
     svc_cache_at, pre_queued = _QUEUED_SVC_CACHE.get(db_key, (0.0, []))
     if not pre_queued or time.monotonic() - svc_cache_at >= _QUEUED_SVC_CACHE_TTL:
         pre_queued = rdb.execute(
-            "SELECT DISTINCT requires_services FROM tasks WHERE status = 'queued' AND enabled = 1"
+            "SELECT DISTINCT requires_services FROM tasks "
+            "WHERE status IN ('queued', 'stopped') AND enabled = 1"
         ).fetchall()
         _QUEUED_SVC_CACHE[db_key] = (time.monotonic(), pre_queued)
     # Probe system once for VRAM headroom so service checks can skip slow Ollama probes.
@@ -123,7 +129,7 @@ def _precheck_services(rdb: sqlite3.Connection, db_key: str, cfg: dict) -> dict[
         from taskqueue.resources import detect_system as _detect_sys
 
         system_info: dict | None = _detect_sys()
-    except Exception:
+    except Exception:  # noqa: BLE001 - hardware probes fail in many ways
         system_info = None
     out: dict[str, str | None] = {}
     for pr in pre_queued:
@@ -173,7 +179,7 @@ def _claim_response(
         task_payload["requires_paths"] = relativize_requires_paths(task_payload["requires_paths"], proj_obj.root)
     try:
         task_payload["args"] = json_list(claimed_row_dict.get("args"))
-    except Exception:
+    except (TypeError, ValueError):
         pass
     task_payload.pop("args_override", None)
     return {
@@ -193,12 +199,12 @@ def _maybe_gc_orphan_packages(db_path: Path) -> None:
     _gc_claim_counter += 1
     if _gc_claim_counter % _GC_ORPHAN_INTERVAL == 0:
         try:
-            from taskqueue.provision import gc_orphan_packages
             from taskqueue.config import state_home
+            from taskqueue.provision import gc_orphan_packages
 
             gc_orphan_packages(state_home(), db_path)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - orphan package GC is best-effort
+            _log.debug("orphan package GC failed", exc_info=True)
 
 
 def _insert_claimed_run(
@@ -260,7 +266,7 @@ def _insert_claimed_run(
         "UPDATE tasks SET status = 'running', force_run = 0, "
         "block_reason = NULL, last_error_code = NULL, last_run_id = ?, updated_at = ?, "
         "total_run_count = COALESCE(total_run_count, 0) + 1 "
-        "WHERE project = ? AND task_id = ? AND status = 'queued' AND enabled = 1",
+        "WHERE project = ? AND task_id = ? AND status IN ('queued', 'stopped') AND enabled = 1",
         (run_id, started, selected_proj, selected_tid),
     )
     if (cur_claim.rowcount or 0) == 0:
@@ -306,7 +312,7 @@ def claim_next_remote_task(
         for c in holder:
             try:
                 c.close()
-            except Exception:
+            except sqlite3.Error:
                 pass
 
 
@@ -326,25 +332,19 @@ def _claim_next_remote_task(
     F-063: args_override is baked in the same transaction as the claim.
     """
     from taskqueue.db import (
-        failed_attempt_count,
-        is_project_paused,
         get_config,
-        get_project_limits,
-        is_project_frozen,
         open_write_conn,
-        with_gpu_usage,
     )
     from taskqueue.estimate import estimate_task_resources
     from taskqueue.placement import (
         apply_hold_to_node,
         clear_remote_reservation,
+        get_remote_reservation,
         refresh_remote_reservation,
         select_task_for_node,
-        get_remote_reservation,
     )
     from taskqueue.scheduler import (
         FilterContext,
-        build_filter_context,
         dep_status_from_conn,
         filter_dispatch,
         filter_draining,
@@ -355,7 +355,6 @@ def _claim_next_remote_task(
         occupancy_from_running_rows,
         worker_slot_reserved,
     )
-    from taskqueue.resources import sort_queued_fairshare
 
     worker_id = worker["worker_id"]
 
@@ -370,39 +369,17 @@ def _claim_next_remote_task(
         _CONFIG_CACHE[_db_key] = (time.monotonic(), _cfg_cached)
     _svc_cache = _precheck_services(rdb, _db_key, _cfg_cached)
 
-    # F-028 / F-071: bounded candidate window — avoid materializing the full queue.
+    # F-028 / F-071 / F-214: bounded candidate window — shared with local admit.
     CANDIDATE_WINDOW = 256
-    from taskqueue._db_tasks import get_queued_tasks as _get_queued
-    from taskqueue.db import blocked_projects as _blocked_projects
-    from taskqueue.scheduler import build_task_status_map as _status_map_fn
-
-    queued_raw = _get_queued(rdb, limit=CANDIDATE_WINDOW, statuses=("queued",))
-    if len(queued_raw) >= CANDIDATE_WINDOW:
-        # Head-of-line: a full window may be all dependency/paused-blocked rows.
-        queued_raw = _get_queued(
-            rdb,
-            limit=CANDIDATE_WINDOW,
-            statuses=("queued",),
-            status_map=_status_map_fn(rdb, queued_raw),
-            skip_projects=set(_blocked_projects(rdb)),
-        )
-
-    _occ_at, _occ_cached = _OCC_CACHE.get(_db_key, (0.0, []))
-    if not _occ_cached or time.monotonic() - _occ_at >= _CLAIM_CACHE_TTL:
-        running_rows = rdb.execute(
-            "SELECT project, task_id, exclusive, exclusive_project, resources FROM tasks WHERE status = 'running'"
-        ).fetchall()
-        _occ_cached = running_rows
-        _OCC_CACHE[_db_key] = (time.monotonic(), running_rows)
-    else:
-        running_rows = _occ_cached
-    occ = occupancy_from_running_rows(running_rows)
+    from taskqueue.admit_context import load_fairshare_candidates
 
     cfg = _cfg_cached
-    usage_rows = rdb.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
-    usage_by_proj: dict[str, float] = {r["project"]: float(r["gpu_seconds"]) for r in usage_rows}
-    fairshare_weight = float(cfg.get("fairshare_weight", 1e-6))
-    queued = sort_queued_fairshare(queued_raw, occ["gpu_running_by_proj"], usage_by_proj, fairshare_weight)
+    # F-244: include stopped so RAM/VRAM hard-stop auto-restart works with dispatch:remote
+    # (local admit already uses queued+stopped; workers previously saw queued only).
+    queued, occ, _usage_by_proj, status_map, _running = load_fairshare_candidates(
+        rdb, limit=CANDIDATE_WINDOW, statuses=("queued", "stopped")
+    )
+    _OCC_CACHE[_db_key] = (time.monotonic(), occ)
 
     peer_nodes_raw = _online_peer_nodes(rdb, cfg)
 
@@ -451,21 +428,30 @@ def _claim_next_remote_task(
     # Seed from precheck; miss still probes (F-138) inside build_admit_context.
     _admit_caches.svc.update(_svc_cache)
 
-    def _ctx_for_row(row, *, conn, occupancy, config):
+    def _ctx_for_row(row, *, conn, occupancy, config, status_lookup: dict | None = None):
+        # F-249: prefer prefetched status_map (local parity); fall back to per-dep SELECT.
+        lookup = status_lookup if status_lookup is not None else {}
+
+        def _dep_status(p: str, t: str) -> str | None:
+            hit = lookup.get((p, t))
+            if hit is not None:
+                return hit
+            return dep_status_from_conn(conn, p, t)
+
         return build_admit_context(
             row,
             caches=_admit_caches,
             conn=conn,
             occupancy=occupancy,
             config=config,
-            dep_status=lambda p, t: dep_status_from_conn(conn, p, t),
+            dep_status=_dep_status,
             online_workers=1,
             running_locks=occupancy.get("running_locks") or set(),
             allow_remote=bool(config.get("notify_allow_remote")),
         )
 
     def _ctx_for_select(row):
-        return _ctx_for_row(row, conn=rdb, occupancy=occ, config=cfg)
+        return _ctx_for_row(row, conn=rdb, occupancy=occ, config=cfg, status_lookup=status_map)
 
     placement_mode = str(cfg.get("placement_mode") or "binpack")
     placement_age = float(cfg.get("placement_age_sec", 120) or 0)
@@ -474,6 +460,7 @@ def _claim_next_remote_task(
 
     def _log_placement(msg: str) -> None:
         import sys
+
         from taskqueue.scheduler import _ts
 
         print(f"[queue] {_ts()} info: {msg}", file=sys.stderr)
@@ -524,7 +511,7 @@ def _claim_next_remote_task(
     # a running row visible to other threads (capture must not hold BEGIN IMMEDIATE).
     try:
         code_package, package_hash = _capture_code_package(selected_task_dict, selected_proj, projects_ref)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any capture error is returned to the worker
         return {"task": None, "error": f"code package capture failed: {exc}"}
 
     # F-028/F-059: BEGIN IMMEDIATE — revalidate admission on fresh DB state.
@@ -564,16 +551,17 @@ def _claim_next_remote_task(
         if _hold_fresh and _hold_fresh.get("key") != _sel_key:
             node_fresh = apply_hold_to_node(node_fresh, hold=_hold_fresh)
 
-        still_queued = wdb.execute(
-            "SELECT * FROM tasks WHERE project=? AND task_id=? AND status='queued' AND enabled=1",
+        still_claimable = wdb.execute(
+            "SELECT * FROM tasks WHERE project=? AND task_id=? "
+            "AND status IN ('queued', 'stopped') AND enabled=1",
             (selected_proj, selected_tid),
         ).fetchone()
-        if not still_queued:
+        if not still_claimable:
             wdb.rollback()
             return {"task": None}
 
-        ctx, cpu, ram, gpu, attempts = _ctx_for_row(still_queued, conn=wdb, occupancy=occ_fresh, config=cfg_fresh)
-        fr = filter_task(still_queued, node_fresh, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts)
+        ctx, cpu, ram, gpu, attempts = _ctx_for_row(still_claimable, conn=wdb, occupancy=occ_fresh, config=cfg_fresh)
+        fr = filter_task(still_claimable, node_fresh, ctx, cpu=cpu, ram=ram, gpu=gpu, attempt_count=attempts)
         if not fr.ok:
             wdb.rollback()
             return {"task": None}
@@ -588,7 +576,7 @@ def _claim_next_remote_task(
         claimed = _insert_claimed_run(
             wdb,
             db_path,
-            still_queued,
+            still_claimable,
             worker_fresh,
             worker_id,
             selected_proj,
@@ -602,9 +590,9 @@ def _claim_next_remote_task(
             return {"task": None}
         run_id, finalize_token, log_p, claimed_row_dict, _lease_ttl = claimed
         wdb.commit()
-        claimed_row = still_queued
+        claimed_row = still_claimable
         clear_remote_reservation(selected_proj, selected_tid, db_key=_db_key)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any claim error rolls back and is returned to the worker
         wdb.rollback()
         return {"task": None, "error": str(exc)}
     finally:

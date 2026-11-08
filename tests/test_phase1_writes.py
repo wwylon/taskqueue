@@ -112,8 +112,8 @@ def test_patch_enabled_targets_only_matching_document(tmp_path: Path) -> None:
 
 
 def test_runner_metrics_flush_uses_own_connection_in_reader_thread(tmp_path):
-    import threading
     from unittest.mock import patch
+
     from taskqueue import runner
 
     seen = []
@@ -125,6 +125,8 @@ def test_runner_metrics_flush_uses_own_connection_in_reader_thread(tmp_path):
         conn = object()
         db_path = tmp_path / "x.db"
         _owner_thread = -1  # not the calling thread
+        _reader_db = runner.ActiveRun._reader_db
+        _close_reader_db = runner.ActiveRun._close_reader_db
 
     def fake_update(db, run_id, payload, *, commit=True):
         seen.append(db)
@@ -152,7 +154,7 @@ def test_daemon_shutdown_handles_sigint_and_stops_in_parallel():
 
 def test_terminate_tree_kills_grandchildren():
     import subprocess
-    import time
+
     import psutil
 
     from taskqueue.reap import terminate_tree
@@ -175,6 +177,7 @@ def test_terminate_tree_kills_grandchildren():
 def test_tail_reader_joins_partial_lines(tmp_path):
     import threading
     import time
+
     from taskqueue import runner
 
     log = tmp_path / "t.log"
@@ -189,14 +192,12 @@ def test_tail_reader_joins_partial_lines(tmp_path):
 
     class Fake:
         proc = P()
-        task_row = {"wall_clock_cap_sec": None}
         _log_path = log
-        started_at = time.monotonic()
+        _tail_from_end = False
         _log_file = None
 
-        def _handle_output_line(self, line, stamped, cap):
+        def _handle_output_line(self, line, stamped):
             got.append(line)
-            return False
 
         def _finish_stream(self, crashed):
             pass
@@ -218,6 +219,7 @@ def test_tail_reader_joins_partial_lines(tmp_path):
 
 def test_validate_task_spec_rejects_malformed(tmp_path):
     import pytest
+
     from taskqueue.db import validate_task_spec
 
     p = tmp_path / "t.yaml"
@@ -239,6 +241,7 @@ def test_validate_task_spec_rejects_malformed(tmp_path):
 
 def test_concurrent_open_db_migrations_do_not_race(tmp_path):
     import threading
+
     from taskqueue.db import open_db
 
     db = tmp_path / "q.db"
@@ -258,6 +261,7 @@ def test_concurrent_open_db_migrations_do_not_race(tmp_path):
 
 def test_split2_raises_bad_request_without_sending(tmp_path):
     import pytest
+
     from taskqueue.web.handler import BadRequest, Handler
 
     class H:
@@ -269,7 +273,8 @@ def test_split2_raises_bad_request_without_sending(tmp_path):
 
 
 def test_next_cron_fire_cache_matches_scan():
-    from datetime import datetime, timedelta, UTC
+    from datetime import UTC, datetime, timedelta
+
     from taskqueue import operator_features as of
 
     of._CRON_FIRE_CACHE.clear()
@@ -491,3 +496,28 @@ def test_log_incremental_fetch_from_offset(tmp_path: Path) -> None:
     # offset beyond EOF (log rotated) falls back to the normal tail
     code, body = http_request(H, "GET", f"/api/logs/{rid}?from=9999")
     assert body.startswith(b"one\n")
+
+
+def test_put_task_yaml_rejects_an_invalid_task_spec_and_keeps_the_file(tmp_path: Path) -> None:
+    """F-238: the YAML editor's save must run the full task parse, not only "is it a mapping"."""
+    from taskqueue.db import parse_task_yaml, upsert_task
+
+    H, db, qdir = _env(tmp_path)
+    path = qdir / "t.yaml"
+    good = _yaml("t")
+    path.write_text(good, encoding="utf-8")
+    upsert_task(db, parse_task_yaml(path, Project(name="p", root=qdir.parent.parent, queue_dir=qdir)))
+    db.commit()
+    bad = yaml.dump({"task_id": "t", "args": ["-c", "pass"]})  # mapping, but no command
+    code, data = http_request(
+        H, "PUT", "/api/tasks/p/t/yaml", bad.encode(), extra_headers={"Content-Type": "text/plain"}
+    )
+    assert code == 400 and not data["ok"] and "command" in data["error"]
+    assert path.read_text(encoding="utf-8") == good
+    edited = yaml.dump({"task_id": "t", "command": sys.executable, "args": ["-c", "print(1)"]})
+    code, data = http_request(
+        H, "PUT", "/api/tasks/p/t/yaml", edited.encode(), extra_headers={"Content-Type": "text/plain"}
+    )
+    assert code == 200 and data["ok"] and data["task_ids"] == ["t"]
+    assert path.read_text(encoding="utf-8") == edited
+    db.close()

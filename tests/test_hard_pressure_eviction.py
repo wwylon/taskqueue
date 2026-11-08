@@ -78,3 +78,28 @@ def test_vram_below_hard_limit_is_left_alone(monkeypatch):
     info = {"ram_total_gib": 100.0, "gpu_vram_total_gib": 24.0}
     out = daemon._enforce_hard_pressure(object(), cfg, info, {("p", "t"): run}, 0.0)
     assert out is None and not run.stopped and errs == []
+
+
+def test_pressure_block_reason_text_is_stable(monkeypatch, capsys):
+    """Wave 4.3 (PressureSpec): operator-facing wording of RAM / VRAM stops is unchanged."""
+    monkeypatch.setattr(daemon, "ram_used_gib", lambda: 98.0)
+    seen = []
+    monkeypatch.setattr(
+        daemon, "set_task_error", lambda conn, p, t, code, block_reason=None: seen.append((code, block_reason))
+    )
+    monkeypatch.setattr(
+        daemon, "pick_victim", lambda conn, items, needed_gib, resource: (items[0][0], [(items[0][0], 1.5)])
+    )
+    cfg = {"ram_hard_limit_pct": 95, "ram_limit_pct": 80, "vram_hard_limit_pct": 90, "gpu_limit_pct": 50}
+    info = {"ram_total_gib": 100.0, "gpu_vram_total_gib": 10.0, "gpus": [{"vram_used_gib": 9.5}]}
+    daemon._enforce_hard_pressure(object(), cfg, info, {("p", "r"): PressureRun(ram=30.0)}, 0.0)
+    daemon._enforce_hard_pressure(
+        object(), {**cfg, "ram_hard_limit_pct": 99}, info, {("p", "g"): PressureRun(vram=9.5)}, 0.0
+    )
+    assert seen == [
+        ("tq.stop.ram", "RAM: host 98.0 > hard 95.0 (soft 80.0, total 100.0); victim RSS 30.00 GiB"),
+        ("tq.stop.vram", "VRAM: device 9.5 > hard 9.0 (soft 5.0, total 10.0); victim VRAM 9.50 GiB"),
+    ]
+    out = capsys.readouterr().out
+    assert "RAM hard limit: stopping p/r (host 98.0 > hard 95.0; task RSS 30.00 GiB; score=1.50)" in out
+    assert "VRAM hard limit: stopping p/g (VRAM 9.5 > hard 9.0; task VRAM 9.50 GiB; score=1.50)" in out

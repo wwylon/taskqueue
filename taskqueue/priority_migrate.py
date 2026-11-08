@@ -11,9 +11,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+from taskqueue._db_tasks import set_task_priority
 from taskqueue.config import load_projects
 from taskqueue.db import get_config, open_db, set_config
-from taskqueue._db_tasks import set_task_priority
 from taskqueue.yaml_patch import patch_task_yaml
 
 PRIORITY_HIGHER_WINS_KEY = "priority_higher_wins"

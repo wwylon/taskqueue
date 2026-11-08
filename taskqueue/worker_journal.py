@@ -38,7 +38,7 @@ def append_entry(home: Path, run_id: int, entry: dict[str, Any]) -> None:
         line = json.dumps(entry, separators=(",", ":")) + "\n"
         with open(p, "a", encoding="utf-8") as f:
             f.write(line)
-    except Exception:
+    except (OSError, TypeError, ValueError):
         pass
 
 
@@ -56,7 +56,7 @@ def read_journal(home: Path, run_id: int) -> list[dict[str, Any]]:
                     entries.append(json.loads(line))
                 except json.JSONDecodeError:
                     pass
-    except Exception:
+    except (OSError, ValueError):
         pass
     return entries
 
@@ -67,7 +67,7 @@ def gc_journal(home: Path, run_id: int) -> None:
         d = journal_dir(home, run_id)
         if d.is_dir():
             shutil.rmtree(d, ignore_errors=True)
-    except Exception:
+    except OSError:
         pass
 
 

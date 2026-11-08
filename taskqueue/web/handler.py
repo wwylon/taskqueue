@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from taskqueue.sse_ticket import is_stream_path, redeem_ticket
 
@@ -31,8 +33,7 @@ from .deps import (
     pause_task,
     project_scope_allows,
     request_stop_with_control,
-    resolve_access,
-    resolve_token_projects,
+    resolve_access_with_projects,
     scope_allows,
     set_project_frozen,
     unquote,
@@ -45,6 +46,9 @@ from .routes_write import WriteRoutes
 from .sse import SSEMixin
 
 _PROXY_HEADERS = ("X-Forwarded-For", "Forwarded", "X-Real-IP")
+
+
+_log = logging.getLogger(__name__)
 
 
 def _host_is_local_name(host_header: str) -> bool:
@@ -138,6 +142,12 @@ class Handler(
         self._tq_status = code  # captured for usage counters
         super().send_response(code, message)
 
+    @property
+    def _home(self) -> Path:
+        """State home of the daemon serving this request (F-222: never ``state_home()``,
+        which follows the environment, not the daemon's ``--home``)."""
+        return Path(type(self)._db_path).parent
+
     def _rconn(self) -> sqlite3.Connection:
         """Per-thread read connection — avoids races with the daemon's write conn."""
         from taskqueue.db import open_db as _open_db
@@ -174,6 +184,7 @@ class Handler(
     def _get_all_projects(self) -> list[str]:
         """Sorted list of all known projects (registered + ever seen in DB), cached 10s."""
         import time as _time
+
         from . import responses as _resp
 
         now = _time.monotonic()
@@ -256,7 +267,7 @@ class Handler(
         ticket = (qs.get("tq_ticket") or [None])[0]
         if ticket and not provided and self.command == "GET" and is_stream_path(path):
             provided = redeem_ticket(ticket)
-        scope, via = resolve_access(cfg, self._rconn(), provided)
+        scope, via, allowed = resolve_access_with_projects(cfg, self._rconn(), provided)
         if scope is None:
             body = b'{"error":"unauthorized","hint":"Authorization: Bearer <token> or X-TQ-Token"}'
             self.send_response(401)
@@ -273,7 +284,6 @@ class Handler(
             self._send_error_json(403, "token scope does not allow this request")
             return False
         if via == "token":
-            allowed = resolve_token_projects(self._rconn(), provided)
             if allowed is not None and not project_scope_allows(allowed, self.command, path, qs):
                 self._send_error_json(403, "token is limited to projects; only project-filtered reads are allowed")
                 return False
@@ -309,129 +319,8 @@ class Handler(
             route(self)
             return
 
-        # Prefix-match dispatch (ordered; first match wins)
-        if path.startswith("/docs/"):
-            self._serve_docs(path)
-        elif path.startswith("/static/locales/"):
-            self._serve_locale(path)
-        elif path.startswith("/static/js/"):
-            self._serve_js_module(path)
-        elif path.startswith("/api/bundle/"):
-            parts = path[len("/api/bundle/") :].split("/")
-            if len(parts) == 2:
-                self._serve_bundle(parts[0], parts[1])
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/package/"):
-            parts = path[len("/api/package/") :].split("/")
-            if len(parts) == 2:
-                self._serve_package_overlay(parts[0], parts[1])
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/transfer/get/"):
-            rest_t = path[len("/api/transfer/get/") :]
-            proj_name_t, sep_t, rel_t = rest_t.partition("/")
-            if sep_t:
-                self._serve_transfer_file(proj_name_t, rel_t)
-            else:
-                self._send_error_json(400, "Missing path")
-        elif path.startswith("/api/data/blob/"):
-            # D1: CAS blob fetch — /api/data/blob/<sha256>
-            sha256 = path[len("/api/data/blob/") :]
-            self._serve_cas_blob(sha256)
-        elif path.startswith("/api/data/snapshot/"):
-            # D2: SQLite snapshot — /api/data/snapshot/<run_id>/<rel_path>
-            rest_snap = path[len("/api/data/snapshot/") :]
-            snap_run_id, snap_sep, snap_rel = rest_snap.partition("/")
-            if snap_sep:
-                self._serve_sqlite_snapshot(snap_run_id, snap_rel)
-            else:
-                self._send_error_json(400, "Missing db path")
-        elif path.startswith("/api/sync/fingerprint/"):
-            self._serve_sync_fingerprint(path[len("/api/sync/fingerprint/") :])
-        elif path.startswith("/api/sync/manifest/"):
-            self._serve_sync_manifest(path[len("/api/sync/manifest/") :])
-        elif path.startswith("/api/sync/file/"):
-            rest_s = path[len("/api/sync/file/") :]
-            proj_s, sep_s, rel_s = rest_s.partition("/")
-            if sep_s:
-                self._serve_sync_file(proj_s, rel_s)
-            else:
-                self._send_error_json(400, "Missing path")
-        elif path.startswith("/api/data/manifest/"):
-            # D1 per-run manifest (numeric run_id) vs legacy project manifest
-            suffix = path[len("/api/data/manifest/") :]
-            if suffix.isdigit():
-                self._serve_data_manifest_for_run(suffix)
-            else:
-                self._serve_data_manifest(suffix)
-        elif path.startswith("/api/data/file/"):
-            rest = path[len("/api/data/file/") :]
-            proj_name, sep, rel_path = rest.partition("/")
-            if sep:
-                self._serve_data_file(proj_name, rel_path)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/logs/"):
-            rest = path[len("/api/logs/") :]
-            if rest.endswith("/stream"):
-                try:
-                    self._stream_log_sse(int(rest[: -len("/stream")]))
-                except ValueError:
-                    self.send_error(400)
-            else:
-                self._serve_logs(path)
-        elif path.startswith("/api/runs/") and path[len("/api/runs/") :].isdigit():
-            self._serve_run_detail(int(path[len("/api/runs/") :]))
-        elif path.startswith("/api/runs/") and path.endswith("/history"):
-            try:
-                self._serve_run_history(int(path[len("/api/runs/") : -len("/history")]))
-            except ValueError:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/yaml"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/yaml")].partition("/")
-            if sep:
-                self._serve_task_yaml(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/log-search"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/log-search")].partition("/")
-            if sep:
-                self._serve_log_search(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/runs"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/runs")].partition("/")
-            if sep:
-                self._serve_task_runs(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/why"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/why")].partition("/")
-            if not sep:
-                self.send_error(400)
-                return
-            from urllib.parse import unquote
-
-            from taskqueue.why import explain_task
-
-            info = explain_task(self._rconn(), unquote(proj), unquote(tid), system=self._system_info or None)
-            self._json(info, status=200 if info.get("ok") else 404)
-        elif path.startswith("/api/service/"):
-            # D3: HTTP-proxy service broker — /api/service/<name>/<subpath>
-            rest_svc = path[len("/api/service/") :]
-            svc_name, svc_sep, svc_sub = rest_svc.partition("/")
-            if svc_name:
-                self._proxy_service_request(svc_name, svc_sub)
-            else:
-                self._send_error_json(400, "Missing service name")
-        elif path.startswith("/api/tasks/"):
-            proj, sep, tid = path[len("/api/tasks/") :].partition("/")
-            if sep and tid:
-                self._json(self._get_task_detail(proj, tid))
-            else:
-                self.send_error(400)
-        else:
+        # Prefix-match dispatch (ordered table; first match wins)
+        if not _dispatch_get_prefix(self, path):
             self.send_error(404)
 
     def do_POST(self) -> None:
@@ -462,6 +351,10 @@ class Handler(
                 self._json({"ok": False, "error": "bad id"}, status=400)
         elif path.startswith("/api/stop/"):
             self._post_stop(path, qs)
+        elif path.startswith("/api/hold/"):
+            self._post_hold(path, qs)
+        elif path.startswith("/api/unhold/"):
+            self._post_unhold(path, qs)
         elif path.startswith("/api/retry/"):
             # Wave E: thin-wrap legacy path onto the full /api/tasks/.../retry handler.
             proj, task_id = self._split2(path[len("/api/retry/") :])
@@ -577,6 +470,18 @@ class Handler(
             set_project_paused(self._wconn(), proj_name, pause)
             self._audit("pause" if pause else "resume", proj_name, proj_name)
             self._json({"ok": True})
+        elif path.startswith("/api/project/release/"):
+            proj_name = path[len("/api/project/release/") :]
+            if not proj_name:
+                self.send_error(400)
+                return
+            self._post_release_project(proj_name)
+        elif path.startswith("/api/project/relocate/"):
+            proj_name = path[len("/api/project/relocate/") :]
+            if not proj_name:
+                self.send_error(400)
+                return
+            self._post_relocate_project(proj_name)
         elif path.startswith("/api/remove/"):
             self._post_remove_task(path, qs)
         elif path.startswith("/api/project/remove/"):
@@ -682,7 +587,7 @@ class Handler(
             return None
         try:
             obj = json.loads(body.decode("utf-8"))
-        except Exception:
+        except ValueError:
             self._send_error_json(400, "Invalid JSON")
             return None
         if not isinstance(obj, dict):
@@ -698,7 +603,7 @@ class Handler(
             return
         try:
             short, _long = self.responses.get(code, ("Error", ""))
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             short = "Error"
         body = json.dumps({"ok": False, "error": message or short, "status": code}).encode()
         self.close_connection = True
@@ -790,7 +695,7 @@ class Handler(
         self.wfile.write(body)
 
 
-def _record_request(h: "Handler", t0: float) -> None:
+def _record_request(h: Handler, t0: float) -> None:
     """Count one API request into the usage accumulator. Fail-open, no payloads."""
     import time as _time
     from urllib.parse import urlparse
@@ -818,8 +723,8 @@ def _record_request(h: "Handler", t0: float) -> None:
             error_code=ut.error_for_status(getattr(h, "_tq_status", None)),
         )
         ut.RECORDER.maybe_flush(h._wconn)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - usage tracking is best-effort
+        _log.debug("usage tracking failed", exc_info=True)
 
 
 # Exact-path routes, built once at import (was a dict of fresh lambdas per request).
@@ -887,6 +792,134 @@ _GET_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/worker/commands": lambda h: h._worker_commands(),
 }
 
+
+def _split2_or(h: Any, rest: str, fn: Callable[[str, str], None], *, json_error: str | None = None) -> None:
+    """``a/b…`` → ``fn(a, b…)``; a missing ``/`` answers 400 (JSON when *json_error* is set)."""
+    head, sep, tail = rest.partition("/")
+    if sep:
+        fn(head, tail)
+    elif json_error:
+        h._send_error_json(400, json_error)
+    else:
+        h.send_error(400)
+
+
+def _exactly_two(h: Any, rest: str, fn: Callable[[str, str], None]) -> None:
+    parts = rest.split("/")
+    if len(parts) == 2:
+        fn(parts[0], parts[1])
+    else:
+        h.send_error(400)
+
+
+def _int_or_400(h: Any, raw: str, fn: Callable[[int], None]) -> None:
+    try:
+        n = int(raw)
+    except ValueError:
+        h.send_error(400)
+        return
+    fn(n)
+
+
+def _logs_route(h: Any, rest: str, path: str) -> None:
+    if rest.endswith("/stream"):
+        _int_or_400(h, rest[: -len("/stream")], h._stream_log_sse)
+    else:
+        h._serve_logs(path)
+
+
+def _why_route(h: Any, rest: str) -> None:
+    from urllib.parse import unquote
+
+    from taskqueue.why import explain_task
+
+    proj, sep, tid = rest.partition("/")
+    if not sep:
+        h.send_error(400)
+        return
+    info = explain_task(h._rconn(), unquote(proj), unquote(tid), system=h._system_info or None)
+    h._json(info, status=200 if info.get("ok") else 404)
+
+
+def _task_detail_route(h: Any, rest: str) -> None:
+    proj, sep, tid = rest.partition("/")
+    if sep and tid:
+        h._json(h._get_task_detail(proj, tid))
+    else:
+        h.send_error(400)
+
+
+def _service_route(h: Any, rest: str) -> None:
+    name, _sep, sub = rest.partition("/")
+    if name:
+        h._proxy_service_request(name, sub)
+    else:
+        h._send_error_json(400, "Missing service name")
+
+
+# Prefix routes for GET, first match wins: (prefix, suffix, guard(rest) or None, handler(h, rest, path)).
+# ``rest`` is the path between prefix and suffix. Order matters (e.g. /api/tasks/…/yaml before
+# the bare /api/tasks/<p>/<t> detail route).
+_GetRoute = tuple[str, str, Callable[[str], bool] | None, Callable[[Any, str, str], None]]
+_GET_PREFIX: tuple[_GetRoute, ...] = (
+    ("/docs/", "", None, lambda h, rest, path: h._serve_docs(path)),
+    ("/static/locales/", "", None, lambda h, rest, path: h._serve_locale(path)),
+    ("/static/js/", "", None, lambda h, rest, path: h._serve_js_module(path)),
+    ("/api/bundle/", "", None, lambda h, rest, path: _exactly_two(h, rest, h._serve_bundle)),
+    ("/api/package/", "", None, lambda h, rest, path: _exactly_two(h, rest, h._serve_package_overlay)),
+    (
+        "/api/transfer/get/",
+        "",
+        None,
+        lambda h, rest, path: _split2_or(h, rest, h._serve_transfer_file, json_error="Missing path"),
+    ),
+    ("/api/data/blob/", "", None, lambda h, rest, path: h._serve_cas_blob(rest)),  # D1: CAS blob by sha256
+    (
+        "/api/data/snapshot/",  # D2: /api/data/snapshot/<run_id>/<rel_path>
+        "",
+        None,
+        lambda h, rest, path: _split2_or(h, rest, h._serve_sqlite_snapshot, json_error="Missing db path"),
+    ),
+    ("/api/sync/fingerprint/", "", None, lambda h, rest, path: h._serve_sync_fingerprint(rest)),
+    ("/api/sync/manifest/", "", None, lambda h, rest, path: h._serve_sync_manifest(rest)),
+    (
+        "/api/sync/file/",
+        "",
+        None,
+        lambda h, rest, path: _split2_or(h, rest, h._serve_sync_file, json_error="Missing path"),
+    ),
+    (
+        "/api/data/manifest/",  # D1 per-run manifest (numeric run_id) vs legacy project manifest
+        "",
+        None,
+        lambda h, rest, path: h._serve_data_manifest_for_run(rest) if rest.isdigit() else h._serve_data_manifest(rest),
+    ),
+    ("/api/data/file/", "", None, lambda h, rest, path: _split2_or(h, rest, h._serve_data_file)),
+    ("/api/logs/", "", None, lambda h, rest, path: _logs_route(h, rest, path)),
+    ("/api/runs/", "", str.isdigit, lambda h, rest, path: h._serve_run_detail(int(rest))),
+    ("/api/runs/", "/history", None, lambda h, rest, path: _int_or_400(h, rest, h._serve_run_history)),
+    ("/api/tasks/", "/yaml", None, lambda h, rest, path: _split2_or(h, rest, h._serve_task_yaml)),
+    ("/api/tasks/", "/log-search", None, lambda h, rest, path: _split2_or(h, rest, h._serve_log_search)),
+    ("/api/tasks/", "/runs", None, lambda h, rest, path: _split2_or(h, rest, h._serve_task_runs)),
+    ("/api/tasks/", "/why", None, lambda h, rest, path: _why_route(h, rest)),
+    ("/api/service/", "", None, lambda h, rest, path: _service_route(h, rest)),  # D3: service broker proxy
+    ("/api/tasks/", "", None, lambda h, rest, path: _task_detail_route(h, rest)),
+)
+
+
+def _dispatch_get_prefix(h: Any, path: str) -> bool:
+    """Run the first matching prefix route; False when none matches (caller answers 404)."""
+    for prefix, suffix, guard, handler in _GET_PREFIX:
+        if not path.startswith(prefix) or (suffix and not path.endswith(suffix)):
+            continue
+        rest = path[len(prefix) : len(path) - len(suffix)] if suffix else path[len(prefix) :]
+        if guard is not None and not guard(rest):
+            continue
+        handler(h, rest, path)
+        return True
+    return False
+
+
 _POST_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/config": lambda h: h._post_config(),
     "/api/cli/sync": lambda h: h._cli_sync(),
@@ -947,6 +980,9 @@ def make_handler(
     projects_ref: Callable[[], dict],
     db_path: Path,
     bind_host: str = "127.0.0.1",
+    *,
+    release_project: Callable[[str], dict[str, Any]] | None = None,
+    relocate_project: Callable[[str, str], dict[str, Any]] | None = None,
 ):
     import threading as _threading
 
@@ -965,6 +1001,8 @@ def make_handler(
         # long-lived SSE clients can never starve ordinary REST requests.
         sse_semaphore=_threading.Semaphore(SSE_MAX_STREAMS),
         tls=_threading.local(),
+        release_project=release_project,
+        relocate_project=relocate_project,
     )
 
     class BoundHandler(Handler):
@@ -982,5 +1020,7 @@ def make_handler(
         _conn = conn
         _pending_commands = ctx.pending_commands
         _commands_condition = ctx.commands_condition
+        _release_project = staticmethod(release_project) if release_project else None
+        _relocate_project = staticmethod(relocate_project) if relocate_project else None
 
     return BoundHandler

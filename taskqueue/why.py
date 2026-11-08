@@ -38,9 +38,17 @@ def explain_task(conn: sqlite3.Connection, project: str, task_id: str, *, system
         return out
     if not out["enabled"]:
         reasons.append("disabled (enabled: false) — enable it to queue it")
-    if status in _TERMINAL:
+    # Owner-facing stop / interrupt summary (human reason or TaskQueue auto-stop).
+    if status in ("stopped", "interrupted", "suspended", "failed") or status in _TERMINAL:
+        from taskqueue.stop_summary import attach_stop_fields
+
+        stop_info = attach_stop_fields(conn, project, task_id, row)
+        out.update({k: v for k, v in stop_info.items() if v is not None})
+        if stop_info.get("stop_summary"):
+            reasons.append(stop_info["stop_summary"])
+    if status in _TERMINAL and not any(str(r).startswith("stopped by") for r in reasons):
         reasons.append(f"finished ({status}) — retry it to run again")
-    if status == "suspended" or status == "stopped":
+    if status in ("suspended", "stopped") and not any(str(r).startswith("stopped by") for r in reasons):
         reasons.append(f"{status} — it is re-queued when resources allow, or retry it")
     if project in set(blocked_projects(conn)):
         reasons.append("project is paused or frozen")
@@ -61,7 +69,7 @@ def explain_task(conn: sqlite3.Connection, project: str, task_id: str, *, system
         if entry is None:
             out["plan"] = {"verdict": "outside window", "reason": "more than 200 tasks ahead in the queue"}
         else:
-            out["plan"] = {k: entry[k] for k in ("verdict", "reason", "start_order") if k in entry}
+            out["plan"] = {k: entry[k] for k in ("verdict", "reason", "start_order", "need", "free") if k in entry}
             if entry["verdict"] == "start" and not reasons:
                 reasons.append("nothing blocks it: it should start on the next scheduler tick")
             elif entry["verdict"] == "blocked" and entry.get("reason") and not out["block_reason"]:
@@ -80,4 +88,19 @@ def format_explanation(info: dict[str, Any]) -> str:
     if plan and not any(str(r).startswith("dry run") for r in info["reasons"]):
         extra = f" #{plan['start_order']}" if plan.get("start_order") else ""
         lines.append(f"  dry run: {plan['verdict']}{extra}" + (f" ({plan['reason']})" if plan.get("reason") else ""))
+    if plan and plan.get("need") and plan.get("free"):
+        lines.append("  " + format_need_free(plan["need"], plan["free"]))
     return "\n".join(lines)
+
+
+_RESOURCE_LABELS = (("cpu_cores", "CPU", "cores"), ("ram_gib", "RAM", "GiB"), ("gpu_vram_gib", "VRAM", "GiB"))
+
+
+def format_need_free(need: dict[str, float], free: dict[str, float]) -> str:
+    """``needs CPU 1 cores (7 free) · RAM 20 GiB (10 free)`` — skips resources the task does not use."""
+    parts = [
+        f"{label} {need[key]:g} {unit} ({free.get(key, 0):g} free)"
+        for key, label, unit in _RESOURCE_LABELS
+        if float(need.get(key) or 0) > 0
+    ]
+    return "needs " + " · ".join(parts) if parts else "needs no declared resources"

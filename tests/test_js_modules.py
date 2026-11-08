@@ -273,7 +273,10 @@ def test_log_line_html_strips_ansi_escapes_and_classes_level():
         + r"""
     console.log(JSON.stringify([logLineHtml('[31m[ERROR] <b>boom</b>[0m'), logLineHtml('plain'), logLineHtml('[WARN] x')]));"""
     )
-    assert out[0] == '<div class="tq-log-line log-error">[ERROR] &lt;b&gt;boom&lt;/b&gt;</div>'
+    # The task's own ANSI colour is kept as a span (escaped first, so the <b> stays text).
+    assert out[0] == (
+        '<div class="tq-log-line log-error"><span style="color:#e74c3c">[ERROR] &lt;b&gt;boom&lt;/b&gt;</span></div>'
+    )
     assert out[1] == '<div class="tq-log-line">plain</div>'
     assert "log-warn" in out[2]
 
@@ -611,6 +614,7 @@ def test_tag_chips_are_capped_but_keep_the_active_tag():
     out = _run(
         "globalThis.window = globalThis;"
         "globalThis.tqAct = (x) => JSON.stringify(x);"
+        "globalThis.i18n = { t: (k, v) => k + (v ? JSON.stringify(v) : '') };"
         "const bar = { dataset: { expanded: '1' }, style: {}, innerHTML: '' };"
         "globalThis.document = { getElementById: () => bar };"
         f"const {{ S }} = await import({json.dumps((JS / 'core' / 'state.js').as_uri())});"
@@ -619,6 +623,57 @@ def test_tag_chips_are_capped_but_keep_the_active_tag():
         "S.tagFilter = 't150';"
         "fb._updateTagChips();"
         "const n = (bar.innerHTML.match(/<button/g) || []).length;"
-        "console.log(JSON.stringify([n, fb.TAG_CHIP_CAP, bar.innerHTML.includes('t150'), bar.innerHTML.includes('+139 more')]));"
+        "console.log(JSON.stringify([n, fb.TAG_CHIP_CAP, bar.innerHTML.includes('t150'), bar.innerHTML.includes('filter.tagsMore') && bar.innerHTML.includes(':139}')]));"
     )
     assert out == [61, 60, True, True]
+
+
+def test_why_need_free_lines_format_declared_resources_only():
+    out = _run(
+        "globalThis.window = globalThis;"
+        "globalThis.i18n = { t: (k, v) => `${v.res}|${v.need}|${v.free}` };"
+        f"const d = await import({json.dumps((JS / 'components' / 'drawer.js').as_uri())});"
+        "console.log(JSON.stringify([d._whyNeedFreeLines({ need: { cpu_cores: 1, ram_gib: 20.04, gpu_vram_gib: 0 },"
+        " free: { cpu_cores: 7.25, ram_gib: 10, gpu_vram_gib: 0 } }), d._whyNeedFreeLines({ verdict: 'start' })]));"
+    )
+    assert out == [["CPU|1 cores|7.3 cores", "RAM|20 GiB|10 GiB"], []]
+
+
+def test_classify_log_line_matches_python_classifier():
+    from taskqueue.log_issues import classify_log_line
+
+    lines = [
+        "[ERROR] boom",
+        "\x1b[31mERROR\x1b[0m: red",
+        "ValueError: bad",
+        "Error: x",
+        "0 errors so far",
+        "an error occurred",
+        "FATAL crash",
+        "REJECT gate",
+        "WARNING low disk",
+        "warn: lower",
+        "UserWarning: deprecated",
+        "LOW SCORE 0.1",
+        "epoch 3 loss 0.2",
+        "",
+        "   ",
+        "CRITICAL: oom",
+    ]
+    out = _run(
+        _logview_import("classifyLogLine") + f"\nconsole.log(JSON.stringify({json.dumps(lines)}.map(classifyLogLine)));"
+    )
+    assert out == [classify_log_line(x) for x in lines]
+
+
+def test_log_line_html_keeps_ansi_colour_and_uses_issue_classifier():
+    out = _run(
+        _logview_import("logLineHtml")
+        + r"""
+    console.log(JSON.stringify([logLineHtml('\x1b[32mok <i>\x1b[0m done'), logLineHtml('Error: bad'), logLineHtml('[INFO] hi'),
+      logLineHtml('\x1b[2K\x1b[1Gprogress')]));"""
+    )
+    green, err, info, cursor = out
+    assert '<span style="color:#2ecc71">ok &lt;i&gt;</span>' in green and "<i>" not in green
+    assert 'class="tq-log-line log-error"' in err and 'class="tq-log-line log-info"' in info
+    assert cursor == '<div class="tq-log-line">progress</div>'  # non-colour escapes dropped

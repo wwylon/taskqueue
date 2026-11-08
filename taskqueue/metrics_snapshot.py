@@ -1,7 +1,6 @@
 """Shared run metrics for UI / CLI / MCP parity."""
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
 
 import json
 import sqlite3
@@ -10,6 +9,8 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from taskqueue._time import parse_iso as _parse_iso
 
 
 def _round_or_none(v: Any, nd: int = 2) -> float | None:
@@ -21,19 +22,16 @@ def _round_or_none(v: Any, nd: int = 2) -> float | None:
         return None
 
 
-def _elapsed_eta(started_at: str | None, progress_pct: float | None) -> tuple[float | None, float | None]:
-    elapsed_sec = None
-    eta_sec = None
-    if not started_at:
-        return None, None
+def _elapsed(run: Any) -> float | None:
+    """Run time: until now while running, else the stored wall time (a stopped run's clock stops)."""
+    if run is None or not run["started_at"]:
+        return None
+    if run["status"] != "running" or run["finished_at"]:
+        return _round_or_none(run["wall_sec"], 1)
     try:
-        started = _parse_iso(started_at)
-        elapsed_sec = round((datetime.now(UTC) - started).total_seconds(), 1)
-        if progress_pct and progress_pct > 0 and elapsed_sec:
-            eta_sec = round(elapsed_sec / progress_pct * (100.0 - progress_pct), 1)
-    except Exception:
-        pass
-    return elapsed_sec, eta_sec
+        return round((datetime.now(UTC) - _parse_iso(run["started_at"])).total_seconds(), 1)
+    except (TypeError, ValueError):
+        return None
 
 
 def _history_rows(conn: sqlite3.Connection, run_id: int, samples: int) -> list[dict[str, Any]]:
@@ -76,8 +74,8 @@ def _summary(history: list[dict[str, Any]]) -> dict[str, Any]:
 def _try_http_overlay(home: Path, project: str, task_id: str) -> dict[str, Any] | None:
     """Best-effort live currents from the daemon HTTP API (same as the UI)."""
     try:
-        from taskqueue.db import get_config, open_db
         from taskqueue import config as tqconfig
+        from taskqueue.db import get_config, open_db
 
         db = open_db(tqconfig.db_path(home))
         try:
@@ -114,7 +112,7 @@ def build_run_metrics(
 
     home = home or tqconfig.state_home()
     task = conn.execute(
-        "SELECT status, resources FROM tasks WHERE project = ? AND task_id = ?",
+        "SELECT status, resources, predicted_duration_sec FROM tasks WHERE project = ? AND task_id = ?",
         (project, task_id),
     ).fetchone()
     run = conn.execute(
@@ -126,8 +124,7 @@ def build_run_metrics(
     run_id = run["run_id"] if run else None
     progress_pct = run["progress_pct"] if run else None
     last_line = run["last_log_line"] if run else None
-    started_at = run["started_at"] if run else None
-    elapsed_sec, eta_sec = _elapsed_eta(started_at, progress_pct)
+    elapsed_sec = _elapsed(run)
 
     peak = {
         "cpu_pct": _round_or_none(run["peak_cpu_pct"], 1) if run else None,
@@ -185,7 +182,7 @@ def build_run_metrics(
     if run and "metrics_json" in run.keys() and run["metrics_json"]:
         try:
             metrics_json = json.loads(run["metrics_json"])
-        except Exception:
+        except (TypeError, ValueError):
             metrics_json = None
 
     from taskqueue.log_issues import coerce_log_counts, log_from_metrics_json
@@ -197,13 +194,27 @@ def build_run_metrics(
 
     requires_gpu = task_requires_gpu(task["resources"] if task else None)
 
+    from taskqueue.eta import build_eta
+
+    eta = build_eta(
+        task_status=status,
+        run_status=run["status"] if run else None,
+        progress_pct=progress_pct,
+        metrics_json=metrics_json,
+        started_at=run["started_at"] if run else None,
+        finished_at=run["finished_at"] if run else None,
+        wall_sec=run["wall_sec"] if run else None,
+        predicted_sec=task["predicted_duration_sec"] if task else None,
+    )
+
     out: dict[str, Any] = {
         "project": project,
         "task_id": task_id,
         "run_id": run_id,
         "status": status,
         "progress_pct": progress_pct,
-        "eta_sec": eta_sec,
+        "eta_sec": (eta or {}).get("remaining_sec"),
+        "eta": eta,
         "elapsed_sec": elapsed_sec,
         "last_line": last_line,
         "requires_gpu": requires_gpu,

@@ -15,7 +15,6 @@ import secrets
 import time
 from typing import Any
 
-
 _BROKER_SECRET = secrets.token_bytes(32)
 
 
@@ -65,7 +64,7 @@ def verify_service_token(
         if not hmac.compare_digest(sig, expected_sig):
             return False, "invalid signature"
         payload = json.loads(body)
-    except Exception as e:
+    except (TypeError, ValueError) as e:
         return False, f"token decode error: {e}"
 
     if payload.get("run_id") != run_id:

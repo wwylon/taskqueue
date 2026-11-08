@@ -2,7 +2,7 @@
 
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from taskqueue._cli_prune import (
     _per_project_retention,
@@ -15,7 +15,7 @@ from taskqueue._cli_prune import (
 )
 from taskqueue.db import open_db
 
-UTC = timezone.utc
+UTC = UTC
 
 
 def _iso(days_ago):

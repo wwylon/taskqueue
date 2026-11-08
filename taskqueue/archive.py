@@ -81,7 +81,7 @@ def _movable(src: str | None) -> bool:
         from taskqueue.taskspec import parse_task_yaml_many
 
         return len(parse_task_yaml_many(Path(src))) <= 1
-    except Exception:
+    except Exception:  # noqa: BLE001 - an unparseable file holds no other live task
         return True  # unparseable file holds no other live task
 
 

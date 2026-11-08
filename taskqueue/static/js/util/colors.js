@@ -1,3 +1,4 @@
+// @ts-check
 // Status colours shared by the notification panel and the dependency graph (one source of truth).
 export const STATUS_HEX = {
   running: '#60a5fa', started: '#60a5fa', queued: '#f59e0b', waiting: '#f59e0b',

@@ -8,7 +8,6 @@ read/write concurrently. Schema v2: tasks are keyed (project, task_id).
 """
 
 from __future__ import annotations
-from taskqueue.jsonutil import json_list
 
 import json
 import sqlite3
@@ -19,11 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from taskqueue.config import Project
-from taskqueue.models import (
-    QueueTask,
-    TaskResources,
-)
-
+from taskqueue.jsonutil import json_list
 from taskqueue.migrations import (  # noqa: E402,F401
     _CORE_CONFIG_KEYS,
     _DEFAULT_CONFIG,
@@ -31,9 +26,13 @@ from taskqueue.migrations import (  # noqa: E402,F401
     SCHEMA_VERSION,
     _migration_lock,
     _open_db_impl,
-    bump_seed_config_writes,
     _seed_config,
+    bump_seed_config_writes,
     open_db,
+)
+from taskqueue.models import (
+    QueueTask,
+    TaskResources,
 )
 
 
@@ -73,7 +72,6 @@ def record_resource_sample(
 
 # re-exported for callers using `from taskqueue.db import _now`
 from taskqueue._time import _now, parse_iso  # noqa: F401,E402
-
 
 # --- config ---
 
@@ -184,7 +182,7 @@ def master_holder_process_dead(holder: str, *, hostname: str | None = None) -> b
         import psutil
 
         return not psutil.pid_exists(pid)
-    except Exception:
+    except (ImportError, OSError):
         pass
     if sys.platform == "win32":
         return False
@@ -280,7 +278,7 @@ def is_project_frozen(conn: sqlite3.Connection, project: str) -> bool:
         return False
     try:
         return bool(json.loads(row["value"]))
-    except Exception:
+    except (TypeError, ValueError):
         return False
 
 
@@ -300,7 +298,7 @@ def is_project_paused(conn: sqlite3.Connection, project: str) -> bool:
         return False
     try:
         return bool(json.loads(row["value"]))
-    except Exception:
+    except (TypeError, ValueError):
         return False
 
 
@@ -360,7 +358,7 @@ def get_project_limits(conn: sqlite3.Connection, project: str) -> dict[str, floa
         if field in out:
             try:
                 out[field] = float(json.loads(r["value"]))
-            except Exception:
+            except (TypeError, ValueError):
                 pass
     return out
 
@@ -379,52 +377,52 @@ def with_gpu_usage(conn: sqlite3.Connection, project: str, limits: dict[str, flo
 
 # --- task + run functions (extracted to submodules) ---
 from taskqueue._db_tasks import (  # noqa: F401
-    stamp_provenance,
-    run_summary,
-    run_counts,
-    prior_run_seconds,
-    failed_attempt_count,
-    upsert_task,
-    get_queued_tasks,
-    count_queued_tasks,
+    CAP_AUTO_RETRY_SEMANTICS,
+    RETRYABLE_STATUSES,
+    SUBMIT_CHANNELS,
+    _upsert_task_no_commit,
+    apply_cap_auto_retry,
+    check_ownership,
+    claim_and_insert_local_run,
+    claim_task_running,
+    clear_control_file,
+    clear_stop_request,
+    clear_task_error,
+    collect_ancestors_to_root,
+    collect_downstream_task_ids,
+    collect_running_dependents,
     count_online_workers,
-    get_running_tasks,
+    count_queued_tasks,
+    enable_task,
+    failed_attempt_count,
     get_all_tasks,
+    get_queued_tasks,
+    get_running_tasks,
     get_task,
     get_task_status,
-    check_ownership,
-    set_task_status,
-    claim_task_running,
-    claim_and_insert_local_run,
-    set_task_error,
-    clear_task_error,
-    set_spawned_by,
-    set_started_by,
-    set_task_priority,
+    invalidate_running_dependents,
+    lock_contention_summary,
+    lock_occupancy,
+    prior_run_seconds,
     request_stop,
     request_stop_with_control,
-    clear_stop_request,
     retry_skip_reason,
     retry_task,
-    retry_tasks_batch,
-    apply_cap_auto_retry,
-    unmet_dependency_label,
-    collect_running_dependents,
-    stop_running_for_unmet_deps,
-    invalidate_running_dependents,
-    revalidate_running_dependencies,
-    collect_downstream_task_ids,
     retry_task_with_downstream,
-    collect_ancestors_to_root,
-    lock_occupancy,
-    lock_contention_summary,
+    retry_tasks_batch,
+    revalidate_running_dependencies,
+    run_counts,
+    run_summary,
+    set_spawned_by,
+    set_started_by,
+    set_task_error,
+    set_task_priority,
+    set_task_status,
+    stamp_provenance,
+    stop_running_for_unmet_deps,
+    unmet_dependency_label,
+    upsert_task,
     write_control_action,
-    clear_control_file,
-    enable_task,
-    SUBMIT_CHANNELS,
-    RETRYABLE_STATUSES,
-    CAP_AUTO_RETRY_SEMANTICS,
-    _upsert_task_no_commit,
 )
 
 
@@ -445,11 +443,11 @@ def check_arg_overrides(row: sqlite3.Row, override: list[str]) -> str | None:
     """
     try:
         allowed = set(json_list(row["overridable_args"]))
-    except Exception:
+    except (TypeError, ValueError):
         allowed = set()
     try:
         base = set(json_list(row["args"]))
-    except Exception:
+    except (TypeError, ValueError):
         base = set()
     bad = sorted({t.split("=")[0] for t in override if t not in base and t.split("=")[0] not in allowed})
     if not bad:
@@ -466,30 +464,30 @@ def clear_args_override(conn: sqlite3.Connection, project: str, task_id: str) ->
 
 
 from taskqueue._db_runs import (  # noqa: F401
-    insert_run,
-    set_run_pid,
-    update_run_progress,
-    update_run_metrics,
-    set_run_stop_reason,
-    finish_run,
-    finalize_run_and_task,
-    lease_expiry_iso,
-    renew_run_lease,
-    renew_run_lease_for_worker,
-    get_run_owned,
-    worker_health,
-    reclaim_expired_leases,
-    mark_stale_workers_offline,
-    force_task,
-    remove_task,
-    get_recent_runs,
     count_recent_runs,
-    get_run,
-    get_runs_for_task,
     count_runs_for_task,
-    gpu_hours_today,
+    finalize_run_and_task,
+    finish_run,
+    force_task,
     get_last_run_for_task,
     get_last_runs_for_tasks,
+    get_recent_runs,
+    get_run,
+    get_run_owned,
+    get_runs_for_task,
+    gpu_hours_today,
+    insert_run,
+    lease_expiry_iso,
+    mark_stale_workers_offline,
+    reclaim_expired_leases,
+    remove_task,
+    renew_run_lease,
+    renew_run_lease_for_worker,
+    set_run_pid,
+    set_run_stop_reason,
+    update_run_metrics,
+    update_run_progress,
+    worker_health,
 )
 
 # --- yaml parsing (lives in taskspec.py; re-exported here for compatibility) ---
@@ -502,7 +500,6 @@ from taskqueue.taskspec import (  # noqa: E402,F401
     parse_task_yaml_many,
     validate_task_spec,
 )
-
 
 # --- daemon lifecycle events (schema 15) ---
 

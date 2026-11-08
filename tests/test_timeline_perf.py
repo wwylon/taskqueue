@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 from taskqueue import timeline_forecast as tf
 from taskqueue.db import open_db, set_project_limit
@@ -14,7 +14,7 @@ from tests.test_operator_features import _insert_run, _mk_task
 
 
 def _seed(db, n: int, runs: int = 3):
-    base = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    base = datetime(2026, 9, 1, tzinfo=UTC)
     for i in range(n):
         tid = f"suite_seed{i}"
         _mk_task(db, "proj", tid, priority=i % 5)
@@ -27,7 +27,7 @@ def _seed(db, n: int, runs: int = 3):
 
 def test_bars_have_absolute_times(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     _mk_task(db, "proj", "a")
     data = tf.forecast_timeline(db, hours=2, now=now, project="proj")
     b = data["bars"][0]

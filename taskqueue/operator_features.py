@@ -7,23 +7,27 @@ the master lease.
 """
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
 
 import hashlib
 import hmac
 import json
+import logging
 import math
 import re
 import secrets
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from taskqueue._db_tasks import get_task
+from taskqueue._time import parse_iso as _parse_iso
 from taskqueue.auth import configured_token, token_required
 from taskqueue.cron import cron_matches
-from taskqueue._db_tasks import get_task
-from taskqueue.dt_utils import iso_utc as _iso, now_utc as _now, parse_utc as _parse_ts, within_window
+from taskqueue.dt_utils import iso_utc as _iso
+from taskqueue.dt_utils import now_utc as _now
+from taskqueue.dt_utils import parse_utc as _parse_ts
+from taskqueue.dt_utils import within_window
 from taskqueue.rows import row_get
 
 _TERMINAL = ("completed", "failed", "interrupted", "suspended", "stopped")
@@ -42,7 +46,12 @@ _WRITE_PREFIXES = (
     "/api/project/freeze/",
     "/api/project/unfreeze/",
     "/api/project/stop-all/",
+    "/api/project/release/",
+    "/api/project/relocate/",
 )
+
+
+_log = logging.getLogger(__name__)
 
 
 def percentile(sorted_vals: list[float], p: float) -> float | None:
@@ -175,7 +184,7 @@ def next_cron_fire(expr: str, now: datetime | None = None, *, hours: int = 48) -
                     _CRON_FIRE_CACHE.clear()
                 _CRON_FIRE_CACHE[key] = (cursor, scan)
                 return scan
-        except Exception:
+        except Exception:  # noqa: BLE001 - a bad cron expression never fires
             return None
         scan += timedelta(minutes=1)
         steps += 1
@@ -197,7 +206,7 @@ def schedules(
     for row in conn.execute(sql, args).fetchall():
         try:
             sched = json.loads(row["schedule"] or "null")
-        except Exception:
+        except (TypeError, ValueError):
             continue
         if not isinstance(sched, dict):
             continue
@@ -367,11 +376,11 @@ def create_alert(conn: sqlite3.Connection, data: dict[str, Any]) -> dict[str, An
     try:
         threshold = float(data.get("threshold"))
     except (TypeError, ValueError):
-        raise ValueError("threshold must be a number")
+        raise ValueError("threshold must be a number") from None
     try:
         window_sec = int(data.get("window_sec") if data.get("window_sec") is not None else 3600)
     except (TypeError, ValueError):
-        raise ValueError("window_sec must be an integer")
+        raise ValueError("window_sec must be an integer") from None
     if window_sec < 0:
         raise ValueError("window_sec must be >= 0")
     project = str(data.get("project") or "").strip() or None
@@ -472,8 +481,8 @@ def evaluate_alerts(
             for off in offenders:
                 try:
                     request_stop_with_control(conn, Path(home), off["project"], off["task_id"])
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - one stop failure must not stop the others
+                    _log.debug("stop of an offending task failed", exc_info=True)
     return fired
 
 
@@ -501,7 +510,7 @@ def _emit_alert(
             description=f"{rule['name']}: {rule['kind']} > {rule['threshold']}",
             stop_reason=f"alert:{rule['kind']}",
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - alert notification is best-effort
         return
 
 
@@ -670,10 +679,15 @@ def resolve_token_projects(conn: sqlite3.Connection, provided: str | None) -> li
         ).fetchone()
     except sqlite3.OperationalError:
         return None
-    if row is None or not row["projects"]:
+    return _parse_token_projects(row["projects"] if row is not None else None)
+
+
+def _parse_token_projects(raw: Any) -> list[str] | None:
+    """``api_tokens.projects`` → allowlist; None = unrestricted, unparseable fails closed ([])."""
+    if not raw:
         return None
     try:
-        v = json.loads(row["projects"])
+        v = json.loads(raw)
     except ValueError:
         return []
     return [str(x) for x in v] if isinstance(v, list) and v else []
@@ -721,39 +735,51 @@ def resolve_access(
     ``via`` is ``legacy`` for config.auth_token (or auth disabled) and ``token``
     for a non-revoked api_tokens row. Workers must keep using the legacy token.
     """
+    scope, via, _projects = resolve_access_with_projects(cfg, conn, provided)
+    return scope, via
+
+
+def resolve_access_with_projects(
+    cfg: dict[str, Any],
+    conn: sqlite3.Connection,
+    provided: str | None,
+) -> tuple[str | None, str | None, list[str] | None]:
+    """``resolve_access`` plus the token's project allowlist, from one ``api_tokens`` read.
+
+    The allowlist is None for legacy access or an unrestricted token (F-230: the auth
+    hot path used to look the same token row up twice per request).
+    """
     if not token_required(cfg):
-        return "admin", "legacy"
+        return "admin", "legacy", None
     expected = configured_token(cfg)
     if provided and hmac.compare_digest(provided, expected):
-        return "admin", "legacy"
+        return "admin", "legacy", None
     if not provided:
-        return None, None
+        return None, None, None
     digest = _hash_token(provided)
     try:
         row = conn.execute(
-            "SELECT id, scope, revoked_at, last_used_at FROM api_tokens WHERE token_hash = ?",
+            "SELECT id, scope, revoked_at, last_used_at, projects FROM api_tokens WHERE token_hash = ?",
             (digest,),
         ).fetchone()
     except sqlite3.OperationalError:
-        return None, None
+        return None, None, None
     if row is None or row["revoked_at"]:
-        return None, None
+        return None, None, None
     # Wave C3: throttle last_used_at writes (~1/min) to cut SQLite contention on GETs.
     now = _now()
     try:
         prev = row_get(row, "last_used_at")
-    except Exception:
+    except (KeyError, IndexError, TypeError):
         prev = None
     should_touch = True
     if prev:
         try:
-            from datetime import datetime, timezone
-
             prev_dt = _parse_iso(str(prev))
             if prev_dt.tzinfo is None:
-                prev_dt = prev_dt.replace(tzinfo=timezone.utc)
+                prev_dt = prev_dt.replace(tzinfo=UTC)
             should_touch = (now - prev_dt).total_seconds() >= 60.0
-        except Exception:
+        except (TypeError, ValueError):
             should_touch = True
     if should_touch:
         conn.execute(
@@ -761,7 +787,7 @@ def resolve_access(
             (_iso(now), row["id"]),
         )
         conn.commit()
-    return str(row["scope"]), "token"
+    return str(row["scope"]), "token", _parse_token_projects(row_get(row, "projects"))
 
 
 def is_worker_path(path: str) -> bool:

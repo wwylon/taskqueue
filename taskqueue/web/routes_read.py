@@ -1,15 +1,23 @@
 """Handler mixin (extracted from make_handler)."""
 
 from __future__ import annotations
+
+import threading
+import time
+from typing import Any
+
+from taskqueue._db_tasks import bulk_prior_run_seconds, get_task
 from taskqueue._time import parse_iso as _parse_iso
+from taskqueue.rows import row_get
+from taskqueue.web.responses import format_server_timing
 
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
-    Path,
-    SCHEMA_VERSION,
-    UTC,
     _GIT_SHA,
     _STATIC,
+    SCHEMA_VERSION,
+    UTC,
+    Path,
     _attach_log_field,
     _attach_progress_health,
     _build_api_docs_html,
@@ -50,12 +58,6 @@ from .deps import (
     status_counts,
     task_stats,
 )
-import threading
-import time
-from typing import Any
-from taskqueue._db_tasks import bulk_prior_run_seconds, get_task
-from taskqueue.rows import row_get
-from taskqueue.web.responses import format_server_timing
 
 # Live fields (elapsed_sec, idle_sec, daemon_*) are patched by SSE on the client; ETag ignores them.
 # D9 / F-146: cache _get_workers per DB path to avoid per-request datetime parses.
@@ -172,7 +174,7 @@ class ReadRoutes:
         lang = (qs.get("lang", ["en"])[0] or "en").strip()
         try:
             self._json(build_help_payload(tab, lang))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any help error becomes a 500
             self._send_error_json(500, f"help error: {exc}")
 
     def _serve_docs(self, path: str) -> None:
@@ -329,7 +331,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                     try:
                         s = _parse_iso(last_run["started_at"])
                         d["elapsed_sec"] = round(max(0.0, (datetime.now(UTC) - s).total_seconds()), 1)
-                    except Exception:
+                    except (TypeError, ValueError, KeyError):
                         d["elapsed_sec"] = 0.0
                 mj = row_get(last_run, "metrics_json")
                 _attach_log_field(d, metrics_json=mj)
@@ -341,7 +343,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 try:
                     last_seen = _parse_iso(worker_seen[wid])
                     d["worker_last_seen_age_sec"] = round((datetime.now(UTC) - last_seen).total_seconds(), 1)
-                except Exception:
+                except (TypeError, ValueError, KeyError):
                     pass
             running.append(d)
 
@@ -351,19 +353,20 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         # W3.6: include package version, schema version and git sha in status.
         try:
             from taskqueue import __version__ as _ver
-        except Exception:
+        except ImportError:
             _ver = "unknown"
         # W4.12: daemon self-budget
         daemon_cpu_pct: float | None = None
         daemon_rss_mb: float | None = None
         try:
-            import psutil as _psutil
             import os as _os
+
+            import psutil as _psutil
 
             _proc = _psutil.Process(_os.getpid())
             daemon_cpu_pct = round(_proc.cpu_percent(interval=None), 1)
             daemon_rss_mb = round(_proc.memory_info().rss / 1_048_576, 1)
-        except Exception:
+        except (OSError, _psutil.Error):
             pass
         if timings is not None:
             timings["status"] = round((time.perf_counter() - _t0) * 1000.0)
@@ -459,7 +462,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         payload: dict[str, Any] = {"status": _slim_status_payload(status)}
 
         if tab in ("queue", "dashboard"):
-            q = self._get_queue(timings=phases)
+            q = self._get_queue(timings=phases, slim=True)
             payload["queue"] = {
                 **{k: q[k] for k in ("total", "limit", "offset", "error", "message") if k in q},
                 "tasks": [_queue_row_dict(t) for t in q.get("tasks", [])],
@@ -500,6 +503,9 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 hide_blocked=qs.get("hide_blocked", ["0"])[0] in ("1", "true"),
                 started_by=(qs.get("started_by", [None])[0] or None),
                 status=(qs.get("status", [None])[0] or None),
+                sort=qs.get("sort", ["run_id"])[0],
+                sort_dir=qs.get("sort_dir", ["desc"])[0],
+                worker=qs.get("worker", [None])[0],
             )
             payload["history"] = {
                 **{k: hist[k] for k in ("total", "limit", "offset") if k in hist},
@@ -530,7 +536,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             if ver is not None:
                 raw_key = f"{os.getpid()}|{ver}|{_dashboard_path_key(self.path)}"
                 cheap_key = "v" + hashlib.sha256(raw_key.encode()).hexdigest()[:15]
-        except Exception:
+        except Exception:  # noqa: BLE001 - the cheap cache key is optional
             cheap_key = None
         if cheap_key and inm == cheap_key:
             self._send_dashboard_bytes(etag=cheap_key, body=b"", phases=None, status=304)
@@ -609,7 +615,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             "contention": lock_contention_summary(conn),
         }
 
-    def _get_queue(self, timings: dict[str, float] | None = None) -> dict[str, Any]:
+    def _get_queue(self, timings: dict[str, float] | None = None, *, slim: bool = False) -> dict[str, Any]:
         from taskqueue.health import read_ack
 
         qs = self._query()
@@ -639,6 +645,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             offset=offset,
             active_runs=self._active_runs,
             timings=timings,
+            slim=slim,
         )
 
     def _get_report(self) -> dict[str, Any]:
@@ -658,9 +665,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 older = float(qs.get("older_than_days", ["30"])[0])
             except (ValueError, IndexError, TypeError):
                 older = 30.0
-            return build_hygiene_report(
-                self._rconn(), project=project, days=days, older_than_days=older
-            )
+            return build_hygiene_report(self._rconn(), project=project, days=days, older_than_days=older)
         return build_report(self._rconn(), project=project, days=days)
 
     def _get_hygiene(self) -> dict[str, Any]:
@@ -677,9 +682,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             older = float(qs.get("older_than_days", ["30"])[0])
         except (ValueError, IndexError, TypeError):
             older = 30.0
-        return build_hygiene_report(
-            self._rconn(), project=project, days=days, older_than_days=older
-        )
+        return build_hygiene_report(self._rconn(), project=project, days=days, older_than_days=older)
 
     def _get_plan(self) -> dict[str, Any]:
         from taskqueue.plan import build_plan
@@ -692,14 +695,13 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         return build_plan(self._rconn(), limit=limit)
 
     def _get_diagnose(self) -> dict[str, Any]:
-        from taskqueue import config as tqconfig
 
         qs = self._query()
         project = qs.get("project", [None])[0]
         task_id = qs.get("task_id", [None])[0]
         if not project or not task_id:
             return {"error": "project and task_id required"}
-        return build_diagnose(self._rconn(), project, task_id, home=tqconfig.state_home())
+        return build_diagnose(self._rconn(), project, task_id, home=self._home)
 
     def _get_history(self) -> dict[str, Any]:
         qs = self._query()
@@ -722,6 +724,9 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             hide_blocked=qs.get("hide_blocked", ["0"])[0] in ("1", "true"),
             started_by=(qs.get("started_by", [None])[0] or None),
             status=(qs.get("status", [None])[0] or None),
+            sort=qs.get("sort", ["run_id"])[0],
+            sort_dir=qs.get("sort_dir", ["desc"])[0],
+            worker=qs.get("worker", [None])[0],
         )
 
     def _get_groups(self) -> dict[str, Any]:
@@ -771,7 +776,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 for t in tags if isinstance(tags, list) else []:
                     counts[t] = counts.get(t, 0) + 1
                     tag_projects.setdefault(t, set()).add(proj)
-            except Exception:
+            except (TypeError, ValueError, KeyError, IndexError):
                 pass
         return {
             "tags": sorted(counts.keys()),
@@ -878,7 +883,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             import psutil as _psutil
 
             rss = round(_psutil.Process(_os.getpid()).memory_info().rss / 1_048_576, 1)
-        except Exception:
+        except (OSError, _psutil.Error):
             pass
         self._text(
             render_metrics(self._rconn(), daemon_rss_mb=rss),
@@ -985,7 +990,9 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         if not row or not row["log_path"]:
             self.send_error(404)
             return
-        log_path = Path(row["log_path"])
+        from taskqueue.logio import readable_log
+
+        log_path = readable_log(row["log_path"])  # gzip-retained logs read transparently
         if not log_path.exists():
             self._text("(log file not yet created)")
             return
@@ -1098,7 +1105,9 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         if not row or not row["log_path"]:
             self._json({"error": "no log found", "matches": [], "total_bytes": 0})
             return
-        log_path = Path(row["log_path"])
+        from taskqueue.logio import readable_log
+
+        log_path = readable_log(row["log_path"])
         if not log_path.exists():
             self._json({"error": "log file missing", "matches": [], "total_bytes": 0})
             return
@@ -1146,8 +1155,8 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             return _cached
 
         from taskqueue import __version__ as _mv
-        from taskqueue.db import SCHEMA_VERSION as _ms
         from taskqueue._db_runs import worker_health
+        from taskqueue.db import SCHEMA_VERSION as _ms
 
         cfg = get_config(self._rconn())
         heartbeat_sec = float(cfg.get("heartbeat_sec", 30))
@@ -1168,7 +1177,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                         version_note = f"major behind master ({_mv})"
                     elif wt < mt:
                         version_note = f"minor behind master ({_mv})"
-                except Exception:
+                except (ValueError, IndexError, AttributeError):
                     pass
             if ws is not None and int(ws) < _ms:
                 version_ok = False
@@ -1246,12 +1255,32 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         last_run = get_last_run_for_task(conn, project, task_id)
         if last_run:
             # Merge run-level fields that may be more current (peak RAM, last exit code, etc.)
-            for key in ("peak_ram_gib", "peak_vram_gib", "started_at", "finished_at", "progress_pct"):
-                if last_run[key] is not None:
+            for key in (
+                "peak_ram_gib",
+                "peak_vram_gib",
+                "started_at",
+                "finished_at",
+                "progress_pct",
+                "stop_reason",
+                "stopped_by",
+            ):
+                if key in last_run.keys() and last_run[key] is not None:
                     task.setdefault(key, last_run[key])
+            from taskqueue.stop_summary import format_stop_summary
+
+            summary = format_stop_summary(
+                status=task.get("status"),
+                stop_reason=task.get("stop_reason"),
+                stopped_by=task.get("stopped_by"),
+                last_error_code=task.get("last_error_code"),
+            )
+            if summary:
+                task["stop_summary"] = summary
         from taskqueue._db_tasks import run_summary
+        from taskqueue.eta import task_eta
 
         task.update(run_summary(conn, project, task_id))
+        task["eta"] = task_eta(conn, project, task_id)
         return {"task": task}
 
     def _serve_task_runs(self, project: str, task_id: str) -> None:

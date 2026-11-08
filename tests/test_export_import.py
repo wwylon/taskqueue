@@ -1,5 +1,6 @@
 def test_force_import_keeps_pre_import_backup(tmp_path):
     import sqlite3
+
     from taskqueue.db import open_db
     from taskqueue.export_import import export_home, import_home
 
@@ -56,8 +57,10 @@ def test_remove_project_offline_drops_resource_history(tmp_path):
 
 def test_import_refuses_when_pid_file_has_create_time(tmp_path):
     import os
+
     import psutil
     import pytest
+
     from taskqueue.export_import import import_home
 
     ct = psutil.Process(os.getpid()).create_time()

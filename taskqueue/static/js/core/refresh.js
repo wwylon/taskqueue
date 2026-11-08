@@ -1,8 +1,10 @@
+// @ts-check
 // Data refresh: /api/status polling, status pill/title/health indicators, offline + SSE indicators, live-update
 // transport (SSE with polling heartbeat) and per-tab data loading. Uses app.js globals at call time
 // (renderQueue, renderDashboard, _patchDashboardLive, _populateProjectSelect, ...). Refresh bookkeeping is module-local.
 import { S } from '../core/state.js';
 import { tqPerfEnabled, tqDominantTimingPhase } from './api.js';
+import { inputValue } from '../util/format.js';
 
 export function _loadTabData(name) {
   if (name === 'queue' || name === 'history' || name === 'workers' || name === 'dashboard') return refresh();
@@ -79,7 +81,7 @@ export function _patchQueueLiveFromRunning(running) {
     const roots = [row, card].filter(Boolean);
     if (!roots.length) continue;
     for (const root of roots) {
-      const pbar = root.querySelector('[data-q-pbar]');
+      const pbar = /** @type {HTMLElement | null} */ (root.querySelector('[data-q-pbar]'));
       if (pbar && live.progress_pct != null) pbar.style.width = Math.min(100, live.progress_pct) + '%';
       const eta = root.querySelector('[data-q-eta]');
       if (eta && live.progress_pct != null) {
@@ -165,7 +167,7 @@ export function _updateStatusPill(s) {
   const vbadge = document.getElementById('version-badge');
   if (vbadge && s.version) {
     const sha = s.git_sha && s.git_sha !== 'unknown' ? ` · ${s.git_sha}` : '';
-    vbadge.textContent = `tq v${s.version} · db v${s.schema_version}${sha}`;
+    vbadge.textContent = i18n.t('app.versionBadge', {version: s.version, schema: s.schema_version}) + sha;
   }
 }
 
@@ -206,10 +208,11 @@ export function _updateHealth(h) {
   if (ack) ack.hidden = !(h.counts && h.counts.new_failed);
   _setHealthFavicon(h.level);
 }
+let _faviconLevel = null;
 export function _setHealthFavicon(level) {
-  if (_setHealthFavicon._last === level) return;
-  _setHealthFavicon._last = level;
-  const link = document.querySelector('link[rel="icon"]');
+  if (_faviconLevel === level) return;
+  _faviconLevel = level;
+  const link = /** @type {HTMLLinkElement | null} */ (document.querySelector('link[rel="icon"]'));
   if (!link) return;
   link.href = 'data:image/svg+xml,' + encodeURIComponent(
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='28'>📋</text>"
@@ -299,20 +302,30 @@ export async function refresh() {
     // The server reads the first value of each param, so send queue OR history
     // search/limit/offset — never both (a duplicate made History ignore its own).
     if (dashTab === 'history') {
-      const _hSearch = (document.getElementById('history-search') || {}).value || '';
+      const _hSearch = inputValue('history-search');
       if (_hSearch.trim()) parts.push(`search=${encodeURIComponent(_hSearch.trim())}`);
       if (S.historyStatusFilter && S.historyStatusFilter !== 'all') {
         parts.push(`status=${encodeURIComponent(S.historyStatusFilter)}`);
+      }
+      // F-258: server-side sort across pages
+      parts.push(`sort=${encodeURIComponent(S.historySort.field || 'run_id')}`);
+      parts.push(`sort_dir=${S.historySort.dir > 0 ? 'asc' : 'desc'}`);
+      if (S.globalWorkerFilter) {
+        parts.push(`worker=${encodeURIComponent(S.globalWorkerFilter)}`);
       }
       // Offset paging (fixed page size) — avoid cumulative re-fetch up to 1000.
       const _hLim = S.historyPageSize || 20;
       parts.push(`limit=${_hLim}`);
       parts.push(`offset=${S.historyOffset || 0}`);
     } else {
-      const _qSearch = (document.getElementById('queue-search') || {}).value || '';
+      const _qSearch = inputValue('queue-search');
       if (_qSearch.trim()) parts.push(`search=${encodeURIComponent(_qSearch.trim())}`);
       parts.push(`sort=${encodeURIComponent(S.queueSort.field)}`);
       parts.push(`sort_dir=${S.queueSort.dir > 0 ? 'asc' : 'desc'}`);
+      // F-258: server-side worker filter (paged)
+      if (S.globalWorkerFilter) {
+        parts.push(`worker=${encodeURIComponent(S.globalWorkerFilter)}`);
+      }
       parts.push(`limit=${_pageSize()}`);
       parts.push(`offset=${S.queuePage * _pageSize()}`);
     }
@@ -438,7 +451,7 @@ export async function refresh() {
     const scrollStates = _captureLogScrollStates();
 
     if (dashStructureChanged) {
-      try { renderDashboard(); } catch(e2) { console.error('[tq] renderDashboard threw:', e2); throw new Error('renderDashboard: ' + e2.message); }
+      try { renderDashboard(); } catch(e2) { console.error('[tq] renderDashboard threw:', e2); throw new Error('renderDashboard: ' + e2.message, { cause: e2 }); }
     } else {
       _patchDashboardLive();
     }
@@ -450,30 +463,29 @@ export async function refresh() {
         for (const [preId, state] of Object.entries(S.logSearch)) {
           if (state && state.query && document.getElementById(preId)) {
             _applyLogSearch(preId, state.query, state.current || 0);
-            const inp = document.getElementById('log-search-inp-' + preId);
+            const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('log-search-inp-' + preId));
             if (inp) inp.value = state.query;
           }
         }
-      } catch(e2) { console.error('[tq] renderQueue threw:', e2); throw new Error('renderQueue: ' + e2.message); }
+      } catch(e2) { console.error('[tq] renderQueue threw:', e2); throw new Error('renderQueue: ' + e2.message, { cause: e2 }); }
     } else if (hasQueue) {
       _patchQueueLiveFromRunning(s.running);
     }
     _updateTagChips();
 
     if (historyChanged) {
-      try { renderHistory(); } catch(e2) { console.error('[tq] renderHistory threw:', e2); throw new Error('renderHistory: ' + e2.message); }
+      try { renderHistory(); } catch(e2) { console.error('[tq] renderHistory threw:', e2); throw new Error('renderHistory: ' + e2.message, { cause: e2 }); }
     }
 
     if (workersChanged) {
-      try { renderWorkers(); } catch(e2) { console.error('[tq] renderWorkers threw:', e2); throw new Error('renderWorkers: ' + e2.message); }
+      try { renderWorkers(); } catch(e2) { console.error('[tq] renderWorkers threw:', e2); throw new Error('renderWorkers: ' + e2.message, { cause: e2 }); }
     }
 
     _restoreLogScrollStates(scrollStates);
 
-    // Auto-fetch new log content for any running task whose log is currently expanded
+    // F-257: dashboard live logs use dashLogSseMap; only static-fetch when no stream.
     for (const t of (s.running || [])) {
-      // W3.2: panel-scoped refresh for dashboard
-      if (t.run_id && S.expandedLogs[`d:${t.run_id}`]) {
+      if (t.run_id && S.expandedLogs[`d:${t.run_id}`] && !S.dashLogSseMap[t.run_id]) {
         _fetchLog(t.run_id, `d-log-pre-${t.run_id}`);
       }
     }
@@ -535,8 +547,8 @@ export function _setOffline(offline) {
   if (banner) banner.style.display = offline ? '' : 'none';
   if (header) header.style.marginTop = offline ? '36px' : '0';
   _a11yAnnounce(offline
-    ? (i18n.t('header.offlineBanner') || 'Daemon offline')
-    : (i18n.t('status.online') || 'Daemon online'));
+    ? (i18n.t('header.offlineBanner'))
+    : (i18n.t('status.online')));
   // Do not call refresh() here — caller already refreshed / is about to.
 }
 
@@ -551,6 +563,8 @@ export function _updateSseIndicator() {
     dot.style.background = '#f59e0b'; title = i18n.t('sse.polling');
   } else if (S.sseState === 'error') {
     dot.style.background = 'var(--fail)'; title = i18n.t('sse.error');
+  } else if (S.sseState === 'paused') {
+    dot.style.background = 'var(--muted)'; title = i18n.t('sse.paused');
   } else {
     dot.style.background = 'var(--muted)'; title = i18n.t('sse.connecting');
   }
@@ -559,24 +573,70 @@ export function _updateSseIndicator() {
   dot.title = title;
 }
 
-/** Connect the live event stream and start the polling heartbeat. Called once from app.js boot. */
+export const SSE_HIDDEN_CLOSE_MS = 120000;
+
+// F-256: coalesce SSE-driven DOM work so it never races a concurrent refresh().
+let _uiUpdateRaf = 0;
+let _pendingSsePayload = null;
+
+function _applySseUi(s) {
+  if (_refreshInFlight) {
+    // refresh() owns the next paint; keep S mutated by the caller and skip DOM.
+    return;
+  }
+  const prevRunIdentity = S.prevRunningStr;
+  const runIdentity = _runningIdentity(s.running, s.config || S.cfg);
+  const gaugeStruct = _gaugeStructureKey(s, s.config || S.cfg);
+  const structural = runIdentity !== prevRunIdentity;
+  if (structural || gaugeStruct !== S.prevGaugeStructStr
+      || !document.querySelector('#gauges [data-gauge]')) {
+    S.prevRunningStr = runIdentity;
+    S.prevGaugeStructStr = gaugeStruct;
+    renderDashboard();
+  } else {
+    _patchDashboardLive();
+  }
+  _patchQueueLiveFromRunning(s.running);
+  _updateStatusPill(s);
+  // Full queue/history refetch: soon on membership change; else at most every 15s on data_version.
+  if (_dataVersionChanged(s.data_version)) {
+    if (structural) _scheduleQueueRefresh(400, true);
+    else _scheduleQueueRefresh(1000, false);
+  }
+}
+
+function scheduleUiUpdate(s) {
+  _pendingSsePayload = s;
+  if (_uiUpdateRaf) return;
+  _uiUpdateRaf = requestAnimationFrame(() => {
+    _uiUpdateRaf = 0;
+    const payload = _pendingSsePayload;
+    _pendingSsePayload = null;
+    if (payload) _applySseUi(payload);
+  });
+}
+
+/** Connect the live event stream and start the polling heartbeat. Called once from boot. */
 export function startLiveUpdates() {
   // I-10: "X seconds ago" counter (started here, not at import, so tests can load the module)
   setInterval(function() {
-    if (!S.lastRefreshTime) return;
+    if (!S.lastRefreshTime || S.sseState === 'paused') return;  // a hidden tab is not "daemon unreachable"
     const sec = Math.round((Date.now() - S.lastRefreshTime) / 1000);
     const el = document.getElementById('last-updated');
     if (el) el.textContent = sec <= 2 ? i18n.t('status.updatedJustNow') : i18n.t('status.updatedAgo', {n: sec});
-    // I1: flag error after 30s with no update
-    if (sec > 30 && S.sseState !== 'error') { S.sseState = 'error'; _updateSseIndicator(); }
-    if (sec > 30) _setHealthFavicon('red');  // daemon unreachable
+    // I1: flag error after 30s with no update (visible tabs only — F-255 follow-on)
+    if (document.hidden) return;
+    if (sec > 30 && S.sseState !== 'error' && S.sseState !== 'paused') {
+      S.sseState = 'error'; _updateSseIndicator();
+    }
+    if (sec > 30 && S.sseState !== 'paused') _setHealthFavicon('red');
   }, 1000);
   let _sse = null;
   let _sseActive = false;
   function _onSSEMessage(s) {
     if (!s || typeof s !== 'object' || !('running' in s)) return;
     s = _scopeStatusPayload(s);
-    // Update status globals used by renderDashboard
+    // Mutate state immediately; schedule one rAF for DOM (F-256).
     S.status = s;
     S.cfg = s.config || {};
     if (s.projects && JSON.stringify(s.projects) !== JSON.stringify(S.projects)) {
@@ -584,54 +644,27 @@ export function startLiveUpdates() {
       _populateProjectSelect(S.projects);
       _populateProjectChips(S.projects);
     }
-    const prevRunIdentity = S.prevRunningStr;
-    const runIdentity = _runningIdentity(s.running, s.config || S.cfg);
-    const gaugeStruct = _gaugeStructureKey(s, s.config || S.cfg);
-    const structural = runIdentity !== prevRunIdentity;
-    if (structural || gaugeStruct !== S.prevGaugeStructStr
-        || !document.querySelector('#gauges [data-gauge]')) {
-      S.prevRunningStr = runIdentity;
-      S.prevGaugeStructStr = gaugeStruct;
-      renderDashboard();
-    } else {
-      _patchDashboardLive();
-    }
-    // Live queue progress from SSE — no full /api/dashboard.
-    _patchQueueLiveFromRunning(s.running);
     S.lastRefreshTime = Date.now();
     _refreshFailStreak = 0;
     S.sseState = 'live'; _updateSseIndicator();
     _setOffline(false);
     const dot = document.getElementById('live-dot');
     if (dot) dot.classList.add('live');
-    _updateStatusPill(s);
-    for (const t of (s.running || [])) {
-      // W3.2: only refresh panel if that panel's log is expanded
-      if (t.run_id && S.expandedLogs[`d:${t.run_id}`]) { _fetchLog(t.run_id, `d-log-pre-${t.run_id}`); }
-    }
-    // Full queue/history refetch: soon on membership change; else at most every 15s on data_version.
-    if (_dataVersionChanged(s.data_version)) {
-      if (structural) _scheduleQueueRefresh(400, true);
-      else _scheduleQueueRefresh(1000, false);
-    }
+    // F-257: dashboard logs use openLogStream — do not _fetchLog on every SSE tick.
+    scheduleUiUpdate(s);
   }
-  let _sseRetryTimer = null;
-  // Single connection: close any previous stream and pending retry before opening one.
+  // F-255: openStream owns reconnect; outer handler only updates UI indicators.
   function startSSE() {
-    if (_sseRetryTimer) { clearTimeout(_sseRetryTimer); _sseRetryTimer = null; }
     if (_sse) { _sse.onopen = _sse.onmessage = _sse.onerror = null; _sse.close(); _sse = null; }
     try {
-      // W1.6: EventSource cannot send headers; tqEventSource uses a short-lived ticket.
       const es = tqEventSource('/api/events');
       _sse = es;
       es.onopen = function() { _sseActive = true; S.sseState = 'live'; _updateSseIndicator(); };
       es.onmessage = function(ev) {
         try { _onSSEMessage(JSON.parse(ev.data)); } catch(e) {}
       };
-      // Named transition events → immediate structural queue refresh (task started/stopped).
       es.addEventListener('transition', function() {
         _scheduleQueueRefresh(400, true);
-        // F-175: refresh notification badge/toasts from the live stream.
         if (typeof window.tqNotifOnLiveEvent === 'function') {
           try { window.tqNotifOnLiveEvent(); } catch (_) {}
         }
@@ -639,26 +672,18 @@ export function startLiveUpdates() {
       es.onerror = function() {
         if (_sse !== es) return;
         _sseActive = false; S.sseState = 'error'; _updateSseIndicator();
-        es.close(); _sse = null;
-        _sseRetryTimer = setTimeout(startSSE, 5000);
+        // Do not close or schedule a second reconnect — openStream already remints/reconnects.
       };
     } catch(e) {
       S.sseState = 'polling'; _updateSseIndicator();
     }
   }
   // Heartbeat: when SSE is live, soft fallback only every 120s (F-132).
-  // When SSE is down, poll every 5s as the sole update source.
+  // When SSE is down, poll every 5s as the sole update source. Hidden tabs skip both.
   (async function heartbeat() {
     while (true) {
-      const delay = _sseActive ? 120000 : 5000;
-      await new Promise(r => setTimeout(r, delay));
-      if (document.hidden) continue;
-      if (!_sseActive || typeof EventSource === 'undefined') {
-        await refresh();
-      } else {
-        // Soft fallback while SSE open — rare safety net (was every 30s).
-        await refresh();
-      }
+      await new Promise(r => setTimeout(r, _sseActive ? 120000 : 5000));
+      if (!document.hidden) await refresh();
     }
   })();
   if (typeof EventSource !== 'undefined') {
@@ -666,11 +691,22 @@ export function startLiveUpdates() {
   } else {
     S.sseState = 'polling'; _updateSseIndicator();
   }
-  // W3.1: resume immediately when tab becomes visible again after being hidden
+  // A tab hidden for SSE_HIDDEN_CLOSE_MS drops its stream (the daemon serializes a
+  // snapshot per client per tick); becoming visible refreshes and reconnects.
+  let _hiddenCloseTimer = null;
+  function _pauseSSE() {
+    _hiddenCloseTimer = null;
+    if (!document.hidden) return;
+    if (_sse) { _sse.onopen = _sse.onmessage = _sse.onerror = null; _sse.close(); _sse = null; }
+    _sseActive = false; S.sseState = 'paused'; _updateSseIndicator();
+  }
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      refresh();
-      if (!_sse && !_sseRetryTimer && typeof EventSource !== 'undefined') startSSE();
+    if (document.hidden) {
+      if (!_hiddenCloseTimer) _hiddenCloseTimer = setTimeout(_pauseSSE, SSE_HIDDEN_CLOSE_MS);
+      return;
     }
+    if (_hiddenCloseTimer) { clearTimeout(_hiddenCloseTimer); _hiddenCloseTimer = null; }
+    refresh();
+    if (!_sse && typeof EventSource !== 'undefined') startSSE();
   });
 }

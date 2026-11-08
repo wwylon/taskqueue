@@ -57,3 +57,24 @@ def test_metric_line_is_parsed_by_the_runner(tmp_path):
     out = subprocess.run([str(exe)], capture_output=True, text=True, timeout=30).stdout.strip()
     m = _TQ_METRIC_RE.match(out)
     assert m and json.loads(m.group(1)) == {"loss": 0.125, 'ep"och': 3}
+
+
+def test_save_and_load_checkpoint(tmp_path):
+    ckpt = tmp_path / "c.json"
+    src = (
+        '#include "tq_client.hpp"\n'
+        "#include <iostream>\n"
+        "int main(){\n"
+        f'  tq::save_checkpoint(R"({ckpt.as_posix()})", "{{\\"step\\":7}}");\n'
+        f'  auto s = tq::load_checkpoint(R"({ckpt.as_posix()})");\n'
+        "  if (!s) return 2;\n"
+        '  std::cout << *s;\n'
+        "  return 0;\n"
+        "}\n"
+    )
+    res, exe = _compile(tmp_path, src)
+    assert res.returncode == 0, res.stderr
+    out = subprocess.run([str(exe)], capture_output=True, text=True, timeout=30, cwd=tmp_path)
+    assert out.returncode == 0, out.stderr
+    assert '"step":7' in out.stdout or '"step": 7' in out.stdout
+    assert ckpt.is_file()

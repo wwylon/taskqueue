@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import contextlib
 import json
-import sys
 import os
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -17,7 +17,7 @@ from typing import Any
 
 from taskqueue.jsonutil import json_list
 
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 35
 
 # Wave D6: keep-set for prune is _CORE_CONFIG_KEYS ∪ VALID_CONFIG_KEYS.
 # New tunables MUST be registered in taskqueue.config.VALID_CONFIG_KEYS (and
@@ -67,6 +67,9 @@ _CORE_CONFIG_KEYS = (
     "stop_max_per_tick",
     "recovery_cooldown_sec",
     "admission_shadow_mode",
+    "service_probe_background",
+    "adopt_on_restart",
+    "submit_key_ttl_sec",
     "scavenger_preempt_cooldown_sec",
     # P6: reservation + backfill
     "reservation_max_ticks",
@@ -318,6 +321,17 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     revoked_at   TEXT,
     projects     TEXT
 );
+
+-- C-002 (schema 34): idempotent submits; a retry with the same client_key returns these task_ids.
+CREATE TABLE IF NOT EXISTS submit_keys (
+    project    TEXT NOT NULL,
+    client_key TEXT NOT NULL,
+    body_hash  TEXT NOT NULL,
+    task_ids   TEXT,
+    path       TEXT,
+    created_at REAL NOT NULL,
+    PRIMARY KEY (project, client_key)
+);
 """
 
 _DEFAULT_CONFIG: dict[str, Any] = {
@@ -379,6 +393,12 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "scavenger_preempt_cooldown_sec": 60,
     # Log admission decisions without enforcing them.
     "admission_shadow_mode": 0,
+    # F-232: service / Ollama probes run off the scheduler tick (0 = probe inline).
+    "service_probe_background": 1,
+    # Wave 7: new runs start through taskqueue.run_wrapper so `tq restart` can leave them running.
+    "adopt_on_restart": 0,
+    # C-002: how long a submit client_key keeps returning its first result.
+    "submit_key_ttl_sec": 86400,
     # PC-1: remote placement — binpack skips claim if a fresher peer scores better;
     # aging lets any feasible worker take a long-waiting task (anti-starvation).
     "placement_mode": "binpack",
@@ -440,7 +460,7 @@ def _migration_lock(db_path: Path):
                     break
                 except OSError:
                     if time.monotonic() > deadline:
-                        raise TimeoutError(f"schema migration lock {lock_path} held >180s by another process")
+                        raise TimeoutError(f"schema migration lock {lock_path} held >180s by another process") from None
                     time.sleep(0.1)
             yield
         finally:
@@ -636,6 +656,9 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
             conn.execute("ALTER TABLE tasks ADD COLUMN auto_retry_on_cap INTEGER NOT NULL DEFAULT 0")
         if "max_auto_retries" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN max_auto_retries INTEGER NOT NULL DEFAULT 20")
+        if "retry_backoff_sec" not in task_columns:
+            # schema 35: exponential backoff between re-admissions of a failing task
+            conn.execute("ALTER TABLE tasks ADD COLUMN retry_backoff_sec INTEGER NOT NULL DEFAULT 0")
         if "min_trust" not in task_columns:
             # C2: minimum worker trust tier required for this task
             conn.execute("ALTER TABLE tasks ADD COLUMN min_trust TEXT NOT NULL DEFAULT ''")
@@ -758,7 +781,7 @@ def _open_db_impl(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
                         (json.dumps(normalized), row["project"], row["task_id"]),
                     )
             conn.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort migration must never block opening the DB
             # Best-effort (paths stay un-normalised), but never silent.
             conn.rollback()
             print(f"[queue] warn: requires_paths normalisation skipped: {exc}", file=sys.stderr, flush=True)
@@ -843,7 +866,7 @@ def _seed_config(conn: sqlite3.Connection) -> None:
     global _seed_config_writes
     try:
         db_path_str = conn.execute("PRAGMA database_list").fetchone()[2] or ""
-    except Exception:
+    except (sqlite3.Error, TypeError, IndexError):
         db_path_str = ""
 
     if db_path_str and _seed_config_cache.get(db_path_str) == _seed_config_writes:

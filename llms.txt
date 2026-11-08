@@ -1,0 +1,32 @@
+# taskqueue
+
+> Local resource-aware task queue: daemon + `tq` CLI + web UI + MCP.
+> YAML jobs with CPU/RAM/GPU admission, checkpoints, and optional remote workers.
+> Not Celery, Kubernetes, CI, or the 2011 rojkov/taskqueue AMQP project.
+
+## Start here
+
+- README: https://github.com/wwylon/taskqueue/blob/main/README.md
+- Agents bootstrap: https://github.com/wwylon/taskqueue/blob/main/AGENTS.md
+- MCP setup + tools: https://github.com/wwylon/taskqueue/blob/main/docs/mcp.md
+- Task YAML fields: https://github.com/wwylon/taskqueue/blob/main/docs/task_standards.md
+- Task script cookbook: https://github.com/wwylon/taskqueue/blob/main/docs/agents/task-script-cookbook.md
+- Agent recipes: https://github.com/wwylon/taskqueue/blob/main/docs/agents/recipes.md
+- CLI reference: https://github.com/wwylon/taskqueue/blob/main/docs/operators/cli.md
+- Examples: https://github.com/wwylon/taskqueue/tree/main/examples
+
+## Hard rules for agents
+
+- Long jobs (>~2 min) → YAML under a project's `experiments/operator_queue/`, not background shells.
+- Create tasks with MCP `submit_task` / `submit_matrix`, or write YAML then `tq sync`.
+- Wait with MCP `wait_for_task` or `tq wait` — do not sleep-poll.
+- Do not invent CLI commands or YAML keys.
+- Set `TQ_OPERATOR` for attribution (`my_tasks`).
+- Default home `~/.taskqueue`, UI port 8765.
+
+## Optional deeper
+
+- Scheduler: https://github.com/wwylon/taskqueue/blob/main/docs/scheduler.md
+- Security / privacy: https://github.com/wwylon/taskqueue/blob/main/docs/security.md
+- Workers: https://github.com/wwylon/taskqueue/blob/main/docs/WORKER_SETUP.md
+- Capabilities map: https://github.com/wwylon/taskqueue/blob/main/docs/capabilities.md

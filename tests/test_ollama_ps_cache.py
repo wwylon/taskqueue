@@ -12,9 +12,11 @@ def test_ps_fetch_cached(monkeypatch):
         calls.append(1)
         return io.BytesIO(json.dumps({"models": [{"name": "m"}]}).encode())
 
-    monkeypatch.setattr("urllib.request.urlopen", fake)
-    a = scheduler._fetch_ollama_ps_models("http://x/api/ps")
-    b = scheduler._fetch_ollama_ps_models("http://x/api/ps")
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: fake(req, timeout=timeout)
+    )
+    a = scheduler._fetch_ollama_ps_models("http://127.0.0.1:11434/api/ps")
+    b = scheduler._fetch_ollama_ps_models("http://127.0.0.1:11434/api/ps")
     assert a == b == [{"name": "m"}]
     assert len(calls) == 1
 
@@ -27,7 +29,9 @@ def test_ps_failure_cached(monkeypatch):
         calls.append(1)
         raise OSError("down")
 
-    monkeypatch.setattr("urllib.request.urlopen", boom)
-    assert scheduler._fetch_ollama_ps_models("http://y/api/ps") is None
-    assert scheduler._fetch_ollama_ps_models("http://y/api/ps") is None
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: boom(req, timeout=timeout)
+    )
+    assert scheduler._fetch_ollama_ps_models("http://127.0.0.2:11434/api/ps") is None
+    assert scheduler._fetch_ollama_ps_models("http://127.0.0.2:11434/api/ps") is None
     assert len(calls) == 1

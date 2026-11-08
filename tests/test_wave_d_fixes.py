@@ -9,18 +9,16 @@ import json
 import sys
 import tarfile
 from datetime import UTC, datetime
-from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskqueue.db import open_db, get_config, set_config
-from taskqueue.export_import import import_home, export_home
-from taskqueue.notify import notify_task_started, notify_log_path
+from taskqueue.db import get_config, open_db, set_config
+from taskqueue.export_import import export_home, import_home
+from taskqueue.notify import notify_log_path, notify_task_started
 from taskqueue.resources import sort_queued_fairshare
 from taskqueue.safetar import assert_safe_member
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -78,7 +76,7 @@ def test_finalize_token_wrong_rejected(tmp_path):
     stored = run["finalize_token"] if "finalize_token" in run.keys() else None
 
     assert stored is not None
-    assert "wrong_token" != stored
+    assert stored != "wrong_token"
     assert good_token == stored
 
 
@@ -346,8 +344,8 @@ def test_fairshare_halflife_decay_formula():
 
 def test_args_override_cleared_on_args_change(tmp_path):
     """Upserting a task with changed args must clear any stale args_override."""
-    from taskqueue.db import upsert_task, parse_task_yaml
     from taskqueue.config import Project
+    from taskqueue.db import parse_task_yaml, upsert_task
 
     proj_root = tmp_path / "proj"
     proj_root.mkdir()
@@ -378,8 +376,8 @@ def test_args_override_cleared_on_args_change(tmp_path):
 
 def test_args_override_preserved_when_args_unchanged(tmp_path):
     """args_override must NOT be cleared when YAML args are unchanged."""
-    from taskqueue.db import upsert_task, parse_task_yaml
     from taskqueue.config import Project
+    from taskqueue.db import parse_task_yaml, upsert_task
 
     proj_root = tmp_path / "proj"
     proj_root.mkdir()
@@ -676,6 +674,7 @@ def test_config_keys_not_pruned_on_restart(tmp_path, key, value):
 def test_csrf_enforced_with_auth_token(tmp_path):
     """Foreign Origin must be rejected even when auth_token is set."""
     import io
+
     from taskqueue.web import make_handler
 
     db = open_db(tmp_path / "q.db")

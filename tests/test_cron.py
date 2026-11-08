@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from taskqueue.cron import check_cron_schedule, cron_matches
-
 
 # ---------------------------------------------------------------------------
 # cron_matches — field parsing
@@ -17,13 +16,13 @@ from taskqueue.cron import check_cron_schedule, cron_matches
 
 def _dt(minute=0, hour=0, day=1, month=1, weekday=1):
     """Build a UTC datetime for testing. weekday: Mon=1 … Sun=7 (isoweekday)."""
-    return datetime(2025, month, day, hour, minute, tzinfo=timezone.utc).replace(
+    return datetime(2025, month, day, hour, minute, tzinfo=UTC).replace(
         # Override isoweekday via a known date: 2025-01-06 is Mon(1)
     )
 
 
 def _dt_raw(year=2025, month=1, day=6, hour=0, minute=0):
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc)
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
 
 
 def test_star_matches_any():
@@ -129,16 +128,17 @@ def test_first_tick_skips(tmp_path: Path):
 
 
 def test_cron_fires_on_match(tmp_path: Path):
-    from taskqueue.db import open_db
     from unittest.mock import patch
+
+    from taskqueue.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
 
     # Prime state with last tick = 01:59 so the 02:00 cron fires
-    last = datetime(2025, 1, 6, 1, 59, tzinfo=timezone.utc)
+    last = datetime(2025, 1, 6, 1, 59, tzinfo=UTC)
     state = {"ts": last}
-    fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=timezone.utc)
+    fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=UTC)
 
     with patch("taskqueue.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
@@ -150,16 +150,17 @@ def test_cron_fires_on_match(tmp_path: Path):
 
 
 def test_cron_does_not_fire_before_match(tmp_path: Path):
-    from taskqueue.db import open_db
     from unittest.mock import patch
+
+    from taskqueue.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
 
     # Last tick at 01:30, now at 01:45 — "0 2 * * *" hasn't fired yet
-    last = datetime(2025, 1, 6, 1, 30, tzinfo=timezone.utc)
+    last = datetime(2025, 1, 6, 1, 30, tzinfo=UTC)
     state = {"ts": last}
-    fake_now = datetime(2025, 1, 6, 1, 45, tzinfo=timezone.utc)
+    fake_now = datetime(2025, 1, 6, 1, 45, tzinfo=UTC)
 
     with patch("taskqueue.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
@@ -171,15 +172,16 @@ def test_cron_does_not_fire_before_match(tmp_path: Path):
 
 
 def test_cron_only_fires_for_terminal_status(tmp_path: Path):
-    from taskqueue.db import open_db
     from unittest.mock import patch
+
+    from taskqueue.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="running")  # running — should not re-queue
 
-    last = datetime(2025, 1, 6, 1, 59, tzinfo=timezone.utc)
+    last = datetime(2025, 1, 6, 1, 59, tzinfo=UTC)
     state = {"ts": last}
-    fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=timezone.utc)
+    fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=UTC)
 
     with patch("taskqueue.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now

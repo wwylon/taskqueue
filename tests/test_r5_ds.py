@@ -2,21 +2,18 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 from taskqueue.capacity import build_capacity
 from taskqueue.config import Project, validate_config
+from taskqueue.db import get_config, open_db, parse_task_yaml_many, set_config
+from taskqueue.scheduler import check_services_cached, clear_service_probe_cache
 from taskqueue.yaml_sync import (
     YAML_PARSER_GEN,
     _sync_project,
     _yaml_mtime_cache,
     clear_yaml_mtime_cache,
 )
-from taskqueue.db import parse_task_yaml_many
-from taskqueue.db import get_config, open_db, set_config
-from taskqueue.scheduler import check_services_cached, clear_service_probe_cache
-from taskqueue.web import make_handler
 
 
 def _project(tmp_path: Path) -> Project:
@@ -130,10 +127,10 @@ def test_capacity_skips_detect_system_when_snapshot_given(tmp_path: Path, monkey
 
 
 def test_rconn_opens_without_migrate() -> None:
-    from taskqueue.web.handler import Handler
     import threading
 
     import taskqueue.db as dbmod
+    from taskqueue.web.handler import Handler
 
     seen = {}
 

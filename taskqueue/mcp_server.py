@@ -4,10 +4,11 @@ Implements initialize / tools/list / tools/call over JSON-RPC 2.0 newline messag
 """
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
 
 import json
+import logging
 import os
+import sqlite3
 import sys
 import threading
 from pathlib import Path
@@ -16,12 +17,12 @@ from typing import Any
 from taskqueue import __version__
 from taskqueue import config as tqconfig
 from taskqueue._db_tasks import get_task, get_task_status
-from taskqueue.jsonutil import json_list
+from taskqueue._time import parse_iso as _parse_iso
 from taskqueue.capacity import build_capacity
 from taskqueue.db import get_config, open_db
 from taskqueue.errors import block_kind as _block_kind
+from taskqueue.jsonutil import json_list
 from taskqueue.queries import build_task_health, list_attention, list_operator_tasks
-
 
 TOOLS = [
     {
@@ -265,8 +266,43 @@ TOOLS = [
         "name": "stop_task",
         "description": (
             "W6.8: Request cooperative stop of a running task, or cancel a queued one (it becomes interrupted). "
-            "Returns {ok, status, message}."
+            "Optional reason is stored on the latest run (same as tq stop --reason) for owners/diagnose. "
+            "Returns {ok, status, message, eta?} — eta is how much was left when the stop was requested."
         ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "task_id": {"type": "string"},
+                "reason": {
+                    "type": "string",
+                    "description": "Why the task was stopped (stored on runs.stop_reason, max 200 chars)",
+                },
+            },
+            "required": ["project", "task_id"],
+        },
+    },
+    {
+        "name": "hold_task",
+        "description": (
+            "Ask a running task to idle in-process for duration_sec (control action hold). "
+            "Keeps RAM/GPU; not the same as project freeze or suspend/exit 75. "
+            "Task must poll TQ_CONTROL_FILE (tq_client.maybe_hold / maybe_suspend)."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project": {"type": "string"},
+                "task_id": {"type": "string"},
+                "duration_sec": {"type": "number", "default": 600},
+                "reason": {"type": "string"},
+            },
+            "required": ["project", "task_id"],
+        },
+    },
+    {
+        "name": "unhold_task",
+        "description": "Clear a cooperative hold so the task can resume work.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -291,6 +327,13 @@ TOOLS = [
                 "filename": {
                     "type": "string",
                     "description": "Optional filename hint (default: unique submitted_*.yaml)",
+                },
+                "client_key": {
+                    "type": "string",
+                    "description": (
+                        "Optional idempotency key (<=128 chars). Retrying with the same key and body returns the "
+                        "first submission's task_ids (deduplicated: true) instead of creating a duplicate."
+                    ),
                 },
                 "wait": {
                     "type": "boolean",
@@ -319,6 +362,13 @@ TOOLS = [
                     "items": {"type": "object"},
                 },
                 "filename": {"type": "string"},
+                "client_key": {
+                    "type": "string",
+                    "description": (
+                        "Optional idempotency key (<=128 chars). Retrying with the same key and body returns the "
+                        "first submission's task_ids (deduplicated: true) instead of creating a duplicate."
+                    ),
+                },
             },
             "required": ["project", "yaml_text", "matrix"],
         },
@@ -332,11 +382,14 @@ TOOLS = [
         "name": "wait_for_task",
         "description": (
             "C3: Block until task(s) settle (completed/failed/interrupted/stopped/suspended; "
-            "disabled returns as settled but not finished). Preferred way to learn a task finished. "
+            "disabled returns as settled but not finished; deleted mid-wait → status removed / "
+            "tq.wait.removed, not not_found). Preferred way to learn a task finished. "
             'Select with project+task_id, tasks=["proj/id", ...], or filters project/suite/group/tag/mine '
             "(filters wait only for tasks not yet settled). mode=all (default) or any. "
             "Returns {ok, done, timed_out, waited_sec, tasks:[{status, exit_code, last_error_code, "
-            "stop_reason, wall_sec, progress_pct, last_lines, next_actions, log_tail?}], pending, not_found}. "
+            "stop_reason, wall_sec, progress_pct, eta, last_lines, next_actions, log_tail?}], pending, not_found}. "
+            "eta: {remaining_sec, finish_at, basis, text} while running; for a stopped/interrupted run "
+            "{remaining_sec, at_stop: true, stopped_at} = how much was left when it stopped. "
             "Capped at ~100 s per call (below MCP client timeouts): if timed_out is true, call again. "
             "Then call task_result for metrics/artifacts."
         ),
@@ -381,7 +434,9 @@ TOOLS = [
         "name": "task_result",
         "description": (
             "C4: Structured result for any task: status, exit_code, duration, peak resources, "
-            "metrics (from TQ_METRIC lines), artifacts, error_code, block_reason."
+            "metrics (from TQ_METRIC lines), artifacts, error_code, block_reason, "
+            "stop_reason, stopped_by, stop_summary (why it was stopped — human or TaskQueue), "
+            "eta (time left, or how much was left when the run was stopped; see wait_for_task)."
         ),
         "inputSchema": {
             "type": "object",
@@ -413,6 +468,9 @@ TOOLS = [
         },
     },
 ]
+
+
+_log = logging.getLogger(__name__)
 
 
 def _conn(home: Path):
@@ -493,9 +551,7 @@ def _report(home: Path, args: dict[str, Any]) -> Any:
             from taskqueue.hygiene import build_hygiene_report
 
             older = float(args.get("older_than_days") or 30)
-            return build_hygiene_report(
-                conn, project=args.get("project"), days=days, older_than_days=older
-            )
+            return build_hygiene_report(conn, project=args.get("project"), days=days, older_than_days=older)
         from taskqueue.reports import build_report
 
         return build_report(conn, project=args.get("project"), days=days)
@@ -518,7 +574,7 @@ def _queue_status(home: Path, _args: dict[str, Any]) -> Any:
         boot = last_boot_kind(conn)
         last_ev = latest_daemon_event(conn)
         events = list_daemon_events(conn, limit=5)
-    except Exception:
+    except sqlite3.Error:
         pass
     conn.close()
     return {
@@ -672,8 +728,12 @@ def _retry_tasks(home: Path, args: dict[str, Any]) -> Any:
     )
     if api is not None:
         return {"ok": bool(api.get("ok")), "dry_run": False, **api}
+    from taskqueue._cli_helpers import offline_sqlite_write_blocked
     from taskqueue.db import retry_tasks_batch
 
+    block = offline_sqlite_write_blocked(home)
+    if block:
+        return {"ok": False, "dry_run": False, "error": block, "unreachable": True}
     conn = _conn(home)
     try:
         batch = retry_tasks_batch(conn, retry_keys)
@@ -724,7 +784,9 @@ def _log_tail(home: Path, args: dict[str, Any]) -> Any:
             "message": f"no log found for {project}/{task_id}",
         }
 
-    log_path = Path(run_row["log_path"])
+    from taskqueue.logio import readable_log
+
+    log_path = readable_log(run_row["log_path"])
     if not log_path.exists():
         return {
             "text": "",
@@ -773,7 +835,6 @@ def _log_tail(home: Path, args: dict[str, Any]) -> Any:
 
 def _enqueue_task(home: Path, args: dict[str, Any]) -> Any:
     """W6.8+S7: Re-queue a terminal task, optionally with per-run arg overrides."""
-    import json as _json
     from taskqueue.db import get_task
     from taskqueue.mutations import retry_task_op
 
@@ -802,7 +863,7 @@ def _enqueue_task(home: Path, args: dict[str, Any]) -> Any:
         if _delta:
             try:
                 _base = list(json_list(row["args"]))
-            except Exception:
+            except (TypeError, ValueError):
                 _base = []
             _override_list = merge_arg_overrides(_base, _delta)
             from taskqueue.db import check_arg_overrides
@@ -831,12 +892,8 @@ def _enqueue_task(home: Path, args: dict[str, Any]) -> Any:
 
 
 def _patch_task(home: Path, args: dict[str, Any]) -> Any:
-    """W6.8: Patch a task's YAML fields."""
-    from pathlib import Path as _Path
-
-    from taskqueue.config import load_projects
-    from taskqueue.db import get_config, get_task, parse_task_yaml, upsert_task
-    from taskqueue.yaml_patch import patch_task_yaml
+    """W6.8: Patch a task's YAML fields (via mutate — F-245)."""
+    from taskqueue.mutations import patch_op
 
     project = args.get("project") or ""
     task_id = args.get("task_id") or ""
@@ -845,83 +902,56 @@ def _patch_task(home: Path, args: dict[str, Any]) -> Any:
         raise ValueError("project and task_id are required")
     if not isinstance(updates, dict):
         raise ValueError("updates must be a dict")
-
-    conn = _conn(home)
-    try:
-        row = get_task(conn, project, task_id)
-        if row is None or not row["yaml_source"]:
-            return {"ok": False, "applied": [], "message": f"task not found or has no yaml_source: {project}/{task_id}"}
-        from taskqueue.master_client import via_master
-
-        api = via_master(home, "POST", f"/api/tasks/{project}/{task_id}/patch", body={"updates": updates})
-        if api is not None:
-            return {
-                "ok": bool(api.get("ok")),
-                "applied": api.get("applied") or [],
-                "message": api.get("error") or f"patched {', '.join(api.get('applied') or [])}",
-            }
-        path = _Path(row["yaml_source"])
-        try:
-            applied = patch_task_yaml(path, updates, task_id=task_id)
-        except ValueError as exc:
-            return {"ok": False, "applied": [], "message": str(exc)}
-        projects = load_projects(home)
-        proj = projects.get(project)
-        if proj is None:
-            return {"ok": False, "applied": applied, "message": f"project not registered: {project}"}
-        upsert_task(
-            conn, parse_task_yaml(path, proj, allow_remote_notify=bool(get_config(conn).get("notify_allow_remote")))
-        )
-    finally:
-        conn.close()
-    return {"ok": True, "applied": applied, "message": f"patched {', '.join(applied)}"}
+    return patch_op(home, project, task_id, updates, force=bool(args.get("force")))
 
 
 def _stop_task(home: Path, args: dict[str, Any]) -> Any:
-    """W6.8: Stop a running task, or cancel a queued one (marked interrupted)."""
-    from taskqueue.db import get_task, request_stop_with_control
+    """Stop a running task, or cancel a queued one (interrupted). Offline gated via mutate (F-245/F-246)."""
+    from taskqueue.mutations import stop_op
 
     project = args.get("project") or ""
     task_id = args.get("task_id") or ""
     if not project or not task_id:
         raise ValueError("project and task_id are required")
-    conn = _conn(home)
+    return stop_op(
+        home,
+        project,
+        task_id,
+        reason=(args.get("reason") or ""),
+        force=bool(args.get("force")),
+    )
+
+
+def _hold_task(home: Path, args: dict[str, Any]) -> Any:
+    from taskqueue.mutations import hold_op
+
+    project = args.get("project") or ""
+    task_id = args.get("task_id") or ""
+    if not project or not task_id:
+        raise ValueError("project and task_id are required")
     try:
-        row = get_task(conn, project, task_id)
-        if row is None:
-            return {"ok": False, "status": None, "message": f"task not found: {project}/{task_id}"}
-        current_status = row["status"]
-        if current_status not in ("running", "queued"):
-            return {
-                "ok": False,
-                "status": current_status,
-                "message": f"task is not running or queued (status={current_status})",
-            }
-        from taskqueue.master_client import via_master
+        duration_sec = float(args.get("duration_sec") if args.get("duration_sec") is not None else 600)
+    except (TypeError, ValueError):
+        duration_sec = 600.0
+    reason = (args.get("reason") or "").strip()[:200] or None
+    return hold_op(
+        home,
+        project,
+        task_id,
+        duration_sec=duration_sec,
+        reason=reason,
+        force=bool(args.get("force")),
+    )
 
-        # Same as the web UI: a queued task is marked interrupted, a running one gets a stop request.
-        api = via_master(home, "POST", f"/api/stop/{project}/{task_id}")
-        if api is not None:
-            ok = bool(api.get("ok"))
-            final = api.get("final_status")
-            return {
-                "ok": ok,
-                "status": final or current_status,
-                "message": ("stopped before start" if final else "stop requested")
-                if ok
-                else (api.get("error") or "stop failed"),
-            }
-        if current_status == "queued":
-            return {
-                "ok": False,
-                "status": "queued",
-                "message": "stopping a queued task needs the master (daemon not reachable)",
-            }
-        request_stop_with_control(conn, home, project, task_id)
-    finally:
-        conn.close()
-    return {"ok": True, "status": "running", "message": "stop requested"}
 
+def _unhold_task(home: Path, args: dict[str, Any]) -> Any:
+    from taskqueue.mutations import unhold_op
+
+    project = args.get("project") or ""
+    task_id = args.get("task_id") or ""
+    if not project or not task_id:
+        raise ValueError("project and task_id are required")
+    return unhold_op(home, project, task_id, force=bool(args.get("force")))
 
 def _progress_snapshot(home: Path, args: dict[str, Any]) -> Any:
     """W6.14: Return progress + resource metrics for tasks in a project."""
@@ -965,6 +995,7 @@ def _progress_snapshot(home: Path, args: dict[str, Any]) -> Any:
                     "status": m["status"],
                     "progress_pct": m["progress_pct"],
                     "eta_sec": m["eta_sec"],
+                    "eta": m["eta"],
                     "last_line": m["last_line"],
                     "elapsed_sec": m["elapsed_sec"],
                     "requires_gpu": m["requires_gpu"],
@@ -1017,14 +1048,15 @@ def _wait_next(keys: list[str]) -> dict[str, Any]:
 
 
 def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
-    from taskqueue.master_client import via_master
     from taskqueue.config import load_projects
-    from taskqueue.db import get_config, open_db, parse_task_yaml_many, upsert_task
+    from taskqueue.db import open_db
+    from taskqueue.master_client import via_master
 
     project = args.get("project") or ""
     yaml_text = args.get("yaml_text") or ""
     filename = args.get("filename") or ""
     matrix = args.get("matrix")  # optional list of dicts for submit_matrix
+    client_key = args.get("client_key")  # C-002 idempotency key (optional)
 
     if not project or not yaml_text.strip():
         return {
@@ -1047,19 +1079,33 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
                 }
             doc["matrix"] = matrix
             yaml_text = _yaml.dump(doc, allow_unicode=True)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any matrix error is returned to the agent
             return {"ok": False, "task_ids": [], "errors": [{"field": "matrix", "message": str(exc)}]}
 
-    api = via_master(
-        home, "POST", "/api/cli/add", body={"project": project, "yaml_text": yaml_text, "filename": filename}
-    )
+    body = {"project": project, "yaml_text": yaml_text, "filename": filename}
+    if client_key is not None:
+        body["client_key"] = client_key
+    api = via_master(home, "POST", "/api/cli/add", body=body)
     if api is not None:
         if api.get("ok"):
-            return {"ok": True, "task_ids": api.get("task_ids") or [], "errors": []}
+            out = {"ok": True, "task_ids": api.get("task_ids") or [], "errors": []}
+            if api.get("deduplicated"):
+                out["deduplicated"] = True
+            return out
         err = api.get("error") or "submission failed"
         return {"ok": False, "task_ids": [], "errors": [{"field": "", "message": err}]}
 
-    # offline: write directly to DB
+    # offline: write directly to DB only when dual-writer guard allows (F-245).
+    from taskqueue._cli_helpers import offline_sqlite_write_blocked
+
+    block = offline_sqlite_write_blocked(home)
+    if block:
+        return {
+            "ok": False,
+            "task_ids": [],
+            "errors": [{"field": "", "message": block}],
+            "unreachable": True,
+        }
     projects = load_projects(home)
     proj = projects.get(project)
     if proj is None:
@@ -1068,42 +1114,29 @@ def _submit_task_nowait(home: Path, args: dict[str, Any]) -> Any:
             "task_ids": [],
             "errors": [{"field": "project", "message": f"Unknown project '{project}'"}],
         }
-    import time as _time
-    import uuid as _uuid
-    from pathlib import Path as _P
+    from taskqueue.submit import SubmitError, submit_yaml_to_queue
 
-    # Mirror /api/cli/add: persist into the project's queue dir (so yaml_source
-    # stays valid for resync), validated from a scratch file first.
-    fname = _P(filename).name if filename else ""
-    if fname and not fname.endswith((".yaml", ".yml")):
-        fname += ".yaml"
-    if not fname:
-        fname = f"submitted_{int(_time.time() * 1000)}_{_uuid.uuid4().hex[:6]}.yaml"
-    dest = proj.queue_dir / fname
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    scratch = dest.with_name(f".{fname}.{_uuid.uuid4().hex[:8]}.tmp")
     db = open_db(tqconfig.db_path(home), migrate=False)
     try:
-        allow_remote = bool(get_config(db).get("notify_allow_remote"))
-        try:
-            scratch.write_text(yaml_text, encoding="utf-8")
-            parse_task_yaml_many(scratch, proj, allow_remote_notify=allow_remote)
-            os.replace(scratch, dest)
-            tasks = parse_task_yaml_many(dest, proj, allow_remote_notify=allow_remote)
-        except Exception as exc:
-            scratch.unlink(missing_ok=True)
-            return {"ok": False, "task_ids": [], "errors": [{"field": "yaml_text", "message": str(exc)}]}
-        ids = []
-        from taskqueue.db import stamp_provenance
-
-        for task in tasks:
-            upsert_task(db, task)
-            ids.append(task.task_id)
-        stamp_provenance(db, project, ids, "mcp", os.environ.get("TQ_OPERATOR"), _CLIENT_INFO["name"])
+        result = submit_yaml_to_queue(
+            db,
+            proj,
+            yaml_text,
+            filename=filename or None,
+            client_key=client_key,
+            via="mcp",
+            operator=os.environ.get("TQ_OPERATOR"),
+            client=_CLIENT_INFO.get("name"),
+        )
         db.commit()
+    except SubmitError as exc:
+        return {"ok": False, "task_ids": [], "errors": [{"field": "", "message": str(exc)}]}
     finally:
         db.close()
-    return {"ok": True, "task_ids": ids, "errors": []}
+    out = {"ok": True, "task_ids": result.get("task_ids") or [], "errors": []}
+    if result.get("deduplicated"):
+        out["deduplicated"] = True
+    return out
 
 
 def _list_projects(home: Path, _args: dict[str, Any]) -> Any:
@@ -1208,13 +1241,14 @@ def _attach_failure_details(home: Path, result: dict[str, Any], limit: int = 5) 
             try:
                 tail = _log_tail(home, {"project": t["project"], "task_id": t["task_id"], "max_bytes": 2048})
                 t["log_tail"] = tail.get("text", "") if isinstance(tail, dict) else ""
-            except Exception:
+            except Exception:  # noqa: BLE001 - inlined log tail is best-effort
                 t["log_tail"] = ""
 
 
 def _task_result(home: Path, args: dict[str, Any]) -> Any:
     """C4: Structured result for a completed task."""
     import json as _json
+
     from taskqueue.db import get_task
 
     project = args.get("project") or ""
@@ -1233,8 +1267,10 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
             (project, task_id),
         ).fetchone()
         from taskqueue._db_tasks import run_summary
+        from taskqueue.eta import task_eta
 
         run_info = run_summary(conn, project, task_id)
+        eta = task_eta(conn, project, task_id)
     finally:
         conn.close()
 
@@ -1251,23 +1287,22 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
         peak_vram_gib = run["peak_vram_gib"]
         if run["started_at"] and run["finished_at"]:
             try:
-                from datetime import datetime
-
                 s = _parse_iso(run["started_at"])
                 f = _parse_iso(run["finished_at"])
                 duration_sec = round((f - s).total_seconds(), 1)
-            except Exception:
+            except (TypeError, ValueError):
                 pass
         if run["metrics_json"]:
             try:
                 metrics = _json.loads(run["metrics_json"])
-            except Exception:
+            except (TypeError, ValueError):
                 pass
 
     artifacts = []
     try:
         raw_arts = json_list(task["artifacts"])
         from pathlib import Path as _P
+
         from taskqueue.config import load_projects
 
         # F-158: resolve relative artifacts against the registered project root,
@@ -1276,17 +1311,17 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
         try:
             root = load_projects(home).get(project)
             root = root.root if root is not None else None
-        except Exception:
+        except Exception:  # noqa: BLE001 - a bad projects.yaml leaves artifacts relative
             root = None
         for a in raw_arts:
             p = _P(str(a))
             if not p.is_absolute() and root is not None:
                 p = (_P(root) / p).resolve()
             artifacts.append({"path": str(p), "exists": p.exists()})
-    except Exception:
+    except (OSError, TypeError, ValueError):
         pass
 
-    return {
+    out = {
         "ok": True,
         "status": task["status"],
         "exit_code": exit_code,
@@ -1304,7 +1339,24 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
         "error_code": task["last_error_code"],
         "block_reason": task["block_reason"],
         "block_kind": _block_kind(task["last_error_code"]),
+        "eta": eta,
     }
+    if run:
+        from taskqueue.stop_summary import format_stop_summary
+
+        summary = format_stop_summary(
+            status=task["status"],
+            stop_reason=run["stop_reason"] if "stop_reason" in run.keys() else None,
+            stopped_by=run["stopped_by"] if "stopped_by" in run.keys() else None,
+            last_error_code=task["last_error_code"],
+        )
+        if run["stop_reason"] if "stop_reason" in run.keys() else None:
+            out["stop_reason"] = run["stop_reason"]
+        if run["stopped_by"] if "stopped_by" in run.keys() else None:
+            out["stopped_by"] = run["stopped_by"]
+        if summary:
+            out["stop_summary"] = summary
+    return out
 
 
 _PIGGY: dict[str, Any] = {"ts": None, "size": -1}
@@ -1387,6 +1439,8 @@ _HANDLERS: dict[str, Any] = {
     "retry_tasks": _retry_tasks,
     "patch_task": _patch_task,
     "stop_task": _stop_task,
+    "hold_task": _hold_task,
+    "unhold_task": _unhold_task,
     "submit_task": _submit_task,
     "submit_matrix": _submit_task,
     "list_projects": _list_projects,
@@ -1441,8 +1495,8 @@ def _record_usage(home: Path, name: Any, args: dict[str, Any], t0: float, error_
             )
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - usage tracking is best-effort
+        _log.debug("usage tracking failed", exc_info=True)
 
 
 def _run_tool_call(home: Path, msg_id: Any, params: dict[str, Any]) -> None:
@@ -1491,8 +1545,8 @@ def _run_tool_call(home: Path, msg_id: Any, params: dict[str, Any]) -> None:
                 fin = _finished_since_last_call(home)
                 if fin:
                     result["finished_since_last_call"] = fin
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - piggy-backed notifications are best-effort
+                _log.debug("finished_since_last_call lookup failed", exc_info=True)
         is_err = False
         if isinstance(result, dict) and result.get("ok") is False:
             err = str(result.get("error_code") or "ok_false")
@@ -1507,7 +1561,7 @@ def _run_tool_call(home: Path, msg_id: Any, params: dict[str, Any]) -> None:
         if is_err:
             payload["isError"] = True
         _respond(msg_id, payload)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a failing tool becomes an isError result (MCP)
         _record_usage(home, name, args, t0, "mcp.error")
         # MCP: a failing tool is a tool *result* with isError, so the model sees the message.
         _respond_tool_error(msg_id, str(exc))

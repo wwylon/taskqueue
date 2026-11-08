@@ -21,7 +21,9 @@ def _task(conn, project: str, task_id: str, *, status: str = "queued", suite: st
     )
 
 
-def _run(conn, project: str, task_id: str, *, started: str, finished: str | None = None, status: str = "completed") -> None:
+def _run(
+    conn, project: str, task_id: str, *, started: str, finished: str | None = None, status: str = "completed"
+) -> None:
     conn.execute(
         "INSERT INTO runs (project, task_id, started_at, finished_at, status) VALUES (?,?,?,?,?)",
         (project, task_id, started, finished or started, status),

@@ -59,7 +59,7 @@ export async function loadResources() {
     if (ts) ts.textContent = 'updated ' + new Date().toLocaleTimeString();
   } catch(e) {
     const el = document.getElementById('res-bars');
-    if (el) el.innerHTML = `<div class="empty">Error loading resources: ${escHtml(String(e))}</div>`;
+    if (el) el.innerHTML = `<div class="empty">${escHtml(i18n.t('resources.loadError', {error: String(e)}))}</div>`;
   }
 }
 

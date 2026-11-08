@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db, parse_task_yaml
 from taskqueue._db_tasks import retry_task, upsert_task
+from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.finalize_hooks import apply_finalize_wake_hooks
 from taskqueue.queries import find_broken_deps
 from taskqueue.scheduler import FilterContext, filter_deps

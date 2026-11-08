@@ -1,0 +1,12 @@
+task_id: remote_pack
+command: python
+args: [scripts/pack.py]
+dispatch: remote
+requires:
+  os: linux
+transfer:
+  - {src: data/input.bin, dst: data/input.bin, direction: push}
+  - {src: runs/out.bin, dst: runs/out.bin, direction: pull}
+resources:
+  cpu_cores: 4
+  ram_gib: 8.0

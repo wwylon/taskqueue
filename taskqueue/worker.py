@@ -1,46 +1,52 @@
-import os
-import sys
-import time
-import json
-import uuid
 import base64
+import json
+import logging
+import os
 import platform
-import threading
 import subprocess
-import urllib.request
+import sys
+import threading
+import time
 import urllib.error
+import urllib.request
+import uuid
 from pathlib import Path
-from taskqueue.reap import terminate_tree
+
 import psutil
 
+from taskqueue import __version__ as _WORKER_VERSION
 from taskqueue.config import (
-    PROTOCOL_VERSION,
-    MIN_SUPPORTED_PROTOCOL,
     MAX_SUPPORTED_PROTOCOL,
+    MIN_SUPPORTED_PROTOCOL,
+    PROTOCOL_VERSION,
     WORK_LONGPOLL_MAX_SEC,
     load_projects,
 )
-from taskqueue import __version__ as _WORKER_VERSION
 from taskqueue.db import SCHEMA_VERSION as _WORKER_SCHEMA
+from taskqueue.reap import terminate_tree
 
 # F-208: HTTP + auth live in worker_http (re-exported for existing imports).
 from taskqueue.worker_http import (  # noqa: E402
-    set_auth_token,
-    auth_token,
     _auth_headers,
-    post_json as _post,
+    set_auth_token,
+)
+from taskqueue.worker_http import (
     get_json as _get,
+)
+from taskqueue.worker_http import (
+    post_json as _post,
 )
 
 # F-208: outbox helpers live in worker_outbox (re-exported for existing imports).
 from taskqueue.worker_outbox import (  # noqa: E402
-    PENDING_FINALIZE_DIR,
     pending_finalize_dir,
     pending_finalize_is_ack,
     pending_finalize_is_permanent_reject,
     quarantine_pending_finalize,
     write_pending_finalize,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def post_finalize(
@@ -76,7 +82,7 @@ def flush_pending_finalize(
     for p in sorted(d.glob("*.json")):
         try:
             payload = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             remaining += 1
             continue
         resp = post_finalize(master_url, payload, post_fn=post_fn)
@@ -150,13 +156,15 @@ def get_sys_info() -> dict:
 
     gpus = _detect_gpus()
 
-    # B4: enrich GPU list with per-device compute_cap and live free VRAM via nvidia-smi.
+    # B4 / F-212: enrich GPUs; keep driver_version and cuda_version distinct.
+    # nvidia-smi cuda_version is the max CUDA the *driver* supports (not toolkit).
+    driver_version = ""
     cuda_version = ""
     try:
         _result = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=name,memory.total,memory.free,compute_cap,driver_version",
+                "--query-gpu=name,memory.total,memory.free,compute_cap,driver_version,cuda_version",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -170,20 +178,21 @@ def get_sys_info() -> dict:
                     continue
                 _parts = [p.strip() for p in _line.split(",")]
                 if len(_parts) >= 5:
-                    gpu_details.append(
-                        {
-                            "name": _parts[0],
-                            "vram_gib": round(float(_parts[1]) / 1024, 2),
-                            "vram_free_gib": round(float(_parts[2]) / 1024, 2),
-                            "compute_cap": _parts[3],
-                            "cuda_version": _parts[4],
-                        }
-                    )
+                    entry = {
+                        "name": _parts[0],
+                        "vram_gib": round(float(_parts[1]) / 1024, 2),
+                        "vram_free_gib": round(float(_parts[2]) / 1024, 2),
+                        "compute_cap": _parts[3],
+                        "driver_version": _parts[4],
+                    }
+                    if len(_parts) >= 6 and _parts[5]:
+                        entry["cuda_version"] = _parts[5]
+                    gpu_details.append(entry)
             if gpu_details:
                 gpus = gpu_details
-                if gpus[0].get("cuda_version"):
-                    cuda_version = gpus[0]["cuda_version"]
-    except Exception:
+                driver_version = str(gpus[0].get("driver_version") or "")
+                cuda_version = str(gpus[0].get("cuda_version") or "")
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
         pass
 
     vram = round(sum(g.get("vram_gib", 0.0) for g in gpus), 1)
@@ -201,7 +210,9 @@ def get_sys_info() -> dict:
         # card instead of the pooled total (a 2x12GiB worker != one 24GiB GPU).
         "gpus": gpus,
         "python_version": python_version,
+        # Max CUDA version the NVIDIA driver advertises (nvidia-smi cuda_version).
         "cuda_version": cuda_version,
+        "driver_version": driver_version,
         "stable": _os.environ.get("TQ_WORKER_STABLE", "0") == "1",
     }
 
@@ -219,7 +230,7 @@ def get_live_load() -> dict:
         gpus = _detect_gpus()
         vram_total = round(sum(float(g.get("vram_gib", 0.0)) for g in gpus), 2)
         vram_used = round(sum(float(g.get("vram_used_gib", 0.0)) for g in gpus), 2)
-    except Exception:
+    except Exception:  # noqa: BLE001 - hardware probes (NVML, nvidia-smi) fail in many ways
         gpus = []
     # B4: per-device free VRAM (best-effort nvidia-smi live read).
     try:
@@ -237,11 +248,11 @@ def get_live_load() -> dict:
                         gpu_free_list.append({"vram_free_gib": round(float(_line) / 1024, 2)})
                     except ValueError:
                         pass
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         pass
     try:
         cpu_used = sum(psutil.cpu_percent(percpu=True)) / 100.0
-    except Exception:
+    except (OSError, psutil.Error):
         cpu_used = 0.0
     result: dict = {
         "ram_used_gib": round(ram.used / (1024**3), 2),
@@ -284,7 +295,7 @@ def _check_worker_upgrade(
     try:
         mv = tuple(int(x) for x in master_ver.split(".")[:3])
         wv = tuple(int(x) for x in _WORKER_VERSION.split(".")[:3])
-    except Exception:
+    except (AttributeError, ValueError):
         return False
 
     if mv <= wv:
@@ -317,7 +328,7 @@ def _check_worker_upgrade(
                 h.update(chunk)
                 out.write(chunk)
         actual_sha = h.hexdigest()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any download error aborts the upgrade
         print(f"[worker] Upgrade download failed: {e}", file=sys.stderr)
         new_wheel.unlink(missing_ok=True)
         return False
@@ -349,7 +360,7 @@ def _check_worker_upgrade(
                 install_ok = True
                 break
             print(f"[worker] installer {installer[0]} failed: {result.stderr.strip()}", file=sys.stderr)
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             print(f"[worker] installer error: {e}", file=sys.stderr)
 
     if not install_ok:
@@ -364,7 +375,7 @@ def _check_worker_upgrade(
                     r = subprocess.run(installer, capture_output=True, text=True, timeout=120)
                     if r.returncode == 0:
                         break
-                except Exception:
+                except (OSError, subprocess.SubprocessError):
                     pass
         return False
 
@@ -395,7 +406,7 @@ def _load_worker_conf(home: Path) -> tuple[bool, str | None]:
             return bool(_wconf.get("pin_worker_version", False)), (
                 str(_wconf.get("worker_token") or "").strip() or None
             )
-        except Exception:
+        except (ImportError, OSError, ValueError, AttributeError, _yaml.YAMLError):
             pass
     return False, None
 
@@ -501,7 +512,7 @@ def run_worker(  # noqa: C901
             try:
                 ctrl.parent.mkdir(parents=True, exist_ok=True)
                 ctrl.write_text(json.dumps({"action": "suspend"}), encoding="utf-8")
-            except Exception:
+            except OSError:
                 pass
 
     def _apply_stop(run_ids) -> None:
@@ -583,7 +594,7 @@ def run_worker(  # noqa: C901
         while True:
             try:
                 _heartbeat_once()
-            except Exception as _e:
+            except Exception as _e:  # noqa: BLE001 - heartbeat thread guard keeps the loop alive
                 print(f"[worker] heartbeat_loop error: {_e}", file=sys.stderr)
                 time.sleep(5)
 
@@ -672,8 +683,8 @@ def run_worker(  # noqa: C901
                 if proc is not None:
                     try:
                         terminate_tree(proc, background=True)
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001 - terminate is best-effort during shutdown
+                        _log.debug("terminate_tree failed during worker shutdown", exc_info=True)
                 print(
                     "[worker] lease fence: master unreachable; stopping child before lease expiry",
                     file=sys.stderr,
@@ -730,7 +741,7 @@ def run_worker(  # noqa: C901
                         time.sleep(1.0)
                 elif resp is None:
                     time.sleep(2)  # master unreachable: do not hot-spin
-            except Exception as _e:
+            except Exception as _e:  # noqa: BLE001 - command thread guard keeps the loop alive
                 print(f"[worker] command_loop error: {_e}", file=sys.stderr)
                 time.sleep(5)
 
@@ -877,7 +888,7 @@ def _do_worker_file_sync(home: Path, master_url: str) -> None:
     print("[worker] file_sync_requested: pulling allowlisted project files...")
     try:
         projects = load_projects(home)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a bad projects.yaml skips this sync
         print(f"[worker] file-sync: failed to load projects: {e}", file=sys.stderr)
         return
     from taskqueue.project_sync import pull_from_master
@@ -902,7 +913,7 @@ def _do_worker_file_sync(home: Path, master_url: str) -> None:
                     f"[worker] file-sync {name}: {result.get('error', 'failed')}",
                     file=sys.stderr,
                 )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - one project's sync failure must not stop the others
             print(f"[worker] file-sync {name}: {e}", file=sys.stderr)
 
 
@@ -924,7 +935,7 @@ def _do_worker_sync_locked(home: Path) -> None:
     print("[worker] sync_requested: updating all projects...")
     try:
         projects = load_projects(home)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a bad projects.yaml skips this sync
         print(f"[worker] sync: failed to load projects: {e}", file=sys.stderr)
         return
     for name, proj in projects.items():
@@ -946,7 +957,7 @@ def _do_worker_sync_locked(home: Path) -> None:
                 print(f"[worker] sync: {name} git pull OK — {result.stdout.strip() or 'already up to date'}")
             else:
                 print(f"[worker] sync: {name} git pull failed: {result.stderr.strip()}", file=sys.stderr)
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
             print(f"[worker] sync: {name} git pull error: {e}", file=sys.stderr)
             continue
         if (root / "pyproject.toml").is_file():
@@ -966,7 +977,7 @@ def _do_worker_sync_locked(home: Path) -> None:
                         f"[worker] sync: {name} uv sync failed (rc={uv.returncode}): {err}",
                         file=sys.stderr,
                     )
-            except Exception as e:
+            except (OSError, subprocess.SubprocessError) as e:
                 print(f"[worker] sync: {name} uv sync error: {e}", file=sys.stderr)
     print("[worker] sync complete.")
 
@@ -992,7 +1003,7 @@ def _install_windows_service(home: Path, worker_id: str) -> None:
             print(f"[install-service] Task Scheduler task {task_name!r} created.")
         else:
             print(f"[install-service] Failed: {result.stderr.strip()}", file=sys.stderr)
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"[install-service] Error: {e}", file=sys.stderr)
 
 
@@ -1053,7 +1064,7 @@ def setup_worker(
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
             projs = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - setup reports any fetch error
         print(f"[setup] Failed to fetch project list: {e}", file=sys.stderr)
         return
 
@@ -1077,7 +1088,7 @@ def setup_worker(
         try:
             raw = yaml.safe_load(reg_p.read_text(encoding="utf-8")) or {}
             existing = raw.get("projects") or {}
-        except Exception:
+        except (OSError, AttributeError, yaml.YAMLError):
             pass
 
     new_projects = {}
@@ -1106,7 +1117,7 @@ def setup_worker(
 
                 _nt = hide_console_check_output_kwargs()
                 subprocess.run(["git", "clone", git_url, str(local_root)], check=True, **_nt)
-            except Exception as e:
+            except (OSError, subprocess.SubprocessError) as e:
                 print(f"[setup] Failed to clone '{name}': {e}", file=sys.stderr)
 
         if local_root.is_dir():
@@ -1117,7 +1128,7 @@ def setup_worker(
 
                     _nt = hide_console_check_output_kwargs()
                     subprocess.run(["uv", "sync"], cwd=str(local_root), **_nt)
-                except Exception as e:
+                except (OSError, subprocess.SubprocessError) as e:
                     print(f"[setup] Failed to run 'uv sync': {e}", file=sys.stderr)
 
         new_projects[name] = {
@@ -1144,7 +1155,7 @@ def setup_worker(
 
             _existing_conf = _yaml2.safe_load(worker_yaml_p.read_text(encoding="utf-8")) or {}
             existing_token = str(_existing_conf.get("worker_token") or "").strip() or None
-        except Exception:
+        except (OSError, AttributeError, _yaml2.YAMLError):
             pass
     worker_token = existing_token or _secrets.token_hex(32)
     worker_conf = {

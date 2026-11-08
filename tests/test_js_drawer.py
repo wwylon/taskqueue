@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tests.test_js_app import run_js
 from tests.test_js_smoke import EV
 
@@ -93,48 +95,6 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["chips"] == 5
     assert "Dependencies" in out["body"]
     assert "up0" in out["body"] and "up4" in out["body"]
-
-
-def test_queue_dep_html_truncates_unmet_to_three_plus_ellipsis():
-    """F-185: five unmet deps → three names + …; zero unmet → count only."""
-    deps = [f"up{i}" for i in range(5)]
-    waiting = {
-        **TASK,
-        "depends_on": deps,
-        "dep_status": {d: "queued" for d in deps},
-        "missing_deps": [],
-    }
-    done = {
-        **TASK,
-        "depends_on": deps,
-        "dep_status": {d: "completed" for d in deps},
-        "missing_deps": [],
-    }
-    out = run_js(
-        EV
-        + f"""
-const {{ g }} = await setup({{ app: true }});
-await g.flush();
-g.i18n = {{ t: (k, v) => {{
-  if (k === 'task.depsCount') return 'Deps: ' + v.met + '/' + v.total;
-  if (k === 'task.depsMore') return 'more dependencies';
-  return k;
-}}}};
-const r = {{}};
-r.wait = g._queueDepHtml({waiting!r}, {{}});
-r.done = g._queueDepHtml({done!r}, {{}});
-r.waitTags = (r.wait.match(/dep-tag/g) || []).length;
-r.hasEllipsis = r.wait.includes('…');
-r.doneTags = (r.done.match(/dep-tag/g) || []).length;
-console.log('RESULT:' + JSON.stringify(r));
-"""
-    )
-    assert out["waitTags"] == 3
-    assert out["hasEllipsis"] is True
-    assert "Deps: 0/5" in out["wait"]
-    assert out["doneTags"] == 0
-    assert "Deps: 5/5" in out["done"]
-    assert "…" not in out["done"]
 
 
 def test_queue_dep_html_truncates_unmet_to_three_plus_ellipsis():
@@ -327,7 +287,8 @@ def test_why_button_shows_reasons_and_dry_run_verdict():
         EV
         + f"""
 const {{ g, doc, S }} = await setup({{ app: true, routes: {{
-  '/why': () => ({{ ok: true, reasons: ['waiting on dependency p/up'], plan: {{ verdict: 'blocked', reason: 'waiting on p/up' }} }}),
+  '/why': () => ({{ ok: true, reasons: ['waiting on dependency p/up'], plan: {{ verdict: 'blocked', reason: 'waiting on p/up',
+    need: {{ cpu_cores: 1, ram_gib: 20, gpu_vram_gib: 0 }}, free: {{ cpu_cores: 7, ram_gib: 10, gpu_vram_gib: 0 }} }} }}),
 }} }});
 await g.flush();
 S.queue = [{TASK!r}];
@@ -339,6 +300,7 @@ console.log('RESULT:' + JSON.stringify({{ shown, url: g.fetches.map(f => f.url).
     )
     msg, title = out["shown"][0]
     assert "waiting on dependency p/up" in msg and "blocked" in msg and "p/t1" in title
+    assert msg.count("drawer.whyNeedFree") == 2  # CPU and RAM; VRAM is not declared
     assert out["url"] == "/api/tasks/p/t1/why"
 
 
@@ -359,3 +321,58 @@ console.log('RESULT:' + JSON.stringify({{ svg: g.metricSparkSvg([[1, 1]]), body 
     )
     assert out["svg"] == ""  # one point: nothing to draw
     assert "tq-metric-row" in out["body"] and "<polyline" in out["body"] and ">0.2<" in out["body"]
+
+
+def test_drawer_metric_sparkline_overlays_previous_run():
+    out = run_js(
+        EV
+        + f"""
+const {{ g, doc, S }} = await setup({{ app: true, routes: {{
+  '/api/tasks/p/t1/runs': () => ({{ runs: [{{ run_id: 7 }}, {{ run_id: 5 }}, {{ run_id: 3 }}] }}),
+  '/api/runs/7': () => ({{ run_id: 7, metrics: {{ _series: {{ loss: [[1, 0.9], [2, 0.5], [3, 0.2]], acc: [[1, 0.1], [2, 0.4]] }} }} }}),
+  '/api/runs/5': () => ({{ run_id: 5, metrics: {{ _series: {{ loss: [[1, 1.2], [2, 0.8], [3, 0.6], [4, 0.4]] }} }} }}),
+}} }});
+await g.flush();
+S.queue = [{TASK!r}];
+g.tqOpenDrawer('p', 't1');
+for (let i = 0; i < 4; i++) await g.flush();
+const body = doc.getElementById('tq-drawer-body').innerHTML;
+const rows = body.split('tq-metric-row').slice(1);
+const loss = rows.find(r => r.includes('>loss<')) || '', acc = rows.find(r => r.includes('>acc<')) || '';
+const r = {{
+  prevRun: S.drawerPrevSeries && S.drawerPrevSeries.runId,
+  lossDashed: loss.includes('tq-metric-prev-line'), lossPrev: loss.includes('drawer.metricPrev'),
+  accDashed: acc.includes('tq-metric-prev-line'), accPrev: acc.includes('drawer.metricPrev'),
+  fetched: g.fetches.map(f => f.url).filter(u => u.startsWith('/api/runs/')).sort(),
+  // shared y-scale: the previous run's 1.2 is the top, so the current 0.9 starts below the top edge
+  shared: g.metricSparkSvg([[1, 0.9], [2, 0.2]], 100, 24, [[1, 1.2], [2, 0.4]]),
+}};
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert out["prevRun"] == 5
+    assert out["lossDashed"] and out["lossPrev"]
+    assert not out["accDashed"] and not out["accPrev"]  # key absent in the previous run
+    assert out["fetched"] == ["/api/runs/5", "/api/runs/7"]
+    assert 'points="0.0,2.0 100.0,' in out["shared"] and 'points="0.0,8.0 100.0,22.0"' in out["shared"]
+
+
+def test_info_tab_shows_eta_left_at_stop_but_not_for_completed():
+    eta = {"remaining_sec": 7500, "at_stop": True, "progress_pct": 25, "basis": "rate"}
+    out = run_js(
+        EV
+        + f"""
+const {{ g, doc, S }} = await setup({{ app: true }});
+await g.flush();
+S.queue = [{json.dumps({**TASK, "status": "stopped", "eta": eta})}];
+const r = {{}};
+g.tqOpenDrawer('p', 't1');
+r.stopped = doc.getElementById('tq-drawer-body').innerHTML;
+S.drawerTask.status = 'completed';
+g.tqPaintDrawerBody();
+r.completed = doc.getElementById('tq-drawer-body').innerHTML;
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert "drawer.eta" in out["stopped"] and "eta.atStop" in out["stopped"] and "eta.basis.rate" in out["stopped"]
+    assert "drawer.eta" not in out["completed"]

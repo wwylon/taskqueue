@@ -20,50 +20,97 @@ Every execution attempt gets a numeric `run_id`. The Web UI shows it as **`#<run
 
 Fields recognized by `parse_task_yaml` (see `taskqueue/db.py`). Required fields are marked.
 
+> **Prefer [`tq_client`](../clients/README.md) for scripts.** Progress `(N%)`, `TQ_METRIC`, cooperative suspend/hold (exit 75), and checkpoint cadence belong in the shared helpers — not hand-rolled prints. Cookbook: [agents/task-script-cookbook.md](agents/task-script-cookbook.md). Copy-paste projects: [`examples/`](../examples/).
+
+### Quick index
+
+| Theme | Fields |
+|-------|--------|
+| [Identity](#01-identity) | `task_id`, `command`, `args`, `description`, `env`, `metadata`, `tags`, `enabled`, `priority`, `dry_run`, `ledger_subdir` |
+| [Resources & exclusivity](#02-resources--exclusivity) | `resources.*`, `exclusive`, `exclusive_project`, `class`, `requires_services`, `requires_paths` |
+| [Dependencies](#03-dependencies) | `depends_on`, `depends_on_any`, `on_dependency_failure`, `on_dependency_negative`, `negative_exit_codes` |
+| [Execution & resume](#04-execution--resume) | `resume_args`, `wall_clock_cap_sec`, `execution_semantics`, `idempotent`, `auto_retry_on_cap`, `max_auto_retries`, `retry_backoff_sec`, `max_attempts`, `hung_task_k`, `overridable_args` |
+| [Dispatch & remote](#05-dispatch--remote) | `dispatch`, `requires`, `code.provider`, `bundle` / `bundle_hash`, `transfer` |
+| [Schedule & grouping](#06-schedule--grouping) | `schedule`, `suite`, `group` |
+| [Notify & artifacts](#07-notify--artifacts) | `notify_url`, `artifacts`, `artifacts_required` |
+| [Expansion](#08-expansion) | `matrix`, multi-document YAML, `x-` keys, common mistakes |
+
+### 0.1 Identity
+
 | Field | Default | Notes |
 |-------|---------|-------|
 | `task_id` (or `id`) | **required** | No `/`, `\`, `..` or control characters in the id; not a reserved Windows name. Project comes from which queue dir the YAML lives in. |
 | `command` | **required** | Must be non-empty. Bare name (`python`, `wsl`) or project-relative path. Prefer `python` for portability. |
 | `args` | `[]` | Argv after the command. |
 | `description` | `""` | Human-readable summary. |
-| `resume_args` | unset | Used on retry after interrupt; mandatory when the tool supports `--resume`. |
-| `wall_clock_cap_sec` | unset | Mandatory for hang-prone jobs. Pilots ~3600; full runs ~86400. |
+| `env` | `{}` | Extra environment variables merged into the subprocess environment: `env: {MY_VAR: "value"}`. Merged on top of the inherited shell env; existing vars are not removed. |
+| `metadata` | `{}` | Arbitrary key-value map stored with the task. Not interpreted by the scheduler; useful for experiment tracking metadata (e.g. `metadata: {config: "v3", seed: 42}`). |
+| `tags` | `[]` | Free-form string labels for filtering: `tags: ["gpu", "overnight"]`. Filter with `tq list --tag gpu --tag overnight` (AND logic). |
+| `enabled` | `true` | When `false`, task status becomes `disabled` (for non-terminal rows) until re-enabled. **`enabled: true` does not re-run a terminal task** (`completed` / `failed` / …) — use `tq retry` (or `tq reverify`). `tq list --json` exposes DB `enabled` after the last sync/patch. |
+| `priority` | `50` | Higher number = sooner. Live change: `tq priority project/id N`. |
+| `dry_run` | `false` | When `true`, sync/validate still accept the YAML and the scheduler **will dispatch** it; the subprocess gets `TQ_DRY_RUN=1` so scripts can no-op or skip side effects. Prefer `enabled: false` (or omit from overnight suites) if you need a rehearsal YAML that must never run. |
+| `ledger_subdir` | unset | Opaque passthrough for project experiment ledgers; ignored by the scheduler. |
+
+### 0.2 Resources & exclusivity
+
+| Field | Default | Notes |
+|-------|---------|-------|
 | `resources.cpu_cores` | `1` | Logical cores. |
 | `resources.ram_gib` | `0.0` | Requested RAM GiB. |
 | `resources.gpu_vram_gib` | `0.0` | Requested VRAM GiB admission guard. **Not a device flush guarantee** — see §3 GPU note. Tasks with `gpu_vram_gib > 0` get a GPU badge in the UI / `requires_gpu` in `tq list --json`. |
 | `resources.locks` | `[]` | Named mutexes. Two running tasks may not share a lock (`tq.block.mutex`). Also used to attribute sidecar VRAM (e.g. `locks: [ollama]` matches `ollama.exe` and Windows `llama-server.exe`). Ignore generic names (`python`, `node`, `java`). |
+| `exclusive` | `false` | When true, no other task may run while this one runs (and it waits if anything is already running). Prefer full `gpu_vram_gib` over blanket `exclusive` when CPU tasks should continue — see §3 GPU note. |
+| `exclusive_project` | `false` | When true, no other task from the **same project** may run while this one runs (and it waits if any same-project task is already running). Tasks from other projects are unaffected. Weaker than `exclusive`; stronger than relying only on per-project resource limits. |
+| `class` | `normal` | `normal` or `scavenger`. A **scavenger** is low-value filler: it is admitted only when no non-scavenger task is waiting on capacity (`tq.block.scavenger` otherwise), and is cooperatively suspended (control file, then `suspend_grace_sec`) when other work becomes capacity-blocked → status `stopped` / `tq.stop.scavenger`, auto-restarted with `resume_args` when capacity is idle again. Local daemon only (v1); incompatible with `execution_semantics: at_most_once`. See `docs/scheduler.md`. |
+| `requires_paths` | `[]` | Paths that must exist (resolved vs project root) before start. |
+| `requires_services` | `[]` | List of service health checks that must pass before the task is dispatched. Each entry may be a **shorthand string** (`"ollama"`, `"docker"`, `"comfyui"`, `"stable-diffusion-webui"`) or a full dict. Shorthand expands to `{name, health_url, timeout_sec}` only. Full dict fields: `health_url`, `timeout_sec`, `min_vram_free_gib` (block when measured free VRAM is below this — uses Ollama `/api/ps` `size_vram` sum vs device total), `resident_ok_models` (list of Ollama model name prefixes; when **every** loaded model matches a prefix, the VRAM gate passes even if free &lt; `min_vram_free_gib` — model already warm), `vram_probe_url`, `vram_total_gib`. If a probe fails the task stays **queued** with `last_error_code: tq.block.service_down` or `tq.block.service_vram` and the reason in `block_reason`. The probe runs every scheduler tick until the service is ready. |
+
+### 0.3 Dependencies
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `depends_on` | `[]` | AND: same-project `task_id`s or cross-project `project/task_id`; blocked until **each** completes successfully. Both forms may mix in one list. |
+| `depends_on_any` | `[]` | OR: blocked until **any one** peer completes successfully. May combine with `depends_on` (both gates apply). |
 | `on_dependency_failure` | `block` | `block` or `cancel` — what happens to this task when a dependency fails. See *Dependency Management*. |
 | `negative_exit_codes` | `[]` | Exit codes that mean "ran fine, the answer is no" (e.g. a gate whose rule was not met). Such a run is `completed` with code `tq.run.negative`, not `failed`; `0` is not allowed. |
 | `on_dependency_negative` | `run` | `run` or `cancel` — what this task does when a `depends_on` peer completed with a negative result. |
-| `class` | `normal` | `normal` or `scavenger`. A **scavenger** is low-value filler: it is admitted only when no non-scavenger task is waiting on capacity (`tq.block.scavenger` otherwise), and is cooperatively suspended (control file, then `suspend_grace_sec`) when other work becomes capacity-blocked → status `stopped` / `tq.stop.scavenger`, auto-restarted with `resume_args` when capacity is idle again. Local daemon only (v1); incompatible with `execution_semantics: at_most_once`. See `docs/scheduler.md`. |
-| `priority` | `50` | Higher number = sooner. Live change: `tq priority project/id N`. |
-| `enabled` | `true` | When `false`, task status becomes `disabled` (for non-terminal rows) until re-enabled. **`enabled: true` does not re-run a terminal task** (`completed` / `failed` / …) — use `tq retry` (or `tq reverify`). `tq list --json` exposes DB `enabled` after the last sync/patch. |
-| `schedule` | unset | Optional `{cron: "MIN HOUR DOM MON DOW"}`. After a terminal status (`completed`, `failed`, `interrupted`, `suspended`, `stopped`), the daemon re-queues the task when a minute in the expression matches (UTC). The web **Schedule** page lists these rows and the next fire within 48 hours; it does not create a task. Pause sets `enabled: false`. |
-| `exclusive` | `false` | When true, no other task may run while this one runs (and it waits if anything is already running). Prefer full `gpu_vram_gib` over blanket `exclusive` when CPU tasks should continue — see §3 GPU note. |
-| `exclusive_project` | `false` | When true, no other task from the **same project** may run while this one runs (and it waits if any same-project task is already running). Tasks from other projects are unaffected. Weaker than `exclusive`; stronger than relying only on per-project resource limits. |
-| `depends_on` | `[]` | AND: same-project `task_id`s (or `project/task_id`); blocked until **each** completes successfully. |
-| `depends_on_any` | `[]` | OR: blocked until **any one** peer completes successfully. May combine with `depends_on` (both gates apply). |
-| `requires_paths` | `[]` | Paths that must exist (resolved vs project root) before start. |
-| `dispatch` | `local` | `local` \| `remote` \| `any` — see §4. |
-| `requires` | `{}` | Worker constraints: `os`, `arch`, `min_ram_gib`, … — see §4. |
-| `bundle` / `bundle_hash` | unset | Pin a worker artifact: `bundle: { hash: "<sha256>" }` or top-level `bundle_hash`. Built with `tq bundle <project>`. Remote workers **do not unpack onto `project.root`** — they copy into a per-attempt workspace under `{home}/runs/<run_id>/work`. |
-| `code.provider` | auto | Remote code packaging (P5 / R-009). `git_patch` (default when the project is a git repo): master captures `HEAD` + a content-addressed overlay of dirty/untracked files; worker materializes `{home}/cache/code/<package_hash>/` then a writable per-attempt copy. `bundle` keeps the existing tarball provider. `project_root` runs from the worker checkout (legacy). Explicit `code: {provider: …}` wins. |
-| `ledger_subdir` | unset | Opaque passthrough for project experiment ledgers; ignored by the scheduler. |
-| `max_attempts` | `0` | Max failed runs before the scheduler stops admitting; `0` = unlimited. Once exhausted, the task is marked **`failed`** with `block_reason` / message like `max_attempts=N reached` (F-030). **`tq retry` alone will not unstick it** while the failed-run counter still meets the ceiling — raise or clear the budget first: `tq patch <project/task_id> max_attempts=0` (or a higher number), then `tq retry`. Surfaced via `tq diagnose` / MCP `attention_list`. |
-| `notify_url` | unset | Opt-in end-of-task notify. When set, after a successful terminal finalize (`completed` / `failed` / `interrupted` / `suspended` / `stopped`) the master appends one JSON line to `{TASKQUEUE_HOME}/notify.jsonl` and best-effort `POST`s the same payload to this URL (4s timeout, never blocks or fails the run). **Loopback hosts only** by default (`127.0.0.1`, `localhost`, `::1`); remote hosts require `tq config set notify_allow_remote=1`. Omit the field for no notify. A global fallback URL can be set via `tq config set notify_url=http://…` — any task without its own field uses it. |
-| `tags` | `[]` | Free-form string labels for filtering: `tags: ["gpu", "overnight"]`. Filter with `tq list --tag gpu --tag overnight` (AND logic). |
-| `suite` | `""` | Logical group name. Enables `tq suite enable <suite>` / `tq suite disable <suite>` / `tq suite retry <suite>` to act on all member tasks at once. **Suite retry re-queues completed tasks too** (same statuses as `tq retry`). |
-| `env` | `{}` | Extra environment variables merged into the subprocess environment: `env: {MY_VAR: "value"}`. Merged on top of the inherited shell env; existing vars are not removed. |
+
+### 0.4 Execution & resume
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `resume_args` | unset | Used on retry after interrupt; mandatory when the tool supports `--resume`. Pair with [`tq_client`](../clients/README.md) checkpoints. |
+| `wall_clock_cap_sec` | unset | Mandatory for hang-prone jobs. Pilots ~3600; full runs ~86400. |
 | `idempotent` | `false` | When `true`, the task is safe to re-run from scratch. Shorthand for `execution_semantics: idempotent`. Enables automatic re-queue when the daemon detects a hung remote run, and when a remote lease expires. |
 | `execution_semantics` | from `idempotent` | One of `idempotent`, `checkpointable`, `non_idempotent`, `at_most_once`. Controls what happens when an attempt is lost (lease expiry, hung remote). `idempotent` / `checkpointable` re-queue; `non_idempotent` / `at_most_once` set status **`unknown`** (operator must `tq retry` — never auto-restart). Default is `non_idempotent` unless `idempotent: true`. If both fields are set, `execution_semantics` wins. |
 | `auto_retry_on_cap` | `false` | When `true` and `execution_semantics` is `checkpointable` or `idempotent`, a wall-clock cap hit (`interrupted` / `tq.run.cap`) automatically re-queues the task (preferring `resume_args` on the next start). Requires a cooperative/checkpointing script. |
 | `max_auto_retries` | `20` | Cap on automatic cap-hit re-queues when `auto_retry_on_cap` is set. `0` = unlimited. When exhausted the task stays `interrupted` with `block_reason=cap_auto_retries exhausted`. Manual `tq retry` resets the counter. Surfaced in `tq list` as `cap×N/M`. |
+| `retry_backoff_sec` | `0` | Exponential backoff after failed runs: once a run fails, the task is not re-admitted until `base × 2^(n-1)` seconds after the n-th consecutive failure (capped at 24 h, plus 0–20 % stable jitter). Matters when something re-queues a failing task automatically (e.g. `on_fail` listing it, or a stopped-and-restarted run). `tq retry` resets the streak and starts it immediately; a forced start bypasses it. Wait reason `tq.block.backoff`. `0` = off. |
+| `max_attempts` | `0` | Max failed runs before the scheduler stops admitting; `0` = unlimited. Once exhausted, the task is marked **`failed`** with `block_reason` / message like `max_attempts=N reached` (F-030). **`tq retry` alone will not unstick it** while the failed-run counter still meets the ceiling — raise or clear the budget first: `tq patch <project/task_id> max_attempts=0` (or a higher number), then `tq retry`. Surfaced via `tq diagnose` / MCP `attention_list`. |
 | `hung_task_k` | unset | Per-task override for the global `hung_task_k` config. Set to a larger value (e.g. `60`) for tasks with long silent phases (LLM inference, single-key translation). `0` disables hung detection for this task. When unset, the global config value (default 5) is used. |
+| `overridable_args` | `[]` | List of flag names (e.g. `[--locales, --dry-run]`) that callers may override for a single run via `tq retry project/task --set --locales=pl`. Overrides apply to that run only and never mutate the YAML. Any flag not on this list is refused with a clear error. |
+
+### 0.5 Dispatch & remote
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `dispatch` | `local` | `local` \| `remote` \| `any` — see §4. |
+| `requires` | `{}` | Worker constraints: `os`, `arch`, `min_ram_gib`, … — see §4. |
+| `bundle` / `bundle_hash` | unset | Pin a worker artifact: `bundle: { hash: "<sha256>" }` or top-level `bundle_hash`. Built with `tq bundle <project>`. Remote workers **do not unpack onto `project.root`** — they copy into a per-attempt workspace under `{home}/runs/<run_id>/work`. |
+| `code.provider` | auto | Remote code packaging (P5 / R-009). `git_patch` (default when the project is a git repo): master captures `HEAD` + a content-addressed overlay of dirty/untracked files; worker materializes `{home}/cache/code/<package_hash>/` then a writable per-attempt copy. `bundle` keeps the existing tarball provider. `project_root` runs from the worker checkout (legacy). Explicit `code: {provider: …}` wins. |
+| `transfer` | `[]` | File-transfer specs for remote dispatch. Each entry: `{src: "relative/path", dst: "relative/path", direction: "push\|pull"}`. `push` copies a file from the master to the worker **before** the run starts (into the attempt `work_root`); failure aborts the claim. `pull` copies from the worker back to the master after the run — prefers files under `work_root` (git_patch/bundle), then `project.root`. Paths are relative to those roots. Ignored for local dispatch. **F-065:** master transfer HTTP requires the active `run_id` + `finalize_token` and only serves/accepts paths declared here. |
+
+### 0.6 Schedule & grouping
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `schedule` | unset | Optional `{cron: "MIN HOUR DOM MON DOW"}`. After a terminal status (`completed`, `failed`, `interrupted`, `suspended`, `stopped`), the daemon re-queues the task when a minute in the expression matches (UTC). The web **Schedule** page lists these rows and the next fire within 48 hours; it does not create a task. Pause sets `enabled: false`. See [`examples/scheduled/`](../examples/scheduled/). |
+| `suite` | `""` | Logical group name. Enables `tq suite enable <suite>` / `tq suite disable <suite>` / `tq suite retry <suite>` to act on all member tasks at once. **Suite retry re-queues completed tasks too** (same statuses as `tq retry`). |
 | `group` | `""` | Task group name. Multiple tasks can share a group for bulk operations: `tq group list`, `tq group stop <group>`, `tq group retry <group>`. Different from `suite` (which controls enable/disable); `group` is for operational grouping of related experiments. |
 
-### `suite` vs `group`
+#### `suite` vs `group`
 
-Both field group tasks for bulk operations but with different semantics:
+Both fields group tasks for bulk operations but with different semantics:
 
 | | `suite` | `group` |
 |-|---------|---------|
@@ -73,15 +120,19 @@ Both field group tasks for bulk operations but with different semantics:
 | **Typical use** | Overnight experiment sets where you want to pause or restart the whole set | Related experiments you might need to stop together mid-run |
 
 A task can have both fields set. Use `suite` when you need to pause or re-arm an entire set; use `group` when you need to stop or retry a running experiment cluster.
-| `dry_run` | `false` | When `true`, sync/validate still accept the YAML and the scheduler **will dispatch** it; the subprocess gets `TQ_DRY_RUN=1` so scripts can no-op or skip side effects. Prefer `enabled: false` (or omit from overnight suites) if you need a rehearsal YAML that must never run. |
-| `metadata` | `{}` | Arbitrary key-value map stored with the task. Not interpreted by the scheduler; useful for experiment tracking metadata (e.g. `metadata: {config: "v3", seed: 42}`). |
+
+### 0.7 Notify & artifacts
+
+| Field | Default | Notes |
+|-------|---------|-------|
+| `notify_url` | unset | Opt-in end-of-task notify. When set, after a successful terminal finalize (`completed` / `failed` / `interrupted` / `suspended` / `stopped`) the master appends one JSON line to `{TASKQUEUE_HOME}/notify.jsonl` and best-effort `POST`s the same payload to this URL (4s timeout, never blocks or fails the run). **Loopback hosts only** by default (`127.0.0.1`, `localhost`, `::1`); remote hosts require `tq config set notify_allow_remote=1`. Omit the field for no notify. A global fallback URL can be set via `tq config set notify_url=http://…` — any task without its own field uses it. |
 | `artifacts` | `[]` | Paths (relative to project root) that must exist after the run completes. Finalize checks presence; missing paths mark the run as `failed` with `tq.run.artifacts_missing`. |
 | `artifacts_required` | `false` | Set `true` to fail (not just warn) when declared artifact paths are missing after the run. |
-| `depends_on` (cross-project) | — | Use `project/task_id` syntax to depend on a task in another project: `depends_on: ["other_project/upstream_task"]`. Both same-project (`task_id`) and cross-project (`project/task_id`) refs can be mixed in the same list. |
-| `transfer` | `[]` | File-transfer specs for remote dispatch. Each entry: `{src: "relative/path", dst: "relative/path", direction: "push\|pull"}`. `push` copies a file from the master to the worker **before** the run starts (into the attempt `work_root`); failure aborts the claim. `pull` copies from the worker back to the master after the run — prefers files under `work_root` (git_patch/bundle), then `project.root`. Paths are relative to those roots. Ignored for local dispatch. **F-065:** master transfer HTTP requires the active `run_id` + `finalize_token` and only serves/accepts paths declared here. |
 
-| `requires_services` | `[]` | List of service health checks that must pass before the task is dispatched. Each entry may be a **shorthand string** (`"ollama"`, `"docker"`, `"comfyui"`, `"stable-diffusion-webui"`) or a full dict. Shorthand expands to `{name, health_url, timeout_sec}` only. Full dict fields: `health_url`, `timeout_sec`, `min_vram_free_gib` (block when measured free VRAM is below this — uses Ollama `/api/ps` `size_vram` sum vs device total), `resident_ok_models` (list of Ollama model name prefixes; when **every** loaded model matches a prefix, the VRAM gate passes even if free &lt; `min_vram_free_gib` — model already warm), `vram_probe_url`, `vram_total_gib`. If a probe fails the task stays **queued** with `last_error_code: tq.block.service_down` or `tq.block.service_vram` and the reason in `block_reason`. The probe runs every scheduler tick until the service is ready. |
-| `overridable_args` | `[]` | List of flag names (e.g. `[--locales, --dry-run]`) that callers may override for a single run via `tq retry project/task --set --locales=pl`. Overrides apply to that run only and never mutate the YAML. Any flag not on this list is refused with a clear error. |
+### 0.8 Expansion
+
+| Field | Default | Notes |
+|-------|---------|-------|
 | `matrix` | unset | Expand one YAML into N tasks at `tq sync` time. Each axis is a key with a list of values: `matrix: {seed: [0, 1, 2, 3, 4]}`. The scheduler creates tasks with IDs `{base_id}_seed0` … `{base_id}_seed4`. Each value is appended to `args` as `--seed=N` and merged into `metadata`. Multiple axes are supported (task IDs become `{base_id}_{index}`). |
 
 #### Multi-document YAML
@@ -131,7 +182,11 @@ resources:
 dispatch: local
 ```
 
-More annotated examples, runnable as-is against `fixtures/tqdemo` (no GPU/CUDA needed — see [`fixtures/tqdemo/README.md`](../fixtures/tqdemo/README.md)):
+More annotated examples:
+
+- Copy-paste starters: [`examples/minimal/`](../examples/minimal/), [`examples/checkpointable/`](../examples/checkpointable/), [`examples/pipeline/`](../examples/pipeline/), [`examples/scheduled/`](../examples/scheduled/), YAML fragments in [`examples/snippets/`](../examples/snippets/).
+- Dogfood (no GPU): [`fixtures/tqdemo`](../fixtures/tqdemo/README.md) — e.g. `dummy-deps-b`, `dummy-exclusive.yaml`.
+- Run `tq validate` before `tq add`/`tq sync`.
 
 ```yaml
 # depends_on: blocked until dummy-deps-a completes successfully.
@@ -155,7 +210,7 @@ depends_on_any: [dataset_v1, dataset_v2, dataset_v3]
 # (see §3), and no other exclusive task may run concurrently anywhere.
 task_id: gpu_pilot
 command: python
-args: ["scripts/run.py"]
+args: ["scripts/run.py", "--require-gpu"]
 dispatch: remote
 requires:
   os: linux
@@ -166,12 +221,6 @@ resources:
   gpu_vram_gib: 10.0
 exclusive: true
 ```
-
-Also see: `fixtures/tqdemo/experiments/operator_queue/dummy-exclusive.yaml`
-(global exclusive gating), `dummy-exclusive-project.yaml` (per-project exclusive),
-`examples/minimal/` (smallest possible working task),
-and run `tq validate` before `tq add`/`tq sync` to lint a YAML for common
-mistakes (unknown fields, missing command, bad resource types).
 
 ### Operator controls (not YAML fields)
 
@@ -190,7 +239,7 @@ Do not confuse project freeze with the idle **FROZEN** badge on a running card (
 
 ## 1. Progress Reporting Protocol
 
-To allow developers and the web UI to monitor running tasks, all task scripts **must** report their progress.
+To allow developers and the web UI to monitor running tasks, all task scripts **must** report their progress. **Use [`tq_client.progress` / `metric`](../clients/README.md)** (or the C++ twin) — see [task-script-cookbook.md](agents/task-script-cookbook.md) and [`examples/checkpointable/`](../examples/checkpointable/).
 
 ### The Progress Format
 The `taskqueue` daemon monitors the standard output (stdout) of running tasks. It looks for progress patterns formatted as `(XX.X%)` or `(XX%)` (using the regular expression `\((\d+(?:\.\d+)?)%\)`).
@@ -248,6 +297,8 @@ If a task's exact iteration count is unknown, the script must calculate a best-e
 ---
 
 ## 2. Checkpointing and Resume Protocol
+
+**Standard:** use [`tq_client.CheckpointCadence`](../clients/README.md) + `save_checkpoint` / `load_checkpoint` (or the C++ twins). Full pattern: [task-script-cookbook.md](agents/task-script-cookbook.md) and [`examples/checkpointable/`](../examples/checkpointable/).
 
 Long-running tasks (>10 minutes) are susceptible to interrupts from machine reboots, daemon restarts, power loss, or wall-clock caps. Therefore, **they must be restartable from the last saved state**.
 
@@ -350,6 +401,8 @@ If you need CPU-only tasks to run concurrently while the GPU job runs, `exclusiv
 - **GPU utilization EMA monitoring**: The daemon tracks a per-task GPU utilization exponential moving average (alpha=0.3). After ≥3 samples, if the EMA is below `gpu_util_warn_pct` (default 15%), a pipeline CPU-bottleneck warning is emitted. Instantaneous util is also stored in `resource_history.gpu_util_pct` and shown in the UI / `tq metrics` / MCP `progress_snapshot`. Common causes: data not in mmap/pinned format, `num_workers=0`, small batch size, non-contiguous tensors. Full cause/fix table: [`scheduler.md §6`](scheduler.md). Tune the threshold: `tq config set gpu_util_warn_pct=20`.
 
 - **`tq doctor` GPU diagnostics**: reports per-device VRAM (used/free), utilization, driver version, temperature, and `torch_cuda` availability. Detects driver–toolkit mismatches. Use before overnight GPU runs to confirm the stack is healthy.
+
+- **Host GPU lock file**: while any local (or same-host worker) task with `gpu_vram_gib > 0` is running, the daemon keeps `~/.taskqueue/locks/gpu.lock` (JSON with `project`, `task_id`, `run_id`, `pid`, `started`). Other tools (e.g. local pytest) can skip GPU tiers when that file exists. Stale pids are scrubbed on daemon start.
 
 **Post-exit shell (`teardown`) — flush OS page cache after mmap-heavy training:**
 
@@ -526,19 +579,19 @@ The script exits 0 even when not elevated (advisory only). On Linux it writes `3
 * This CPU-burn check is **skipped entirely for tasks that request a GPU** (`resources.gpu_vram_gib > 0`): host CPU time isn't a valid work signal for a task blocked on GPU sync, so it would false-positive on legitimate GPU jobs. Genuine hangs on GPU tasks are still caught by `tq.run.frozen` (no stdout **and** no CPU idle), which doesn't share this failure mode.
 * It is also **skipped for WSL-dispatched tasks** (`command: wsl`): the Windows host cannot attribute CPU time to processes inside WSL via `psutil`, so arena/build progress would false-positive as `tq.run.progress_suspect` (F-244). Non-WSL tasks using `command: python` are still checked; see fixture `dummy-lie-progress`.
 
-### Cooperative suspend (control file)
+### Cooperative control (control file)
 
-Long GPU/checkpoint jobs should honor a **cooperative suspend** request instead of relying on SIGSTOP.
+Long GPU/checkpoint jobs should honor the control file instead of relying on SIGSTOP.
 
 * The runner sets `TQ_CONTROL_FILE`, `TQ_HOME`, `TQ_PROJECT`, `TQ_TASK_ID` in the task environment.
-* `tq suspend project/task_id` writes `{"action": "suspend"}` to that file (no SIGTERM).
-* The task should checkpoint, then exit **75**. The daemon records status `suspended`.
+* **Suspend:** `tq suspend project/task_id` writes `{"action": "suspend"}` (no SIGTERM). The task should checkpoint, then exit **75** → status `suspended`.
+* **Hold:** `tq hold project/task_id --for 600` writes `{"action":"hold","until":…,"duration_sec":…}` so the task **idles in-process** (process stays `running`; RAM/GPU still reserved). `tq unhold` clears the file. Prefer hold only when warm state matters; otherwise suspend/stop to free capacity. Not the same as project **freeze**.
 * `tq retry` re-queues suspended tasks and uses `resume_args` when the last run was `suspended` or `interrupted`.
 * Cap hits (`tq.run.cap`) also use `resume_args` on the next start. With `auto_retry_on_cap: true` the daemon re-queues without a manual `tq retry`.
-* Helpers: [`clients/python/tq_client.py`](../clients/python/tq_client.py) (`poll_control`, `maybe_suspend`, `progress`).
-* `tq stop` / `wall_clock_cap` write the same control action, then wait **`suspend_grace_sec`** (default 10s, `tq config set suspend_grace_sec=N`) before SIGTERM — a real window for the task to checkpoint and exit 75 on its own. If the task exits cooperatively within that window, it's recorded `suspended` and never receives SIGTERM. Set `suspend_grace_sec=0` to restore the old immediate-SIGTERM behavior.
-* **Stop reason**: `tq stop project/task_id --reason gate:lagging` stores a human-readable reason string in the run record. The reason is included in `drain_notifications` events as `stop_reason` so automation can route on why a task was stopped.
-* **Requester**: a stop request also records who asked (`TQ_OPERATOR` if set, the channel — cli / mcp / web — and the client) as `requested_by` in the control file, and daemon.log names it once: `cooperative suspend requested p/t by ada via mcp (mcp/cursor 1.0)`. Scheduler-initiated stops (cap, RAM/VRAM pressure, frozen) log their own reason.
+* Helpers: [`clients/python/tq_client.py`](../clients/python/tq_client.py) / C++ header (`poll_control`, `maybe_suspend`, `maybe_hold`, `progress`). Poll order: **suspend wins over hold**.
+* `tq stop` / `wall_clock_cap` write suspend, then wait **`suspend_grace_sec`** (default 10s) before SIGTERM. Cooperative exit 75 within the window → `suspended`. Set `suspend_grace_sec=0` for immediate SIGTERM.
+* **Stop reason**: `tq stop project/task_id --reason gate:lagging` (UI picker / MCP `stop_task` `reason`) stores text on the run. Shown in drawer, `tq why`, MCP `task_result` (`stop_summary`). Automated stops set machine codes (`ram_hard`, `wall_clock_cap`, …) and `stopped_by`.
+* **Requester**: stop/hold may record `requested_by` in the control file for the daemon log.
 
 ### No in-task `tq` enqueue
 

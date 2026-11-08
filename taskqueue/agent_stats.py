@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -21,6 +22,9 @@ USAGE_DIMS = {
     "hour": "bucket_ts",
 }
 TASK_DIMS = ("via", "by", "client", "project", "day")
+
+
+_log = logging.getLogger(__name__)
 
 
 def _dims(raw: Any, allowed: Any, default: list[str]) -> list[str]:
@@ -158,8 +162,8 @@ def agent_usage(
         from taskqueue.usage_track import RECORDER
 
         RECORDER.flush(conn)  # include this process's not-yet-flushed counters
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - usage counter flush is best-effort
+        _log.debug("usage counter flush failed", exc_info=True)
     return {
         "days": int(days),
         "usage": usage_by(conn, days=days, by=by, project=project, channel=channel, operator=operator, limit=limit),
@@ -173,7 +177,7 @@ def _tracking_enabled(conn: sqlite3.Connection) -> bool:
         from taskqueue.db import get_config
 
         return int(get_config(conn).get("usage_tracking", 1)) != 0
-    except Exception:
+    except (sqlite3.Error, TypeError, ValueError):
         return True
 
 

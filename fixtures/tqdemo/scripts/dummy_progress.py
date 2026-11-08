@@ -1,9 +1,15 @@
-"""Happy-path progress: print (N%) then exit 0."""
+"""Happy-path progress via tq_client."""
 from __future__ import annotations
 
 import argparse
 import sys
 import time
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT / "clients" / "python"))
+
+from tq_client import progress  # noqa: E402
 
 
 def main() -> int:
@@ -13,7 +19,7 @@ def main() -> int:
     args = p.parse_args()
     for i in range(args.steps + 1):
         pct = 100.0 * i / args.steps
-        print(f"dummy-progress step {i}/{args.steps} ({pct:.1f}%)", flush=True)
+        progress(pct, f"dummy-progress step {i}/{args.steps}")
         if i < args.steps:
             time.sleep(args.sleep)
     return 0

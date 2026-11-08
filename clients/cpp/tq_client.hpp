@@ -19,7 +19,9 @@
 // Progress lines must match the daemon regex: \((\d+(?:\.\d+)?)%\)
 // Cooperative suspend: exit with EXIT_SUSPENDED (75).
 
+#include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -31,6 +33,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -121,11 +124,106 @@ inline std::optional<std::string> poll_control() {
   std::exit(EXIT_SUSPENDED);
 }
 
+inline std::optional<double> hold_until() {
+  const char* path = std::getenv("TQ_CONTROL_FILE");
+  if (!path || !*path) return std::nullopt;
+  std::ifstream in(path);
+  if (!in) return std::nullopt;
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  const std::string raw = ss.str();
+  const std::string key = "\"until\"";
+  const auto pos = raw.find(key);
+  if (pos == std::string::npos) return std::nullopt;
+  const auto colon = raw.find(':', pos + key.size());
+  if (colon == std::string::npos) return std::nullopt;
+  try {
+    return std::stod(raw.substr(colon + 1));
+  } catch (...) {
+    return std::nullopt;
+  }
+}
+
+/** Sleep while control action is hold and until is in the future. Suspend wins. */
+inline bool maybe_hold(double sleep_sec = 1.0) {
+  auto action = poll_control();
+  if (action && *action == "suspend") {
+    request_suspend_exit();
+  }
+  if (!action || *action != "hold") {
+    return false;
+  }
+  auto until = hold_until();
+  if (!until) return false;
+  using clock = std::chrono::system_clock;
+  const auto now_sec = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+  if (now_sec >= *until) return false;
+  std::cout << "cooperative hold until " << static_cast<long long>(*until) << "; idling" << std::endl;
+  while (true) {
+    action = poll_control();
+    if (!action || *action != "hold") return true;
+    if (*action == "suspend") request_suspend_exit();
+    until = hold_until();
+    if (!until) return true;
+    const auto now2 = std::chrono::duration<double>(clock::now().time_since_epoch()).count();
+    if (now2 >= *until) return true;
+    const double wait = std::min(sleep_sec, std::max(0.05, *until - now2));
+    std::this_thread::sleep_for(std::chrono::duration<double>(wait));
+  }
+}
+
 inline void maybe_suspend() {
   auto action = poll_control();
   if (action && *action == "suspend") {
     request_suspend_exit();
   }
+  maybe_hold();
+}
+
+/** Runner-injected identity vars (empty string when unset). */
+inline std::string env_or_empty(const char* key) {
+  const char* v = std::getenv(key);
+  return v ? std::string(v) : std::string();
+}
+
+inline void env_info(bool print_it = false) {
+  if (!print_it) return;
+  std::cout << "TQ_HOME=" << env_or_empty("TQ_HOME") << "\n"
+            << "TQ_PROJECT=" << env_or_empty("TQ_PROJECT") << "\n"
+            << "TQ_TASK_ID=" << env_or_empty("TQ_TASK_ID") << "\n"
+            << "TQ_CONTROL_FILE=" << env_or_empty("TQ_CONTROL_FILE") << std::endl;
+}
+
+/** Atomic JSON checkpoint write (tmp + rename). ``payload_json`` must be valid JSON text. */
+inline void save_checkpoint(const std::string& path, const std::string& payload_json) {
+  const std::string tmp = path + ".tmp";
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    if (!out) {
+      throw std::runtime_error("save_checkpoint: cannot open " + tmp);
+    }
+    out << payload_json;
+    out.flush();
+  }
+#if defined(_WIN32)
+  // replace: remove destination then rename (Windows rename fails if dest exists)
+  std::remove(path.c_str());
+  if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+    throw std::runtime_error("save_checkpoint: rename failed for " + path);
+  }
+#else
+  if (std::rename(tmp.c_str(), path.c_str()) != 0) {
+    throw std::runtime_error("save_checkpoint: rename failed for " + path);
+  }
+#endif
+}
+
+inline std::optional<std::string> load_checkpoint(const std::string& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) return std::nullopt;
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
 }
 
 // Dual-trigger checkpoint gate: work units OR wall time since last reset.

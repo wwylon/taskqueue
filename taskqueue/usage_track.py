@@ -8,6 +8,7 @@ cardinality stays bounded. Recording is fail-open and can be disabled with
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 import threading
@@ -19,6 +20,9 @@ from typing import Any
 MAX_KEYS = 4000  # in-memory distinct keys before overflow collapses into op="other"
 FLUSH_INTERVAL_SEC = 60.0
 DEFAULT_RETENTION_DAYS = 400
+
+
+_log = logging.getLogger(__name__)
 
 
 def bucket_now(now: datetime | None = None) -> str:
@@ -125,8 +129,8 @@ class UsageRecorder:
             self.enabled = int(get_config(conn).get("usage_tracking", 1)) != 0
             if self.enabled:
                 self.flush(conn)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - usage tracking is best-effort
+            _log.debug("usage tracking flush failed", exc_info=True)
 
 
 RECORDER = UsageRecorder()
@@ -161,10 +165,10 @@ def record_direct(
         )
         _upsert(conn, [(key, [1, ms_i, ms_i])])
         conn.commit()
-    except Exception:
+    except Exception:  # noqa: BLE001 - usage tracking is best-effort
         try:
             conn.rollback()
-        except Exception:
+        except sqlite3.Error:
             pass
 
 

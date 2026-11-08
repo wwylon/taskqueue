@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue._db_tasks import check_ownership, request_stop
 from taskqueue._db_runs import get_run_owned, renew_run_lease_for_worker
+from taskqueue._db_tasks import check_ownership, request_stop
 from taskqueue.db import open_db
 from taskqueue.web import relativize_requires_paths
 

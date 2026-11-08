@@ -7,9 +7,14 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
+# Re-export submodule surfaces used by tests / patches
+from . import api_docs as api_docs
+from . import hardware as hardware
+from . import responses as responses
 from .api_docs import (
     _API_REGISTRY,
     _build_api_docs_html,
@@ -20,9 +25,9 @@ from .context import HandlerContext
 from .handler import Handler, make_handler
 from .hardware import _get_hardware_data, _hw_cache, _hw_lock
 from .responses import (
-    BoundedThreadingHTTPServer,
     _STATIC,
     _UNGROUPED,
+    BoundedThreadingHTTPServer,
     _apply_deps_mode,
     _claim_next_remote_task,
     _get_auth_config,
@@ -43,11 +48,6 @@ from .responses import (
 )
 from .standby import StandbyHandler
 
-# Re-export submodule surfaces used by tests / patches
-from . import api_docs as api_docs
-from . import hardware as hardware
-from . import responses as responses
-
 
 def start_web_server(
     conn: sqlite3.Connection,
@@ -57,9 +57,13 @@ def start_web_server(
     db_path: Path | None = None,
     port: int = 8765,
     bind_host: str = "127.0.0.1",
+    *,
+    release_project: Callable[[str], dict[str, Any]] | None = None,
+    relocate_project: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> threading.Thread:
     if db_path is None:
-        from taskqueue.config import state_home, db_path as _dbp
+        from taskqueue.config import db_path as _dbp
+        from taskqueue.config import state_home
 
         db_path = _dbp(state_home())
 
@@ -74,13 +78,22 @@ def start_web_server(
                 "Set auth_token in tq config before exposing the daemon on the network."
             )
 
-    handler = make_handler(conn, active_runs, system_info, projects_ref, db_path, bind_host)
+    handler = make_handler(
+        conn,
+        active_runs,
+        system_info,
+        projects_ref,
+        db_path,
+        bind_host,
+        release_project=release_project,
+        relocate_project=relocate_project,
+    )
     # Pre-warm psutil cpu_percent baseline so first /api/hardware is not all zeros.
     try:
         import psutil as _psutil
 
         _psutil.cpu_percent(interval=0.1)
-    except Exception:
+    except (ImportError, OSError):
         pass
     server = BoundedThreadingHTTPServer((bind_host, port), handler)
     t = threading.Thread(target=server.serve_forever, daemon=True)

@@ -8,12 +8,11 @@ import shutil
 import sqlite3
 import tarfile
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from taskqueue.safetar import safe_extract
-
 
 MANIFEST_NAME = "tq_export_manifest.json"
 
@@ -71,7 +70,7 @@ def export_home(
         files.append("logs/")
     manifest: dict[str, Any] = {
         "format": 1,
-        "exported_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "exported_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "with_logs": with_logs,
         "files": files,
     }

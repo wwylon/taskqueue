@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from taskqueue.db import SCHEMA_VERSION
 
@@ -200,6 +201,22 @@ def _register_api_docs() -> None:
             "force": "1 to override ownership",
         },
     )
+    _e(
+        "POST",
+        "/api/hold/<project>/<task_id>",
+        "Cooperative hold: in-process idle via control file (not project freeze)",
+        params={
+            "duration_sec": "Hold duration seconds (default 600)",
+            "reason": "Optional reason stored on the control action",
+            "operator": "Caller identity",
+        },
+    )
+    _e(
+        "POST",
+        "/api/unhold/<project>/<task_id>",
+        "Clear cooperative hold (resume from in-process idle)",
+        params={"operator": "Caller identity"},
+    )
     _e("POST", "/api/tasks/<project>/<task_id>/retry", "Re-queue a single retryable task")
     _e("POST", "/api/retry/<project>/<task_id>", "Re-queue a single retryable task (legacy alias)")
     _e(
@@ -332,6 +349,17 @@ def _register_api_docs() -> None:
     _e("POST", "/api/project/resume/<project>", "Resume a paused project (audited)")
     _e(
         "POST",
+        "/api/project/release/<project>",
+        "Drop the queue-dir file watch so the project folder can be renamed (F-240; audited)",
+    )
+    _e(
+        "POST",
+        "/api/project/relocate/<project>",
+        "Rewrite projects.yaml root + yaml_source after a folder move (F-240; audited)",
+        body="JSON {new_root}",
+    )
+    _e(
+        "POST",
         "/api/remove/<project>/<task_id>",
         "Unregister a task (ownership-checked; run history kept; audited)",
         params={"operator": "Caller identity", "force": "1 to override ownership"},
@@ -399,7 +427,7 @@ def _register_api_docs() -> None:
         "/api/cli/sync",
         "CLI sync trigger via HTTP (mtime-cached; optional body projects=[names], force=bool to re-parse all)",
     )
-    _e("POST", "/api/cli/add", "CLI add task via HTTP")
+    _e("POST", "/api/cli/add", "CLI add task via HTTP (optional client_key: idempotent retry, 409 on conflict)")
     _e("POST", "/api/notify/dead/<id>/retry", "Replay one dead-lettered webhook (single attempt); deleted on success")
     _e("POST", "/api/validate", "Dry-run validate task YAML (project, yaml_text); nothing is written")
     _e("POST", "/api/yield-master", "Release master lease")

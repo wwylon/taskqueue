@@ -18,7 +18,39 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from taskqueue import __version__
+from taskqueue._db_runs import force_task, get_recent_runs
+from taskqueue._db_tasks import (
+    check_ownership,
+    count_queued_tasks,
+    enable_task,
+    get_queued_tasks,
+    get_running_tasks,
+    get_task,
+    lock_contention_summary,
+    lock_occupancy,
+    request_stop_with_control,
+    retry_skip_reason,
+    retry_task,
+    set_task_priority,
+    set_task_status,
+)
 from taskqueue.auth import extract_request_token
+from taskqueue.capacity import build_capacity
+from taskqueue.config import load_projects, validate_config
+from taskqueue.db import (
+    _PROJECT_LIMIT_FIELDS,
+    SCHEMA_VERSION,
+    get_all_project_limits,
+    get_config,
+    holds_master_lease,
+    is_project_frozen,
+    open_db,
+    set_config,
+    set_project_frozen,
+    set_project_limit,
+)
+from taskqueue.diagnose import build_diagnose
+from taskqueue.notify import notify_log_path
 from taskqueue.operator_features import (
     count_firing_rules,
     create_alert,
@@ -31,56 +63,26 @@ from taskqueue.operator_features import (
     pause_task,
     project_scope_allows,
     resolve_access,
+    resolve_access_with_projects,
     resolve_token_projects,
     revoke_token,
-    schedules as list_schedules,
     scope_allows,
     task_stats,
     timeline,
     update_alert,
     write_audit,
 )
+from taskqueue.operator_features import (
+    schedules as list_schedules,
+)
+from taskqueue.queries import list_attention, status_counts
+from taskqueue.reports import build_report
+from taskqueue.resources import ram_used_gib, task_requires_gpu
 from taskqueue.system_alerts import (
     count_system_alert_firing,
     list_system_alerts,
     update_system_alert,
 )
-from taskqueue.queries import status_counts
-from taskqueue.capacity import build_capacity
-from taskqueue.config import load_projects, validate_config
-from taskqueue.db import (
-    SCHEMA_VERSION,
-    _PROJECT_LIMIT_FIELDS,
-    get_all_project_limits,
-    get_config,
-    holds_master_lease,
-    is_project_frozen,
-    open_db,
-    set_project_frozen,
-    set_config,
-    set_project_limit,
-)
-from taskqueue._db_tasks import (
-    check_ownership,
-    enable_task,
-    get_queued_tasks,
-    count_queued_tasks,
-    get_running_tasks,
-    get_task,
-    lock_contention_summary,
-    lock_occupancy,
-    request_stop_with_control,
-    retry_skip_reason,
-    retry_task,
-    set_task_priority,
-    set_task_status,
-)
-from taskqueue._db_runs import force_task, get_recent_runs
-from taskqueue.diagnose import build_diagnose
-from taskqueue.notify import notify_log_path
-from taskqueue.queries import list_attention
-from taskqueue.reports import build_report
-from taskqueue.resources import ram_used_gib, task_requires_gpu
 
 from .api_docs import _API_REGISTRY, _build_api_docs_html
 from .hardware import _get_hardware_data

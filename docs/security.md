@@ -152,6 +152,10 @@ hourly (and `tq prune --apply` runs the same logic by hand):
   unset; set `0` to disable) are rewritten to keep only that many trailing bytes (newline-aligned).
   Latest-run logs are capped too; unfinished runs are skipped. **mtime is preserved** so capping
   does not delay age deletion. Truncation is lossy (early stdout is dropped);
+- finished logs older than `retention_log_gzip_days` (default `0` = off) are gzipped to `<log>.gz`
+  with the same mtime (age deletion applies to the `.gz` too). Every log reader (UI, `tq logs`, MCP, search,
+  SSE replay) reads them transparently through a decompressed copy kept in `logs/<project>/.gz-cache/`,
+  which the pass removes after a day unused. Lossless, unlike capping;
 - `operator_audit` rows older than `retention_audit_days` (default 365) are deleted;
 - when rows were removed the WAL is checkpointed (`TRUNCATE`) and `incremental_vacuum` is run.
 
@@ -174,3 +178,20 @@ This feature bumps the database schema to 26: upgrade workers together with the 
 ## Worker credentials
 
 Once a worker has registered with a `credential_hash` (SHA-256 of its token), the master enforces it: re-registering, deregistering and rotating all require the matching hash (`old_credential_hash` for rotation), compared in constant time. A mismatch or missing hash returns 403. Use `tq worker rotate-credential` to change it.
+
+## Privacy / telemetry
+
+taskqueue does **not** phone home. The daemon, CLI, and local web UI do not send
+usage pings, install IDs, or analytics to the authors.
+
+Public signals (anyone can see):
+
+- GitHub stars, forks, and watchers (and README badges that mirror them)
+- PyPI download counts after a package is published under a distinct name
+  (the bare name `taskqueue` on PyPI is already taken by an unrelated placeholder)
+
+Maintainer-only (GitHub Insights → Traffic): repo views and clones for about
+14 days. Clones are not the same as installs.
+
+Optional `notify_url` on a task is an **operator-configured** webhook you
+control — not product telemetry.

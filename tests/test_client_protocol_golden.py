@@ -28,7 +28,7 @@ def test_python_client_progress_matches_golden(capsys: pytest.CaptureFixture[str
     import tq_client as tq  # noqa: E402
 
     data = json.loads(FIX.read_text(encoding="utf-8"))
-    assert tq.EXIT_SUSPENDED == data["exit_suspended"]
+    assert data["exit_suspended"] == tq.EXIT_SUSPENDED
     for item in data["lines"]:
         if item["kind"] != "progress":
             continue

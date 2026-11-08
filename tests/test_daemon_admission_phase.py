@@ -1,7 +1,7 @@
 """Daemon tick admission phase: cooldown freeze, CPU gate, reap-before-admit ordering."""
 
-from taskqueue import daemon
 import taskqueue.scheduler as scheduler
+from taskqueue import daemon
 
 
 def _capture(monkeypatch):
@@ -81,3 +81,14 @@ def test_fast_reap_collects_before_admitting(monkeypatch):
         cpu_ema=0.0,
     )
     assert order == ["reap", "admit"]
+
+
+def test_cpu_gate_logs_on_change_not_every_tick(monkeypatch, capsys):
+    """F-224: the CPU-gate line is printed when the gate closes and when it reopens."""
+    _capture(monkeypatch)
+    monkeypatch.setattr(daemon, "_cpu_gate_log", {"blocked": False, "at": float("-inf")})
+    for i in range(4):
+        _run(now=100.0 + i, cpu_ema=7.0)
+    _run(now=105.0, cpu_ema=0.5)
+    out = capsys.readouterr().out
+    assert out.count("admission skipped (CPU)") == 1 and out.count("admission resumed (CPU)") == 1

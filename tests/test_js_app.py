@@ -107,24 +107,32 @@ console.log('RESULT:' + JSON.stringify(r));
 
 
 def test_single_sse_connection_and_stale_error_ignored():
+    """F-255: openStream owns reconnect; startSSE only paints indicators on error."""
     out = run_js(
         """
 const { g } = await setup({ app: true });
 await g.flush();
 const ev = () => g.eventSources.filter(e => e.url.startsWith('/api/events'));
-const retry = () => g.timers.filter(t => t.live && t.fn.name === 'startSSE');
-const r = { first: ev().length, retryBefore: retry().length };
-ev()[0].fail();                       // current stream errors: closed, one retry scheduled
-r.retryAfterError = retry().length; r.retryMs = retry()[0] && retry()[0].ms;
-retry()[0].fn(); await g.flush();     // retry opens the replacement
-r.second = ev().length; r.firstClosed = ev()[0].closed;
-ev()[0].fail();                       // late error from the old stream
-r.retryAfterStale = retry().length; r.liveStreams = ev().filter(e => !e.closed).length;
+const addedSince = n => g.timers.slice(n).filter(t => t.live);
+const r = { first: ev().length };
+const first = ev()[0];
+first.onopen();                       // live stream before error path
+const n1 = g.timers.length;
+first.fail();                         // CLOSED → openStream schedules one reconnect (backoff 500)
+const afterErr = addedSince(n1);
+r.retryAfterError = afterErr.length; r.retryMs = afterErr[0] && afterErr[0].ms;
+if (afterErr[0]) { afterErr[0].live = false; afterErr[0].fn(); await g.flush(); }
+r.second = ev().length; r.firstClosed = first.closed;
+const live = ev().filter(e => !e.closed);
+if (live[0]) live[0].onopen();
+const n2 = g.timers.length;
+first.fail();                         // late error from the superseded stream
+r.retryAfterStale = addedSince(n2).length; r.liveStreams = ev().filter(e => !e.closed).length;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["first"] == 1 and out["retryBefore"] == 0
-    assert out["retryAfterError"] == 1 and out["retryMs"] == 5000
+    assert out["first"] == 1
+    assert out["retryAfterError"] == 1 and out["retryMs"] == 500
     assert out["second"] == 2 and out["firstClosed"] is True
     assert out["retryAfterStale"] == 0, "an error from a superseded stream must not schedule another connection"
     assert out["liveStreams"] == 1
@@ -145,6 +153,7 @@ S.queue = [{ project: 'p', task_id: 't', status: 'failed' }];
 S.selectedProject = 'p'; S.cfg = {};
 const kinds = async f => { toasts.length = 0; await f(); await g.flush(); return toasts.map(t => t[1]); };
 g.tqStopUndoMs = 0;
+g.tqStopReasonDefault = 'owner_request';  // skip interactive stop-reason modal
 r.stopErr = await kinds(() => g.stopTask(btn(), 'p', 't'));
 r.retryErr = await kinds(() => g.retryTask('p', 't', btn()));
 r.retryStatus = S.queue[0].status;

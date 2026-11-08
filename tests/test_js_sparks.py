@@ -38,11 +38,11 @@ def test_record_samples_throttle_persist_and_caption():
         + """
 const { g, S } = await setup({ app: true });
 await g.flush();
+g.tqClearSparks();
 g._computeGaugeModel = () => ({ cpuUsed: 2, gpuUsed: 1.5, ramUsed: 8 });
 S.status = { running: [{}, {}], queued_count: 3, daemon_rss_mb: 120 };
 const r = {};
 const store = () => JSON.parse(g.sessionStorage.getItem('tq_spark_hist') || 'null');
-g.sessionStorage.removeItem('tq_spark_hist');
 g.tqRecordSparks();
 const first = store();
 r.first = first && [first.running.length, first.running[0].v, first.queued[0].v, first.cpu[0].v, first.daemon[0].v];
@@ -94,12 +94,12 @@ def test_draw_sparks_fills_svg_and_caption_hosts():
         + """
 const { g, doc, S } = await setup({ app: true });
 await g.flush();
+g.tqClearSparks();
 g._computeGaugeModel = () => ({ cpuUsed: 2, gpuUsed: 1, ramUsed: 8 });
 S.status = { running: [], queued_count: 0, daemon_rss_mb: 10 };
 const svg = doc.createElement('svg'); svg.setAttribute('data-spark', 'cpu ram');
 const cap = doc.createElement('span'); cap.setAttribute('data-spark-cap', 'ram');
 doc.body.appendChild(svg); doc.body.appendChild(cap);
-g.sessionStorage.removeItem('tq_spark_hist');
 g.tqRecordSparks();
 const r = { svg: svg.innerHTML.length > 0, cap: cap.textContent };
 console.log('RESULT:' + JSON.stringify(r));

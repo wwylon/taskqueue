@@ -45,7 +45,7 @@ def test_hygiene_churn_and_multi_use(tmp_path: Path) -> None:
 
     # multi-use: 5 completions spanning >7 days (updated_at old so it is an archive candidate, then skipped)
     _task(conn, "p", "recur", enq=old, upd=old, completed=5, total=5)
-    for i, day in enumerate([40, 30, 20, 10, 2]):
+    for day in [40, 30, 20, 10, 2]:
         t = (now - timedelta(days=day)).isoformat()
         _run(conn, "p", "recur", started=t, finished=t, status="completed")
 
@@ -118,9 +118,7 @@ def test_run_counts_maintained_on_insert_finalize(tmp_path: Path) -> None:
     assert int(total) == 1
     ok = finalize_run_and_task(conn, rid, "p", "t", 0, "completed", clear_task_error=True, only_if_running=True)
     assert ok
-    row = conn.execute(
-        "SELECT completed_run_count, total_run_count, status FROM tasks WHERE task_id='t'"
-    ).fetchone()
+    row = conn.execute("SELECT completed_run_count, total_run_count, status FROM tasks WHERE task_id='t'").fetchone()
     assert int(row["completed_run_count"]) == 1
     assert int(row["total_run_count"]) == 1
     assert row["status"] == "completed"

@@ -9,11 +9,10 @@ import pytest
 
 from taskqueue.config import Project
 from taskqueue.daemon import MasterLeaseLockTimeout, _cas_master_lease, requeue_orphaned_running
-from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache
 from taskqueue.db import open_db
 from taskqueue.runner import _descendant_pids, build_process_children_map
 from taskqueue.scheduler import check_services_cached, clear_service_probe_cache
-from taskqueue.worker_api import claim_next_remote_task
+from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:

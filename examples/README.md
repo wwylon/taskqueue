@@ -1,23 +1,21 @@
 # Examples — taskqueue
 
-Small copy-paste starters. For dogfood/CI fixtures (progress, freeze, over-ask, suspend), use [`fixtures/tqdemo`](../fixtures/tqdemo/).
+Copy-paste starters. **Prefer [`tq_client`](../clients/README.md)** for progress, checkpoints, and cooperative control — do not hand-print `(N%)` in new scripts.
 
-## minimal
+Cookbook: [`docs/agents/task-script-cookbook.md`](../docs/agents/task-script-cookbook.md)  
+Dogfood/CI fixtures: [`fixtures/tqdemo`](../fixtures/tqdemo/).
 
-One local sleep task with `(N%)` progress:
-
-1. Register the folder as a project (or copy `minimal/experiments/operator_queue/` into an existing project).
-2. `tq sync` then `tq patch minimal/hello-progress enabled=true` (or edit YAML).
-3. Watch with `tq status` / UI; inspect with `tq diagnose minimal/hello-progress`.
-
-See [`minimal/README.md`](minimal/README.md).
+| Example | Shows |
+|---------|--------|
+| [minimal/](minimal/) | Smallest local progress task |
+| [checkpointable/](checkpointable/) | `resume_args` + cadence + `auto_retry_on_cap` via `tq_client` |
+| [pipeline/](pipeline/) | `depends_on` preprocess → train |
+| [scheduled/](scheduled/) | `schedule.cron` nightly pattern |
+| [snippets/](snippets/) | Matrix / GPU / ollama / remote YAML fragments |
 
 ## Reports & diagnose
 
 ```text
 tq report --days 7
-tq report --project minimal --days 3
-tq diagnose minimal/hello-progress
+tq diagnose <project>/<task_id>
 ```
-
-HTTP: `GET /api/report?days=7`, `GET /api/diagnose?project=minimal&task_id=hello-progress`.

@@ -104,13 +104,13 @@
       </div>
       <input type="text" id="prefs-quiet" class="side-foot-btn" placeholder="22:00-07:00" maxlength="11"
         data-i18n-title="prefs.quietHours" title="Quiet hours: no desktop notifications (HH:MM-HH:MM)"
-        data-change='[["tqSetQuietHours",{"$":"this"}]]' aria-label="Quiet hours">
-      <input type="text" id="prefs-operator" class="side-foot-btn" placeholder="operator" maxlength="64"
+        data-change='[["tqSetQuietHours",{"$":"this"}]]' data-i18n="prefs.quietHoursAria" data-i18n-attr="aria-label" aria-label="Quiet hours">
+      <input type="text" id="prefs-operator" class="side-foot-btn" placeholder="operator" data-i18n-placeholder="prefs.operatorPlaceholder" maxlength="64"
         data-i18n-title="prefs.operator" title="Operator name (same as TQ_OPERATOR) — enables Mine scope"
-        data-change='[["tqSetOperator",{"$":"this"}]]' aria-label="Operator">
-      <input type="password" id="prefs-token" class="side-foot-btn" placeholder="API token" maxlength="256"
+        data-change='[["tqSetOperator",{"$":"this"}]]' data-i18n-aria-label="prefs.operatorAria" aria-label="Operator">
+      <input type="password" id="prefs-token" class="side-foot-btn" placeholder="API token" data-i18n-placeholder="prefs.apiToken" maxlength="256"
         data-i18n-title="prefs.token" title="API bearer token (or open ?tq_token= once)"
-        data-change='[["tqSetApiToken",{"$":"this"}]]' aria-label="API token" autocomplete="off">
+        data-change='[["tqSetApiToken",{"$":"this"}]]' data-i18n="prefs.apiToken" data-i18n-attr="aria-label" aria-label="API token" autocomplete="off">
       <div class="seg" id="prefs-scope" role="group" data-i18n-title="prefs.scope" title="Queue scope">
         <button type="button" class="seg-opt" id="prefs-mine" data-click='[["tqSetMineScope",true]]' data-i18n="filter.mine" aria-pressed="false">Mine</button>
         <button type="button" class="seg-opt" id="prefs-view-all" data-click='[["tqSetMineScope",false]]' data-i18n="filter.viewAll" aria-pressed="false">View all</button>
@@ -118,17 +118,17 @@
     </div>
     <div class="side-footer-row">
       <button type="button" class="cfg-btn side-foot-btn" data-click='[["openCfg"]]' data-i18n="btn.config" data-i18n-attr="aria-label" data-i18n-title="btn.config" title="Config" aria-label="Config">⚙</button>
-      <select id="tq-lang-switcher" class="side-foot-btn" data-change='[["tqSetLang",{"$":"this"}]]' title="Language" aria-label="Language">
+      <select id="tq-lang-switcher" class="side-foot-btn" data-change='[["tqSetLang",{"$":"this"}]]' data-i18n-title="header.language" title="Language" data-i18n-aria-label="header.language" aria-label="Language">
         <option value="en" lang="en">English</option>
         <option value="pl" lang="pl">Polski</option>
         <option value="zh" lang="zh">中文</option>
         <option value="ar" lang="ar" dir="rtl">العربية</option>
       </select>
-      <button type="button" class="cfg-btn side-foot-btn" id="prefs-toggle" data-click='[["togglePrefs"]]' data-i18n-title="header.preferences" title="Preferences" aria-label="Preferences">⊞</button>
-      <button type="button" id="notif-bell" class="side-foot-btn" data-click='[["toggleNotifPanel"]]' title="Notifications" aria-label="Notifications">
+      <button type="button" class="cfg-btn side-foot-btn" id="prefs-toggle" data-click='[["togglePrefs"]]' data-i18n-title="header.preferences" title="Preferences" data-i18n-aria-label="header.preferences" aria-label="Preferences">⊞</button>
+      <button type="button" id="notif-bell" class="side-foot-btn" data-click='[["toggleNotifPanel"]]' data-i18n-title="notif.title" title="Notifications" data-i18n-aria-label="notif.title" aria-label="Notifications">
         🔔<span id="notif-badge" style="display:none;position:absolute;top:-3px;right:-2px;background:#e74c3c;color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:0 4px;line-height:14px;min-width:14px;text-align:center"></span>
       </button>
-      <button type="button" class="cfg-btn side-foot-btn" data-click='[["tqRefreshBusy"]]' data-i18n-title="header.refreshNow" title="Refresh now" aria-label="Refresh now">⟳</button>
+      <button type="button" class="cfg-btn side-foot-btn" data-click='[["tqRefreshBusy"]]' data-i18n-title="header.refreshNow" title="Refresh now" data-i18n-aria-label="header.refreshNow" aria-label="Refresh now">⟳</button>
     </div>
   </div>
 </aside>
@@ -181,14 +181,14 @@
   <div style="display:flex;align-items:center;padding:10px 14px 8px;border-bottom:1px solid var(--border);gap:6px;flex-wrap:wrap">
     <strong style="flex:1" data-i18n="notif.title">Notifications</strong>
     <button data-click='[["_notifMarkRead"]]' class="cfg-btn" style="font-size:11px;padding:2px 8px" data-i18n="notif.markAllRead">Mark all read</button>
-    <button data-click='[["toggleNotifPanel"]]' style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:16px;margin-left:6px;padding:0" aria-label="Close">✕</button>
+    <button data-click='[["toggleNotifPanel"]]' style="background:none;border:none;cursor:pointer;color:var(--text2);font-size:16px;margin-left:6px;padding:0" data-i18n-aria-label="btn.close" aria-label="Close">✕</button>
   </div>
   <div id="notif-filter-bar" class="filter-bar" style="padding:6px 10px;border-bottom:1px solid var(--border);gap:4px">
     <button type="button" class="filter-chip active" data-notif-type="all" data-click='[["tqSetNotifTypeFilter","all"]]' data-i18n="notif.filterAll">all</button>
     <button type="button" class="filter-chip" data-notif-type="alert" data-click='[["tqSetNotifTypeFilter","alert"]]' data-i18n="notif.filterAlerts">alerts</button>
     <button type="button" class="filter-chip" data-notif-type="task" data-click='[["tqSetNotifTypeFilter","task"]]' data-i18n="notif.filterTasks">tasks</button>
-    <select id="notif-proj-filter" aria-label="Filter by project" data-change='[["tqSetNotifProjectFilter",{"$":"this"}]]' style="margin-inline-start:auto;font-size:11px;max-width:120px">
-      <option value="">all projects</option>
+    <select id="notif-proj-filter" data-i18n="notif.filterByProject" data-i18n-attr="aria-label" aria-label="Filter by project" data-change='[["tqSetNotifProjectFilter",{"$":"this"}]]' style="margin-inline-start:auto;font-size:11px;max-width:120px">
+      <option value="" data-i18n="deps.allProjects">all projects</option>
     </select>
   </div>
   <div id="notif-list" style="padding:8px 0"></div>
@@ -197,6 +197,7 @@
 <!-- Dashboard -->
 <div id="dashboard" class="page">
   <div class="gauges" id="gauges"></div>
+  <div class="fits-now" id="fits-now" hidden aria-live="polite"></div>
   <div class="card">
     <div class="card-header"><h2 data-i18n="dashboard.running">Running</h2></div>
     <div class="running-list" id="running-list"><div class="empty" data-i18n="dashboard.noTasksRunning">No tasks running</div></div>
@@ -249,11 +250,11 @@
   <div class="card">
     <div class="card-header" style="flex-wrap:wrap;gap:8px">
       <h2 id="queue-all-tasks-heading" data-i18n="queue.allTasks">All tasks</h2>
-      <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","deps"]]' id="qth-deps" data-i18n="queue.sortDeps" title="Upstream dependencies first">Deps ↑</button>
-      <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","order"]]' id="qth-order" data-i18n="queue.sortOrder" title="Timeline forecast start order (advisory)">Start order</button>
+      <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","deps"]]' id="qth-deps" data-i18n="queue.sortDeps" data-i18n-title="queue.sortDepsTitle" title="Upstream dependencies first">Deps ↑</button>
+      <button class="cfg-btn" style="font-size:11px;padding:3px 8px" data-click='[["sortQueue","order"]]' id="qth-order" data-i18n="queue.sortOrder" data-i18n-title="queue.sortOrderTitle" title="Timeline forecast start order (advisory)">Start order</button>
       <div class="queue-search-wrap">
         <input type="text" id="queue-search" placeholder="search task ID or description…" data-i18n-placeholder="queue.searchPlaceholder" data-input='[["onQueueSearchInput"]]'
-          aria-label="Search task ID or description">
+          data-i18n="queue.searchAria" data-i18n-attr="aria-label" aria-label="Search task ID or description">
         <button type="button" id="queue-search-clear" class="queue-search-clear" data-click='[["clearQueueSearch"]]' hidden
           title="Clear search" data-i18n-title="queue.clearSearch" aria-label="Clear search">×</button>
       </div>
@@ -313,7 +314,7 @@
       <h2 data-i18n="history.recentRuns">Recent runs</h2>
       <div class="queue-search-wrap">
         <input type="text" id="history-search" placeholder="search task, project, or #run…" data-i18n-placeholder="history.searchPlaceholder" data-input='[["onHistorySearchInput"]]'
-          aria-label="Search task, project, or run id">
+          data-i18n="history.searchAria" data-i18n-attr="aria-label" aria-label="Search task, project, or run id">
         <button type="button" id="history-search-clear" class="queue-search-clear" data-click='[["clearHistorySearch"]]' hidden
           title="Clear search" data-i18n-title="history.clearSearch" aria-label="Clear search">×</button>
       </div>
@@ -718,10 +719,12 @@
     <pre id="yaml-modal-pre" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:14px;font-size:12px;line-height:1.5;overflow:auto;max-height:50vh;white-space:pre;tab-size:2;margin:0 0 8px"></pre>
     <textarea id="yaml-modal-edit" rows="18" style="display:none;width:100%;background:var(--bg3);border:1px solid var(--accent);border-radius:6px;padding:10px;font-size:12px;font-family:monospace;color:var(--text);resize:vertical;margin-bottom:8px"></textarea>
     <div id="yaml-modal-error" style="color:#f87171;font-size:13px;display:none"></div>
+    <div id="yaml-modal-ok" style="color:var(--ok);font-size:13px;display:none"></div>
     <div class="modal-footer">
       <button class="btn-cancel" data-click='[["closeYamlModal"]]' data-i18n="btn.close">Close</button>
       <button class="action-btn" id="yaml-edit-btn" data-click='[["yamlModalToggleEdit"]]' data-i18n="btn.edit">Edit</button>
       <button class="btn-primary" id="yaml-copy-btn" data-click='[["yamlModalCopy"]]' data-i18n="btn.copy">Copy</button>
+      <button class="action-btn" id="yaml-check-btn" data-click='[["yamlModalCheck"]]' style="display:none" data-i18n="yaml.check">Check</button>
       <button class="btn-primary" id="yaml-save-btn" data-click='[["yamlModalSave"]]' style="display:none;background:#22c55e" data-i18n="btn.save">Save</button>
     </div>
   </div>
@@ -750,7 +753,7 @@
     <div class="cfg-row"><label data-i18n="config.frozenThreshold">Frozen detection threshold (s)</label><input id="cfg-frozen" type="number" min="60" max="3600"></div>
     <div class="cfg-row"><label data-i18n="config.maxRunningTasks">Max running tasks — global cap (0 = unlimited)</label><input id="cfg-max-tasks" type="number" min="0" max="256"></div>
     <div class="cfg-row">
-      <label title="What to do when running tasks exceed max_running_tasks after a limit decrease" data-i18n="config.whenOverLimit">When running &gt; limit</label>
+      <label title="What to do when running tasks exceed max_running_tasks after a limit decrease" data-i18n-title="config.whenOverLimitTitle" data-i18n="config.whenOverLimit">When running &gt; limit</label>
       <select id="cfg-limit-policy" style="background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 8px;font-size:13px">
         <option value="ignore" data-i18n="config.policyIgnore">ignore (keep running, block new starts)</option>
         <option value="evict" data-i18n="config.policyEvict">evict lowest-priority task per tick</option>
@@ -786,7 +789,7 @@
         <div id="tq-drawer-sub" class="tq-drawer-sub"></div>
       </div>
       <span id="tq-drawer-badge"></span>
-      <button type="button" class="cfg-btn" data-click='[["tqCloseDrawer"]]' aria-label="Close">✕</button>
+      <button type="button" class="cfg-btn" data-click='[["tqCloseDrawer"]]' data-i18n-aria-label="btn.close" aria-label="Close">✕</button>
     </header>
     <div class="tq-drawer-tabs" role="tablist">
       <button type="button" data-dtab="info" data-click='[["tqDrawerTab","info"]]' data-i18n="drawer.info">Info</button>
@@ -798,6 +801,8 @@
       <button type="button" class="cfg-btn tq-act-retry" id="tq-drawer-retry" data-click='[["tqDrawerAction","retry"]]' data-i18n="drawer.retry">Retry</button>
       <button type="button" class="cfg-btn tq-act-force" id="tq-drawer-force" data-click='[["tqDrawerAction","force"]]' data-i18n="drawer.force">Force run</button>
       <button type="button" class="cfg-btn tq-act-stop" id="tq-drawer-stop" data-click='[["tqDrawerAction","stop"]]' data-i18n="drawer.stop">Stop</button>
+      <button type="button" class="cfg-btn" id="tq-drawer-hold" data-click='[["tqDrawerAction","hold"]]' data-i18n="btn.hold">Hold</button>
+      <button type="button" class="cfg-btn" id="tq-drawer-unhold" data-click='[["tqDrawerAction","unhold"]]' data-i18n="btn.unhold">Resume hold</button>
       <button type="button" class="cfg-btn" id="tq-drawer-enable" data-click='[["tqDrawerToggleEnabled"]]'>Disable</button>
       <button type="button" class="cfg-btn" id="tq-drawer-log" data-click='[["tqDrawerAction","log"]]' data-i18n="drawer.log">Log</button>
       <button type="button" class="cfg-btn" id="tq-drawer-why" data-click='[["tqDrawerWhy"]]' data-i18n="drawer.why">Why not running?</button>
@@ -812,16 +817,17 @@
     <span id="tq-log-live" class="live-pulse" hidden data-i18n="log.live">LIVE</span>
     <span style="flex:1"></span>
     <input type="text" id="tq-log-filter" class="tq-log-filter" data-i18n-placeholder="log.filterPlaceholder" placeholder="Filter (regex)"
-      data-input='[["tqSetLogFilter",{"$":"this"}]]' aria-label="Filter log lines">
-    <select id="tq-log-level" class="tq-log-filter" data-change='[["tqSetLogLevel",{"$":"this"}]]' aria-label="Log level">
+      data-input='[["tqSetLogFilter",{"$":"this"}]]' data-i18n="log.filterAria" data-i18n-attr="aria-label" aria-label="Filter log lines">
+    <select id="tq-log-level" class="tq-log-filter" data-change='[["tqSetLogLevel",{"$":"this"}]]' data-i18n="log.levelAria" data-i18n-attr="aria-label" aria-label="Log level">
       <option value="" data-i18n="log.levelAll">All lines</option>
       <option value="warn" data-i18n="log.levelWarn">Warnings + errors</option>
       <option value="error" data-i18n="log.levelError">Errors only</option>
     </select>
+    <button type="button" class="cfg-btn" data-click='[["tqLogJumpFirstError"]]' data-i18n="log.firstError">First error</button>
     <button type="button" class="cfg-btn" id="tq-log-wrap" data-click='[["tqToggleLogWrap"]]' data-i18n="log.wrap">Wrap</button>
     <button type="button" class="cfg-btn" data-click='[["tqDownloadLog"]]' data-i18n="log.download">Download</button>
     <button type="button" class="cfg-btn" data-click='[["tqClearLogView"]]' data-i18n="log.clear">Clear</button>
-    <button type="button" class="cfg-btn" data-click='[["tqCloseLog"]]' aria-label="Close">✕</button>
+    <button type="button" class="cfg-btn" data-click='[["tqCloseLog"]]' data-i18n-aria-label="btn.close" aria-label="Close">✕</button>
   </div>
   <div id="tq-log-body" class="tq-log-body"></div>
 </div>

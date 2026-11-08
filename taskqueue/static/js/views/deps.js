@@ -4,6 +4,7 @@
 import { STATUS_HEX, hexToRgba } from '../util/colors.js';
 import { projColor } from '../util/projcolor.js';
 import { S } from '../core/state.js';
+import { _isRestartStatus, _requeueLabel } from '../core/nav.js';
 import { escHtml } from '../util/format.js';
 
 /** Structural + status key so polls do not rebuild the SVG (and reset pan/zoom) when unchanged. */
@@ -68,7 +69,7 @@ export async function loadDeps() {
     renderDag(data);
   } catch(e) {
     const svg = document.getElementById('dag-svg');
-    if (svg) svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--fail)" font-size="13">Error: ${escHtml(String(e))}</text>`;
+    if (svg) svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--fail)" font-size="13">${escHtml(i18n.t('status.errorMsg', {error: String(e)}))}</text>`;
   }
 }
 
@@ -280,7 +281,6 @@ export function _setupDagPanZoom(svg, container) {
 
 export function renderDag(data) {
   const svg = document.getElementById('dag-svg');
-  const tooltip = document.getElementById('dag-tooltip');
   const container = document.getElementById('dag-container');
   if (!svg) return;
 
@@ -540,10 +540,10 @@ export function _dagCtxMenuItems(project, taskId, status, opts) {
   const items = [];
   if (opts && opts.timeline) {
     const pr = Number(opts.priority) || 0;
-    items.push({ label: i18n.t('ctx.details') || 'Details', call: ['tqOpenDrawer', project, taskId] });
-    items.push({ label: (i18n.t('ctx.setPriority') || 'Set priority…') + ' (' + pr + ')', call: ['tqPromptPriority', project, taskId,pr] });
-    items.push({ label: (i18n.t('ctx.prioUp') || 'Priority +10'), call: ['tqSetPriority', project, taskId,Math.min(100, pr + 10)] });
-    items.push({ label: (i18n.t('ctx.prioDown') || 'Priority −10'), call: ['tqSetPriority', project, taskId,Math.max(0, pr - 10)] });
+    items.push({ label: i18n.t('ctx.details'), call: ['tqOpenDrawer', project, taskId] });
+    items.push({ label: (i18n.t('ctx.setPriority')) + ' (' + pr + ')', call: ['tqPromptPriority', project, taskId,pr] });
+    items.push({ label: (i18n.t('ctx.prioUp')), call: ['tqSetPriority', project, taskId,Math.min(100, pr + 10)] });
+    items.push({ label: (i18n.t('ctx.prioDown')), call: ['tqSetPriority', project, taskId,Math.max(0, pr - 10)] });
     items.push({ sep: true });
   }
   items.push({ label: 'Go to Queue', call: ['dagNodeClick', project, taskId] });
@@ -565,7 +565,7 @@ export function _dagCtxMenuItems(project, taskId, status, opts) {
   if (st === 'disabled') {
     actionItems.push({ label: 'Enable', call: ['dagCtxEnable', project, taskId] });
   } else if (opts && opts.timeline && ['queued', 'stopped', 'interrupted', 'failed'].includes(st)) {
-    actionItems.push({ label: i18n.t('ctx.disable') || 'Disable', call: ['tqSetEnabled', project, taskId,0] });
+    actionItems.push({ label: i18n.t('ctx.disable'), call: ['tqSetEnabled', project, taskId,0] });
   }
   if (actionItems.length) {
     items.push({ sep: true });

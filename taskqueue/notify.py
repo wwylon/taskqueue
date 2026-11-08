@@ -20,19 +20,21 @@ from __future__ import annotations
 
 import json
 import logging
-import queue
 import os
+import queue
 import threading
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse, urlunparse
+from urllib.request import Request
 
 from taskqueue.netutil import is_loopback_host
-from urllib.request import Request
-import urllib.request as _urlrequest
 
 log = logging.getLogger("taskqueue.notify")
+
+
+_log = logging.getLogger(__name__)
 
 
 def redact_notify_url(url: str) -> str:
@@ -42,7 +44,7 @@ def redact_notify_url(url: str) -> str:
         return ""
     try:
         p = urlparse(raw)
-    except Exception:
+    except ValueError:
         return "<redacted>"
     host = p.hostname or ""
     if p.port:
@@ -61,17 +63,9 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})  # kept for impor
 
 def _make_no_redirect_opener(*, allow_remote: bool = False):
     """Return a urllib opener that re-validates the host on every redirect."""
+    from taskqueue.netutil import loopback_opener
 
-    class _ValidatingRedirectHandler(_urlrequest.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            host = (urlparse(newurl).hostname or "").lower()
-            if not allow_remote and not is_loopback_host(host):
-                from urllib.error import URLError
-
-                raise URLError(f"redirect to non-loopback host {host!r} blocked (set notify_allow_remote=1 to permit)")
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
-
-    return _urlrequest.build_opener(_ValidatingRedirectHandler())
+    return loopback_opener(allow_remote=allow_remote)
 
 
 _POST_TIMEOUT_SEC = 4.0
@@ -99,8 +93,8 @@ def _webhook_worker() -> None:
         url, payload, home, allow_remote = item
         try:
             _post_webhook(url, payload, home, allow_remote=allow_remote)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - webhook post is best-effort
+            _log.debug("webhook post failed", exc_info=True)
         finally:
             _WEBHOOK_QUEUE.task_done()
 
@@ -250,7 +244,7 @@ def _lookup_provenance(home: Path, project: str, task_id: str) -> tuple[str | No
         if row is None:
             return None, None
         return row["submitted_by"] or None, row["submitted_via"] or None
-    except Exception:
+    except Exception:  # noqa: BLE001 - provenance lookup is best-effort
         return None, None
 
 
@@ -302,7 +296,7 @@ def record_dead_letter(home: Path, url: str, payload: dict[str, Any], error: str
             conn.commit()
         finally:
             conn.close()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - dead-letter insert is best-effort
         log.warning("notify_dead insert failed: %s", exc)
 
 
@@ -341,7 +335,7 @@ def retry_dead_letter(conn, dead_id: int, *, allow_remote: bool = False) -> dict
     try:
         url = validate_notify_url(row["url"], allow_remote=allow_remote)
         _attempt_post(url, json.loads(row["payload"]), allow_remote=allow_remote)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - any retry failure is recorded on the dead letter
         conn.execute(
             "UPDATE notify_dead SET error = ?, attempts = attempts + 1 WHERE id = ?", (str(exc)[:500], dead_id)
         )
@@ -361,7 +355,7 @@ def _post_webhook(url: str, payload: dict[str, Any], home: Path | None = None, *
         try:
             _attempt_post(url, payload, allow_remote=allow_remote)
             return  # success
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any POST failure is retried
             last_exc = exc
             log.warning("notify webhook POST attempt %d/%d failed url=%s: %s", attempt + 1, _POST_RETRIES, url, exc)
     # All retries exhausted — write to dead-letter file
@@ -464,7 +458,7 @@ def _send_toast(title: str, message: str, icon_path: str | None = None, *, level
                 "winotify not installed; Windows toasts disabled — "
                 "pip install winotify  (or: pip install 'taskqueue[toast]')"
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - third-party winotify
         if not _toast_fail_logged:
             _toast_fail_logged = True
             log.warning("Windows toast failed: %s", exc)
@@ -664,7 +658,7 @@ def _read_notify_cursor(home: Path, operator: str | None) -> int:
     try:
         data = json.loads(_notify_cursor_path(home, operator).read_text(encoding="utf-8"))
         return int(data.get(operator or "_all", 0))
-    except Exception:
+    except (OSError, ValueError, TypeError, AttributeError):
         return 0
 
 
@@ -675,14 +669,14 @@ def _write_notify_cursor_unlocked(home: Path, operator: str | None, offset: int)
     try:
         try:
             existing = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, ValueError):
             existing = {}
         prev = int(existing.get(key, 0) or 0)
         existing[key] = max(prev, int(offset))
         tmp = p.with_name(f"{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(existing), encoding="utf-8")
         tmp.replace(p)
-    except Exception:
+    except (OSError, TypeError, ValueError, AttributeError):
         pass
 
 

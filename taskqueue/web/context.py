@@ -5,9 +5,10 @@ from __future__ import annotations
 import sqlite3
 import threading
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -31,3 +32,6 @@ class HandlerContext:
     # G1: per-worker command queues for low-latency command delivery.
     pending_commands: dict[str, deque] = field(default_factory=dict)
     commands_condition: threading.Condition = field(default_factory=threading.Condition)
+    # F-240: daemon-owned project folder release / relocate (watch + registry).
+    release_project: Callable[[str], dict[str, Any]] | None = None
+    relocate_project: Callable[[str, str], dict[str, Any]] | None = None

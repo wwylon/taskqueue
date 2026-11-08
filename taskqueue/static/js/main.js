@@ -1,13 +1,12 @@
 // ES-module entry + UI boot (F-207: classic app.js boot folded here).
 // Helpers are exposed on window as shims for templates / data-click and for Node tests.
-import { projColor, projStyle } from './util/projcolor.js';
 import { escHtml, jsq, taskKey, qrowId, domIdPart, fmt, dur, appendLog, LOG_CAP_CHARS } from './util/format.js';
 import { tqEventSource, openStream, fetchJson, fetchJsonEtag, tqPerfEnabled, tqDominantTimingPhase } from './core/api.js';
 import { act, installActions, registerActions, THIS, EVENT } from './core/actions.js';
 import { applyLogSearch, searchLog, logSearchNav, openLogStream, logTailText,
   toggleHistoryLog, toggleHistoryCardLog, tailHistoryCardLog, tailHistoryLog, toggleQueueLog, tailQueueLog,
   toggleDashLog, refreshDashLog, tailDashLog } from './components/logpanel.js';
-import { logLineHtml, trackLogSse, LOG_SSE_MAX } from './components/logview.js';
+import { logLineHtml, classifyLogLine, trackLogSse, LOG_SSE_MAX } from './components/logview.js';
 import { loadAudit, tqRollbackConfig, tqExportAudit } from './views/audit.js';
 import { loadApiTokens, tqCreateToken, tqRevokeToken } from './views/tokens.js';
 import { loadSchedules, tqSelectSchedule, tqNewSchedule, tqSchedRun, tqSchedPause, tqSchedResume } from './views/schedule.js';
@@ -17,13 +16,14 @@ import { onHistorySearchInput, clearHistorySearch, setHistoryFilter, sortHistory
   toggleHistoryPageHist, toggleHistoryCardHist, searchAllLogs, openLogSearchRun } from './views/history.js';
 import { onQueueSearchInput, _syncQueueSearchClear, _resetQueueSearchForFilter, clearQueueSearch, setQueueFilter, setQueueProject, sortQueue, renderQueue, _renderQueuePagination, goQueuePage, _depMeta, _depTagsHtml, _queueDepHtml, _queueSelKey, _queueCheckHtml, _buildQueueRow, _progressPct, _lastRunProgressHtml, _buildQueueCard, _flashQueueRow, _reapplyQueueFlash, gotoQueueDep, gotoQueueProject } from './views/queue.js';
 import { renderDashboard, _dashExpectedSec, _ensureDashStats, toggleDashHist, renderWorkers } from './views/dashboard.js';
+import { _fitsNowHtml, tqRefreshFitsNow } from './components/fitsnow.js';
 import { loadDeps, renderDag, showDagTip, hideDagTip, dagNodeClick, hideDagCtxMenu, showDagCtxMenu, _dagRefreshAfterAction, _dagResetView, dagCtxStop, dagCtxRetry, dagCtxForce, dagCtxMarkProcessed, dagCtxEnable, tqDagZoomBy, tqDagScaleFrom } from './views/deps.js';
 import { loadGroups, groupStop, groupRetry, _populateGroupChips, _updateGroupChips, _toggleGroupBar, setGroupFilter, viewGroupInQueue } from './views/groups.js';
 import { loadResources, loadHardware, renderClusterUsage, renderResourceBars, renderHardware, saveResLimits, toggleResPanel } from './views/resources.js';
-import { _closeGenModal, openModal, openAlert, openConfirm, openYamlModal, closeYamlModal, yamlModalToggleEdit, yamlModalSave, getResourceModalRunId, _resourceModalBodyHtml, showResourceModal, compareRun, closeResourceModal, yamlModalCopy, showToast, showAnchorToast, showUndoToast } from './components/modals.js';
+import { _closeGenModal, openModal, openAlert, openConfirm, openYamlModal, closeYamlModal, yamlModalToggleEdit, yamlModalSave, yamlModalCheck, getResourceModalRunId, _resourceModalBodyHtml, showResourceModal, compareRun, closeResourceModal, yamlModalCopy, showToast, showAnchorToast, showUndoToast } from './components/modals.js';
 import { _pageSize, setQueueActive, _captureLogScrollStates, _restoreLogScrollStates, tab, jumpToStatus, _isRestartStatus, _requeueLabel } from './core/nav.js';
 import { tqHeaderProject, tqProjectQuery, tqLoadTab, tqLoop, tqSetLang, tqRefreshBusy, tqTimelineBusy, tqMobSearchInput, tqSelectVisibleFrom, tqBusy, tqRefreshActivePage, _showPageEmpty } from './core/loader.js';
-import { tqAppendLogText, tqCloseLog, tqClearLogView, tqOpenLogPanel, tqLoadStaticLog, tqSetLogFilter, tqSetLogLevel, tqToggleLogWrap, tqDownloadLog, tqLogFilterRegex } from './components/logdock.js';
+import { tqAppendLogText, tqCloseLog, tqClearLogView, tqOpenLogPanel, tqLoadStaticLog, tqSetLogFilter, tqSetLogLevel, tqToggleLogWrap, tqDownloadLog, tqLogFilterRegex, tqLogJumpFirstError } from './components/logdock.js';
 import { _trackLogSse, toggleTaskHistory, _loadTaskRunHistoryHtml, _renderTaskRunHistoryHtml, _taskStatsStripHtml, toggleCardLog, toggleCardHistory, _panelKey, _sseAppend, _ansiToHtml, _fetchLog, copyTaskName, copyLogTail, _resolveLogPanel, _ensureLogOpen, openLogIssue } from './components/runlogs.js';
 import { _etaRemainingSec, fmtCpu, _runningIdentity, _gaugeStructureKey, _gpuBadgeHtml, _logChipsHtml, _usageHtml, _computeGaugeModel, _patchDashboardLive, _updateRunningTimes } from './components/runmetrics.js';
 import { badge, _waitKind, friendlyErrorText, waitReasonHtml, res, _taskCopyIconBtn, _updateSortTh } from './util/labels.js';
@@ -33,29 +33,29 @@ import { openMobTaskPicker, closeMobTaskPicker, renderMobTaskList, mobForceTask 
 import { tqQueueActive, tqCloseShortcuts, tqToggleShortcuts, tqHeaderMark, tqSyncHeaderMark, tqQueueRowEls, tqHighlightedTask, tqMoveQueueRow, tqTypingTarget, tqHandleKey } from './components/shortcuts.js';
 import { tqPersistSavedFilters, tqLoadSavedFilters, tqFilterLabel, tqRenderSavedFilters, tqToggleSavedFilters, tqSyncStatusChips, tqApplySavedFilter, tqDeleteSavedFilter, tqSaveCurrentFilter, tqClearQueueFilter, tqRenderFilterSummary, tqSyncQueueChrome, tqSyncSelectAll, tqSetRowSelected, tqToggleSelectVisible, tqClearSelection, tqRenderBulkBar, tqBulkAction, tqSelectAllMatching, tqRetryAllFailed, _csvCell, tqExportQueue } from './components/queuefilters.js';
 import { openCfg, closeCfg, _postJson, saveCfg, _sendJson, toastResult } from './components/cfgmodal.js';
-import { retryTaskNew, copyTaskYaml, startPrioEdit, _btnPending, _btnDone, _optimisticQueueStatus, stopTask, retryTask, forceTask, markProcessed, enableTask, setPriority, _updateFreezeBtn, _showProjectRoot, toggleProjectFreeze, toggleProjectPause, tqRerunRun, stopAllProject, workerSync, tqSetPriority, tqPromptPriority, tqSetEnabled } from './components/taskactions.js';
+import { retryTaskNew, copyTaskYaml, startPrioEdit, _btnPending, _btnDone, _optimisticQueueStatus, stopTask, holdTask, unholdTask, retryTask, forceTask, markProcessed, enableTask, setPriority, _updateFreezeBtn, _showProjectRoot, toggleProjectFreeze, toggleProjectPause, tqRerunRun, stopAllProject, workerSync, tqSetPriority, tqPromptPriority, tqSetEnabled } from './components/taskactions.js';
 import { _loadTabData, tqLoadTabBusy, _updateStatusPill, _updatePageTitle, _updateHealth, _setHealthFavicon, _statusScopeProject, _scopeStatusPayload, refresh, _setOffline, _updateSseIndicator, startLiveUpdates, _dataVersionChanged, _queueStructuralKey, _patchQueueLiveFromRunning } from './core/refresh.js';
 import { UI_TABS, _lsGet, _readUiUrl, _mergedUiState, _buildUiSearchParams, _syncUrl, _activateTabFromUrl, _applyUiVars, setProject, _syncProjBarChips, _syncProjSelect, setProjectAndWait } from './core/url.js';
-import { _sparkEnsureLoaded, _sparkSave, _sparkScale, _sparkUnit, _sparkFmt, _sparkCaption, tqRecordSparks, _sparkPoints, _sparkMarkup, tqDrawSparks, _paintSparkline, _drawSparklineOnCanvas, _drawSparkline } from './components/sparks.js';
+import { _sparkEnsureLoaded, _sparkSave, _sparkScale, _sparkUnit, _sparkFmt, _sparkCaption, tqClearSparks, tqRecordSparks, _sparkPoints, _sparkMarkup, tqDrawSparks, _paintSparkline, _drawSparklineOnCanvas, _drawSparkline } from './components/sparks.js';
 import { _tlClock, _tlDay, _tlAt, _tlTicks, loadTimeline, _loadTimelineNow, _renderTimeline } from './views/timeline.js';
 import { _activePageTab, _helpUiLang, _fetchHelpPayload, _helpTopicHtml, _renderHelpBody, openHelp, closeHelp, tqOpenGuide, loadDocsPage, _docsScrollToSection, _docsRenderSectionNav, tqDocsJump, loadDoc } from './views/docs.js';
 import { tqApplyQueueColumns, tqToggleColumnsMenu, tqSetQueueColumn, tqSetQueueColumnFromBox, tqHiddenQueueCols, tqQueueColumnsCss } from './components/columns.js';
 import { tqOpenPalette, tqClosePalette, tqPaletteItems, tqPaletteFilter } from './components/palette.js';
-import { tqFindTask, tqOnTaskCellClick, tqOpenDrawer, tqCloseDrawer, tqSyncDrawerLive, tqPaintDrawerHead, tqDrawerPrio, tqDrawerToggleEnabled, tqDrawerTab, tqInfoCard, tqPaintDrawerBody, tqDrawerLoadYaml, tqDrawerToggleYaml, tqDrawerSaveYaml, tqDrawerCopyYaml, tqDrawerLoadHistory, tqDrawerAction, tqDrawerWhy, metricSparkSvg, tqDrawerLoadSeries } from './components/drawer.js';
+import { tqFindTask, tqOnTaskCellClick, tqOpenDrawer, tqCloseDrawer, tqSyncDrawerLive, tqPaintDrawerHead, tqDrawerPrio, tqDrawerToggleEnabled, tqDrawerTab, tqInfoCard, tqPaintDrawerBody, tqDrawerLoadYaml, tqDrawerToggleYaml, tqDrawerSaveYaml, tqDrawerCopyYaml, tqDrawerLoadHistory, tqDrawerAction, tqDrawerWhy, metricSparkSvg, tqDrawerLoadSeries, tqDrawerLoadPrevSeries } from './components/drawer.js';
 import { tqApplyTheme, tqApplyFont, togglePrefs, tqSyncPrefs, tqSetQuietHours, tqInQuietHours, tqSyncOperatorPrefs, tqSetOperator, tqSetMineScope, tqSyncTokenPrefs, tqSetApiToken } from './components/prefs.js';
 import { toggleNotifPanel, _notifMarkRead, tqAlertDetailHtml, tqToggleAlertDetail, _openAlertsTab, _fetchNotifications, _renderNotifPanel, tqSetNotifTypeFilter, tqSetNotifProjectFilter } from './components/notifications.js';
 
 const _exports = {
-  metricSparkSvg, tqDrawerLoadSeries,
+  metricSparkSvg, tqDrawerLoadSeries, tqDrawerLoadPrevSeries,
   tqSetLogFilter, tqSetLogLevel, tqToggleLogWrap, tqDownloadLog, tqLogFilterRegex,
   tqApplyQueueColumns, tqToggleColumnsMenu, tqSetQueueColumn, tqSetQueueColumnFromBox, tqHiddenQueueCols, tqQueueColumnsCss,
   showUndoToast,
   tqOpenPalette, tqClosePalette, tqPaletteItems, tqPaletteFilter,
   loadResources, loadHardware, renderClusterUsage, renderResourceBars, renderHardware, saveResLimits, toggleResPanel,
-  _closeGenModal, openModal, openAlert, openConfirm, openYamlModal, closeYamlModal, yamlModalToggleEdit, yamlModalSave, getResourceModalRunId, _resourceModalBodyHtml, showResourceModal, compareRun, closeResourceModal, yamlModalCopy, showToast, showAnchorToast,
+  _closeGenModal, openModal, openAlert, openConfirm, openYamlModal, closeYamlModal, yamlModalToggleEdit, yamlModalSave, yamlModalCheck, getResourceModalRunId, _resourceModalBodyHtml, showResourceModal, compareRun, closeResourceModal, yamlModalCopy, showToast, showAnchorToast,
   _pageSize, setQueueActive, _captureLogScrollStates, _restoreLogScrollStates, tab, jumpToStatus, _isRestartStatus, _requeueLabel,
   tqHeaderProject, tqProjectQuery, tqLoadTab, tqLoop, tqSetLang, tqRefreshBusy, tqTimelineBusy, tqMobSearchInput, tqSelectVisibleFrom, tqBusy, tqRefreshActivePage, _showPageEmpty,
-  tqAppendLogText, tqCloseLog, tqClearLogView, tqOpenLogPanel, tqLoadStaticLog,
+  tqAppendLogText, tqCloseLog, tqClearLogView, tqOpenLogPanel, tqLoadStaticLog, tqLogJumpFirstError,
   _trackLogSse, toggleTaskHistory, _loadTaskRunHistoryHtml, _renderTaskRunHistoryHtml, _taskStatsStripHtml, toggleCardLog, toggleCardHistory, _panelKey, _sseAppend, _ansiToHtml, _fetchLog, copyTaskName, copyLogTail, _resolveLogPanel, _ensureLogOpen, openLogIssue,
   _etaRemainingSec, fmtCpu, _runningIdentity, _gaugeStructureKey, _gpuBadgeHtml, _logChipsHtml, _usageHtml, _computeGaugeModel, _patchDashboardLive, _updateRunningTimes,
   badge, _waitKind, friendlyErrorText, waitReasonHtml, res, _taskCopyIconBtn, _updateSortTh,
@@ -65,10 +65,10 @@ const _exports = {
   tqQueueActive, tqCloseShortcuts, tqToggleShortcuts, tqHeaderMark, tqSyncHeaderMark, tqQueueRowEls, tqHighlightedTask, tqMoveQueueRow, tqTypingTarget, tqHandleKey,
   tqPersistSavedFilters, tqLoadSavedFilters, tqFilterLabel, tqRenderSavedFilters, tqToggleSavedFilters, tqSyncStatusChips, tqApplySavedFilter, tqDeleteSavedFilter, tqSaveCurrentFilter, tqClearQueueFilter, tqRenderFilterSummary, tqSyncQueueChrome, tqSyncSelectAll, tqSetRowSelected, tqToggleSelectVisible, tqClearSelection, tqRenderBulkBar, tqBulkAction, tqSelectAllMatching, tqRetryAllFailed, _csvCell, tqExportQueue,
   openCfg, closeCfg, _postJson, saveCfg, _sendJson, toastResult,
-  retryTaskNew, copyTaskYaml, startPrioEdit, _btnPending, _btnDone, _optimisticQueueStatus, stopTask, retryTask, forceTask, markProcessed, enableTask, setPriority, _updateFreezeBtn, _showProjectRoot, toggleProjectFreeze, toggleProjectPause, tqRerunRun, stopAllProject, workerSync, tqSetPriority, tqPromptPriority, tqSetEnabled,
+  retryTaskNew, copyTaskYaml, startPrioEdit, _btnPending, _btnDone, _optimisticQueueStatus, stopTask, holdTask, unholdTask, retryTask, forceTask, markProcessed, enableTask, setPriority, _updateFreezeBtn, _showProjectRoot, toggleProjectFreeze, toggleProjectPause, tqRerunRun, stopAllProject, workerSync, tqSetPriority, tqPromptPriority, tqSetEnabled,
   _loadTabData, tqLoadTabBusy, _updateStatusPill, _updatePageTitle, _updateHealth, _setHealthFavicon, _statusScopeProject, _scopeStatusPayload, refresh, _setOffline, _updateSseIndicator, startLiveUpdates,
   UI_TABS, _lsGet, _readUiUrl, _mergedUiState, _buildUiSearchParams, _syncUrl, _activateTabFromUrl, _applyUiVars, setProject, _syncProjBarChips, _syncProjSelect, setProjectAndWait,
-  _sparkEnsureLoaded, _sparkSave, _sparkScale, _sparkUnit, _sparkFmt, _sparkCaption, tqRecordSparks, _sparkPoints, _sparkMarkup, tqDrawSparks, _paintSparkline, _drawSparklineOnCanvas, _drawSparkline,
+  _sparkEnsureLoaded, _sparkSave, _sparkScale, _sparkUnit, _sparkFmt, _sparkCaption, tqClearSparks, tqRecordSparks, _sparkPoints, _sparkMarkup, tqDrawSparks, _paintSparkline, _drawSparklineOnCanvas, _drawSparkline,
   _tlClock, _tlDay, _tlAt, _tlTicks, loadTimeline, _loadTimelineNow, _renderTimeline,
   _activePageTab, _helpUiLang, _fetchHelpPayload, _helpTopicHtml, _renderHelpBody, openHelp, closeHelp, tqOpenGuide, loadDocsPage, _docsScrollToSection, _docsRenderSectionNav, tqDocsJump, loadDoc,
   tqFindTask, tqOnTaskCellClick, tqOpenDrawer, tqCloseDrawer, tqSyncDrawerLive, tqPaintDrawerHead, tqDrawerPrio, tqDrawerToggleEnabled, tqDrawerTab, tqInfoCard, tqPaintDrawerBody, tqDrawerLoadYaml, tqDrawerToggleYaml, tqDrawerSaveYaml, tqDrawerCopyYaml, tqDrawerLoadHistory, tqDrawerAction, tqDrawerWhy,
@@ -77,6 +77,7 @@ const _exports = {
   loadGroups, groupStop, groupRetry, _populateGroupChips, _updateGroupChips, _toggleGroupBar, setGroupFilter, viewGroupInQueue,
   loadDeps, renderDag, showDagTip, hideDagTip, dagNodeClick, hideDagCtxMenu, showDagCtxMenu, _dagRefreshAfterAction, _dagResetView, dagCtxStop, dagCtxRetry, dagCtxForce, dagCtxMarkProcessed, dagCtxEnable, tqDagZoomBy, tqDagScaleFrom,
   toggleDashLog, refreshDashLog, tailDashLog, renderDashboard, _dashExpectedSec, _ensureDashStats, toggleDashHist, renderWorkers,
+  _fitsNowHtml, tqRefreshFitsNow,
   toggleQueueLog, tailQueueLog,
   onQueueSearchInput, _syncQueueSearchClear, _resetQueueSearchForFilter, clearQueueSearch, setQueueFilter, setQueueProject, sortQueue, renderQueue, _renderQueuePagination, goQueuePage, _depMeta, _depTagsHtml, _queueDepHtml, _queueSelKey, _queueCheckHtml, _buildQueueRow, _progressPct, _lastRunProgressHtml, _buildQueueCard, _flashQueueRow, _reapplyQueueFlash, gotoQueueDep, gotoQueueProject,
   toggleHistoryLog, toggleHistoryCardLog, tailHistoryCardLog, tailHistoryLog,
@@ -94,7 +95,7 @@ const _exports = {
   _dataVersionChanged, _queueStructuralKey, _patchQueueLiveFromRunning,
   tqAct: act, TQ_THIS: THIS, TQ_EVENT: EVENT,
   _applyLogSearch: applyLogSearch, searchLog, logSearchNav, openLogStream, logTailText,
-  tqLogLineHtml: logLineHtml, trackLogSse, LOG_SSE_MAX,
+  tqLogLineHtml: logLineHtml, classifyLogLine, trackLogSse, LOG_SSE_MAX,
 };
 Object.assign(window, _exports);
 registerActions(_exports);
@@ -123,7 +124,7 @@ export function tqBootApp() {
   window.addEventListener('popstate', function () {
     const fromUrl = _readUiUrl();
     S.applyingUrl = true;
-    let tabName = 'queue';
+    let tabName;
     try {
       _applyUiVars({
         project: fromUrl.project || 'all',

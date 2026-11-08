@@ -5,8 +5,7 @@ import urllib.error
 
 import pytest
 
-from taskqueue import worker
-from taskqueue import worker_http
+from taskqueue import worker, worker_http
 
 
 class _Resp(io.BytesIO):

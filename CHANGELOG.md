@@ -6,6 +6,18 @@ this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-11-08
+
+### Added
+
+- Slim stranger-facing README (EN/PL/ZH/AR) with hero image, agent CTA, and transparency note (no product phone-home).
+- Marketing GitHub Pages tree under `site/` (landing, sitemap, robots); CLI encyclopedia moved to `docs/operators/cli.md`.
+- Root `llms.txt` and expanded package keywords for discoverability.
+
+### Fixed
+
+- Deep-audit reliability work for remote `stopped` claim paths, MCP mutate helpers, scheduler admit hot path, and web UI SSE/log races (F-244–F-258).
+
 ## [0.7.5] - 2026-11-01
 
 ### Added

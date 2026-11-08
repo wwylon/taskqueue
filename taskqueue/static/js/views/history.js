@@ -2,9 +2,12 @@
 // Uses app.js globals at call time: tqAct, TQ_THIS, i18n, badge, refresh, _updateSortTh, _fetchLog, _ansiToHtml,
 // _taskCopyIconBtn, _isRestartStatus, _requeueLabel, _loadTaskRunHistoryHtml.
 import { S } from '../core/state.js';
+import { _isRestartStatus, _requeueLabel } from '../core/nav.js';
 import { escHtml, fmt, dur, domIdPart, isMobileLayout, onLayoutChange } from '../util/format.js';
+import { _taskCopyIconBtn } from '../util/labels.js';
 import { projStyle } from '../util/projcolor.js';
 import { fetchJson } from '../core/api.js';
+import { _ansiToHtml } from '../components/runlogs.js';
 
 export const HISTORY_COLS = 7;
 
@@ -66,7 +69,10 @@ export function sortHistory(field) {
   if (S.historySort.field === field) S.historySort.dir *= -1;
   else { S.historySort.field = field; S.historySort.dir = -1; }
   _updateSortTh('h', S.historySort.field, S.historySort.dir);
-  renderHistory();
+  // F-258: re-fetch so ORDER BY applies before LIMIT (not just the current page).
+  S.historyOffset = 0;
+  S.historyPage = 0;
+  if (typeof window.refresh === 'function') window.refresh();
 }
 
 // Legacy alias — pages are fixed-size; deep browse uses offset, not a growing limit.
@@ -100,10 +106,10 @@ export function _renderHistoryMore() {
   const start = off + 1;
   const end = Math.min(off + (S.history.length || page), total);
   const prev = off > 0
-    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadPrevHistory']])}">${escHtml(i18n.t('btn.prev') || 'Prev')}</button>`
+    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadPrevHistory']])}">${escHtml(i18n.t('btn.prev'))}</button>`
     : '';
   const next = off + page < total
-    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadMoreHistory']])}">${escHtml(i18n.t('history.loadMore') || 'Next')}</button>`
+    ? `<button type="button" class="action-btn" data-click="${tqAct([['loadMoreHistory']])}">${escHtml(i18n.t('history.loadMore'))}</button>`
     : '';
   hpag.innerHTML = `<span style="font-size:12px;color:var(--muted);margin-right:8px">${start}–${end} / ${total}</span>${prev} ${next}`;
 }
@@ -157,7 +163,7 @@ export function _buildHistoryCard(r) {
       <span class="run-worker" style="background:${r.worker_id ? '#4F46E5' : '#6B7280'};color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:bold">${escHtml(r.worker_id || 'master')}</span>
       <div class="run-actions">
         ${(_isRestartStatus(r.status) || ['failed','completed'].includes(r.status)) ? `<button class="action-btn" data-click="${tqAct([['retryTaskNew', String(r.project || ''), String(r.task_id), TQ_THIS]])}">${_requeueLabel(r.status)}</button>` : ''}
-        <button class="action-btn" id="hc-histbtn-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" data-click="${tqAct([['toggleHistoryCardHist', String(r.project || ''), String(r.task_id)]])}">${!!S.expandedHistory[`${r.project}/${r.task_id}`] ? i18n.t('btn.hideHistory') : i18n.t('btn.history')}</button>
+        <button class="action-btn" id="hc-histbtn-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" data-click="${tqAct([['toggleHistoryCardHist', String(r.project || ''), String(r.task_id)]])}">${S.expandedHistory[`${r.project}/${r.task_id}`] ? i18n.t('btn.hideHistory') : i18n.t('btn.history')}</button>
         ${r.run_id ? `<button class="log-btn" data-click="${tqAct([['showResourceModal', r.run_id]])}" title="${i18n.t('task.metricsTitle')}">📊</button>` : ''}
         ${r.run_id ? `<button class="log-btn" data-click="${tqAct([['compareRun', r.run_id]])}" title="${i18n.t('task.compareTitle')}">⇄</button>` : ''}
         <button class="log-btn" id="hc-logbtn-${r.run_id}" data-click="${tqAct([['toggleHistoryCardLog', r.run_id, r.status === 'running']])}">${logOpen ? i18n.t('btn.hideLog') : i18n.t('btn.log')}</button>
@@ -167,13 +173,13 @@ export function _buildHistoryCard(r) {
     ${meta ? `<div style="font-size:10px;color:var(--muted);margin-top:4px">${meta}</div>` : ''}
     ${peak}
     ${logHtml}
-    <div id="hc-hist-wrap-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" style="display:${!!S.expandedHistory[`${r.project}/${r.task_id}`]?'block':'none'};margin-top:8px">
+    <div id="hc-hist-wrap-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" style="display:${S.expandedHistory[`${r.project}/${r.task_id}`]?'block':'none'};margin-top:8px">
       <div class="inline-log-toolbar">
         <span style="font-weight:600">Run history</span>
         <button class="action-btn" data-click="${tqAct([['toggleHistoryCardHist', String(r.project || ''), String(r.task_id)]])}" style="margin-left:auto">×</button>
       </div>
       <div id="hc-hist-content-${domIdPart(r.project || '')}-${domIdPart(r.task_id)}" style="font-size:11px;padding:4px 0">
-        ${!!S.expandedHistory[`${r.project}/${r.task_id}`] ? (S.expandedHistory[`${r.project}/${r.task_id}`] || '<em>loading…</em>') : ''}
+        ${S.expandedHistory[`${r.project}/${r.task_id}`] ? (S.expandedHistory[`${r.project}/${r.task_id}`] || '<em>loading…</em>') : ''}
       </div>
     </div>
   </div>`;
@@ -209,7 +215,7 @@ export async function toggleHistoryCardHist(project, taskId) {
   wrap.style.display = 'block';
   if (btn) btn.textContent = i18n.t('btn.hideHistory');
   const content = document.getElementById(`hc-hist-content-${domIdPart(project)}-${domIdPart(taskId)}`);
-  if (content) content.innerHTML = '<em>loading…</em>';
+  if (content) content.innerHTML = `<em>${i18n.t('log.loading')}</em>`;
   S.expandedHistory[key] = await _loadTaskRunHistoryHtml(project, taskId);
   if (content) content.innerHTML = S.expandedHistory[key];
 }
@@ -222,30 +228,10 @@ export function _anomalyBadge(r) {
 }
 
 export function renderHistory() {
+  // F-258: status / worker / sort applied server-side before LIMIT.
   let rows = [...S.history];
-  if (S.historyStatusFilter !== 'all') rows = rows.filter(r => r.status === S.historyStatusFilter);
   if (S.selectedProject !== 'all') rows = rows.filter(r => r.project === S.selectedProject);
-  if (S.globalWorkerFilter) {
-    if (S.globalWorkerFilter === 'master') {
-      rows = rows.filter(r => !r.worker_id);
-    } else {
-      rows = rows.filter(r => r.worker_id === S.globalWorkerFilter);
-    }
-  }
-
   const {field, dir} = S.historySort;
-  rows.sort((a, b) => {
-    let av, bv;
-    const STATUS_ORDER = { 'running': 1, 'queued': 2, 'interrupted': 3, 'failed': 4, 'unknown': 4, 'completed': 5, 'disabled': 6 };
-    if (field === 'run_id') { av = +a.run_id||0; bv = +b.run_id||0; }
-    else if (field === 'started_at') { av = a.started_at||''; bv = b.started_at||''; }
-    else if (field === 'status') { av = STATUS_ORDER[a.status] || 99; bv = STATUS_ORDER[b.status] || 99; }
-    else if (field === 'duration') {
-      av = (a.started_at && a.finished_at) ? (new Date(a.finished_at)-new Date(a.started_at)) : 0;
-      bv = (b.started_at && b.finished_at) ? (new Date(b.finished_at)-new Date(b.started_at)) : 0;
-    }
-    return (av < bv ? -1 : av > bv ? 1 : 0) * dir;
-  });
   _updateSortTh('h', field, dir);
 
   if (!rows.length) {
@@ -328,7 +314,7 @@ export async function searchAllLogs() {
   box.hidden = false;
   box.textContent = '…';
   const d = await fetchJson('/api/log-search?q=' + encodeURIComponent(q), 15000);
-  if (!d || !Array.isArray(d.matches)) { box.textContent = 'Log search failed'; return; }
+  if (!d || !Array.isArray(d.matches)) { box.textContent = i18n.t('history.logSearchFailed'); return; }
   if (!d.matches.length) { box.textContent = 'No log lines match "' + q + '"'; return; }
   const rows = d.matches.map(m =>
     '<div class="logsearch-row"><a href="#" data-click-prevent data-click="' + tqAct([['openLogSearchRun', m.run_id]]) + '">#' + escHtml(String(m.run_id)) +

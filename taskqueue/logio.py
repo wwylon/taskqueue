@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +27,53 @@ class LogTail:
         return len(self.text.encode("utf-8", errors="replace"))
 
 
+GZ_CACHE_DIR = ".gz-cache"  # beside the logs; entries end in .log.txt so log globs skip them
+
+
+def gz_path(path: Path | str) -> Path:
+    return Path(str(path) + ".gz")
+
+
+def readable_log(path: Path | str) -> Path:
+    """The run's log as a plain file: ``path`` itself, or a decompressed copy of ``<path>.gz``.
+
+    Retention may gzip finished logs (``retention_log_gzip_days``); readers that seek and stat keep
+    working on a cached plain copy in ``.gz-cache/``. Returns ``path`` unchanged when neither exists,
+    so callers' missing-log handling still applies.
+    """
+    p = Path(path)
+    if p.exists():
+        return p
+    gz = gz_path(p)
+    if not gz.exists():
+        return p
+    cache = p.parent / GZ_CACHE_DIR / (p.name + ".txt")
+    try:
+        if cache.exists() and cache.stat().st_mtime >= gz.stat().st_mtime:
+            return cache
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+        with gzip.open(gz, "rb") as src, open(tmp, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+        os.replace(tmp, cache)
+        return cache
+    except OSError:
+        return p
+
+
+def compress_log(path: Path) -> int:
+    """Gzip a finished log in place (``<log>.gz``, same mtime) and return the bytes saved."""
+    gz = gz_path(path)
+    tmp = gz.with_name(gz.name + ".tmp")
+    st = path.stat()
+    with open(path, "rb") as src, gzip.open(tmp, "wb", compresslevel=6) as dst:
+        shutil.copyfileobj(src, dst)
+    os.utime(tmp, (st.st_atime, st.st_mtime))
+    os.replace(tmp, gz)
+    path.unlink()
+    return max(0, st.st_size - gz.stat().st_size)
+
+
 def clamp_tail_bytes(n: int | None, *, default: int = DEFAULT_LOG_TAIL_BYTES) -> int:
     if n is None:
         return default
@@ -43,7 +93,7 @@ def read_log_tail(path: Path | str, *, max_bytes: int = DEFAULT_LOG_TAIL_BYTES) 
     newline boundary when possible. A single line larger than the window is
     returned as-is (still bounded by ``max_bytes``).
     """
-    p = Path(path)
+    p = readable_log(path)
     max_bytes = clamp_tail_bytes(max_bytes)
     try:
         size = p.stat().st_size
@@ -95,7 +145,7 @@ def tail_log_lines(
     """Last ``n`` lines via byte-tail (never ``read_text`` of the whole file)."""
     if not path:
         return []
-    p = Path(path)
+    p = readable_log(path)
     if not p.is_file():
         return [f"(missing log: {path})"]
     try:

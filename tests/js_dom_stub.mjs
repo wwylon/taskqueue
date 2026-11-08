@@ -171,7 +171,15 @@ export async function setup({ routes = {}, app = false, url = 'http://localhost:
     requestAnimationFrame: f => g.setTimeout(f, 0), cancelAnimationFrame: id => g.clearTimeout(id),
     getComputedStyle: () => ({ getPropertyValue: () => '' }),
     Notification: undefined, IntersectionObserver: undefined, ResizeObserver: class { observe() {} disconnect() {} },
-    EventSource: class { constructor(u) { this.url = u; this.readyState = 1; this.closed = false; (g.eventSources ||= []).push(this); } close() { this.closed = true; this.readyState = 2; } addEventListener() {} emit(d) { this.onmessage && this.onmessage({ data: d }); } fail() { this.onerror && this.onerror({}); } static get CLOSED() { return 2; } },
+    EventSource: class {
+      constructor(u) { this.url = u; this.readyState = 1; this.closed = false; (g.eventSources ||= []).push(this); }
+      close() { this.closed = true; this.readyState = 2; }
+      addEventListener() {}
+      emit(d) { this.onmessage && this.onmessage({ data: d }); }
+      // CLOSED failure: openStream reconnects only when readyState === 2 (native permanent close).
+      fail() { this.closed = true; this.readyState = 2; this.onerror && this.onerror({}); }
+      static get CLOSED() { return 2; }
+    },
     addEventListener(t, f) { (g._winListeners ||= {})[t] = [...((g._winListeners || {})[t] || []), f]; },
     removeEventListener() {}, dispatchWinEvent(ev) { ((g._winListeners || {})[ev.type] || []).forEach(f => f(ev)); },
     confirm: () => true, alert() {}, prompt: () => null, open() {},
@@ -191,6 +199,23 @@ export async function setup({ routes = {}, app = false, url = 'http://localhost:
           if (body && body.__status) return { ok: body.__status < 400, status: body.__status, headers: { get: () => null }, json: async () => body.body || {}, text: async () => '' };
           return { ok: true, status: 200, headers: { get: () => null }, json: async () => structuredClone(body), text: async () => JSON.stringify(body) };
         }
+      }
+      // Boot/refresh need a status-shaped dashboard payload or refresh() throws "dashboard unreachable".
+      // queue/history/workers stay null so a successful refresh does not wipe test-owned S.queue (tab bundling).
+      if (href.includes('/api/dashboard')) {
+        const body = {
+          status: {
+            running: [],
+            config: {},
+            status_counts: { running: 0, queued: 0, failed: 0, completed: 0 },
+            projects: [],
+          },
+          queue: null,
+          history: null,
+          workers: null,
+          tags: { tags: [], tag_projects: {} },
+        };
+        return { ok: true, status: 200, headers: { get: () => null }, json: async () => structuredClone(body), text: async () => JSON.stringify(body) };
       }
       return { ok: false, status: 404, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
     },

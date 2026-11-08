@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,9 +11,9 @@ import pytest
 
 from taskqueue.config import Project
 from taskqueue.daemon import _cas_master_lease
-from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache, iter_queue_files
 from taskqueue.db import open_db, set_config
 from taskqueue.worker_api import claim_next_remote_task
+from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache, iter_queue_files
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:
@@ -289,3 +288,60 @@ def test_parse_error_keeps_tasks_whose_id_differs_from_stem(tmp_path: Path) -> N
     clear_yaml_mtime_cache()
     _sync_project(db, proj)
     assert db.execute("SELECT 1 FROM tasks WHERE project='p' AND task_id='real-id'").fetchone()
+
+
+def test_parse_error_does_not_requeue_completed_task(tmp_path: Path) -> None:
+    """F-218: a half-saved YAML must not flip a completed task to disabled (re-enable would re-run it)."""
+    proj = _project(tmp_path)
+    path = proj.queue_dir / "train.yaml"
+    good = "task_id: train\ncommand: echo\nargs: [ok]\n"
+    path.write_text(good, encoding="utf-8")
+    db = open_db(tmp_path / "q.db")
+    clear_yaml_mtime_cache()
+    _sync_project(db, proj)
+    db.execute("UPDATE tasks SET status='completed' WHERE project='p' AND task_id='train'")
+    db.commit()
+
+    path.write_text("task_id: train\ncommand: [unclosed\n", encoding="utf-8")
+    clear_yaml_mtime_cache()
+    _sync_project(db, proj)
+    row = db.execute("SELECT status, enabled, block_reason FROM tasks WHERE task_id='train'").fetchone()
+    assert row["status"] == "completed" and row["enabled"] == 1
+    assert "invalid_yaml" in (row["block_reason"] or "")
+
+    path.write_text(good, encoding="utf-8")
+    clear_yaml_mtime_cache()
+    _sync_project(db, proj)
+    row = db.execute("SELECT status, block_reason FROM tasks WHERE task_id='train'").fetchone()
+    assert row["status"] == "completed"
+    assert not (row["block_reason"] or "").startswith("invalid_yaml")
+    assert not db.in_transaction
+
+
+def test_sync_returns_stats_dict_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
+    """F-223: every early exit honours the {"upserted", "deleted"} contract."""
+    from taskqueue import yaml_sync
+
+    proj = _project(tmp_path)
+    db = open_db(tmp_path / "q.db")
+
+    def boom(_d):
+        raise OSError("gone")
+
+    monkeypatch.setattr(yaml_sync, "iter_queue_files", boom)
+    assert _sync_project(db, proj) == {"upserted": 0, "deleted": 0}
+
+
+def test_yaml_cache_holds_ids_not_parsed_tasks(tmp_path: Path) -> None:
+    """F-235: the mtime cache keeps task ids only (a hit never needs the parsed objects)."""
+    from taskqueue import yaml_sync
+
+    proj = _project(tmp_path)
+    (proj.queue_dir / "a.yaml").write_text("task_id: a1\ncommand: echo\n", encoding="utf-8")
+    db = open_db(tmp_path / "q.db")
+    clear_yaml_mtime_cache()
+    _sync_project(db, proj)
+    (entry,) = yaml_sync._yaml_mtime_cache.values()
+    assert entry[2] == ("a1",)
+    _sync_project(db, proj)  # cache hit keeps the task
+    assert db.execute("SELECT 1 FROM tasks WHERE task_id='a1'").fetchone()

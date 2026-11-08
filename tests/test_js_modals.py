@@ -94,11 +94,11 @@ r.noop = reqs.length === before;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["shown"] == ["flex", "a: 1\n", "YAML — p 1 / t/2"]
+    assert out["shown"] == ["flex", "a: 1\n", "yaml.modalTitle"]
     assert out["getUrl"] == "/api/tasks/p%201/t%2F2/yaml"
-    assert out["edit"] == ["a: 1\n", "block", "Cancel", ""]
+    assert out["edit"] == ["a: 1\n", "block", "btn.cancel", ""]
     assert out["put"] == ["/api/tasks/p%201/t%2F2/yaml", "111", "a: 2\n"]
-    assert out["afterSave"] == ["a: 2\n", "none", "Edit", False]
+    assert out["afterSave"] == ["a: 2\n", "none", "btn.edit", False]
     assert out["mt2"] == "222"
     assert out["err"] == ["changed on disk", "block", "block"]
     assert out["closed"] == "none" and out["noop"] is True
@@ -127,7 +127,7 @@ r.alerts = [$('gen-modal-body').innerHTML, $('gen-modal').classList.has('open')]
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["err"] == ["", "Error 404: missing", "block"]
+    assert out["err"] == ["", "yaml.errorStatus", "block"]
     assert out["written"] == ["k: v"]
     assert "Copy failed" in out["alerts"][0] and out["alerts"][1] is True
 
@@ -163,7 +163,7 @@ r.closed = $('resource-modal').style.display;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["title"] == "Metrics — p/t run #3" and out["runId"] == 3
+    assert out["title"] == "metrics.modalTitle" and out["runId"] == 3
     assert out["body"] is True and out["lastHtml"] is True and out["display"] == "flex"
     assert out["picked"] == ["tq-toast tq-toast-info"]
     assert out["diff"] == [True, True, True, True]
@@ -209,3 +209,44 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["clicked"] == 1 and out["afterClick"] == 2
     assert out["expired"] == 0 and out["multiline"] == "pre-line"
     assert out["anchor"] == [True, "two", True] and out["fallback"] is True
+
+
+def test_yaml_check_validates_without_saving_and_flags_rename():
+    out = run_js(
+        EV
+        + """
+const { g, doc } = await setup({ app: true });
+await g.flush();
+const $ = id => doc.getElementById(id);
+const reqs = [];
+let reply = { ok: true, valid: true, task_ids: ['t'] };
+g.fetch = async (url, opts = {}) => {
+  reqs.push([url, opts.method || 'GET', opts.body || '']);
+  if (url === '/api/validate') return { ok: true, status: 200, json: async () => reply };
+  return { ok: true, status: 200, headers: { get: () => '1' }, text: async () => 'a: 1\\n' };
+};
+await g.openYamlModal('p', 't');
+g.yamlModalToggleEdit();
+const r = { checkShown: $('yaml-check-btn').style.display };
+$('yaml-modal-edit').value = 'task_id: t\\n';
+await g.yamlModalCheck();
+r.valid = [$('yaml-modal-ok').style.display, $('yaml-modal-ok').textContent, $('yaml-modal-error').style.display];
+r.req = reqs.filter(x => x[0] === '/api/validate').map(x => [x[1], JSON.parse(x[2])]);
+r.noPut = !reqs.some(x => x[1] === 'PUT');
+reply = { ok: true, valid: true, task_ids: ['other'] };
+await g.yamlModalCheck();
+r.renamed = $('yaml-modal-ok').textContent;
+reply = { ok: false, valid: false, error: "t.yaml: 'command' is required" };
+await g.yamlModalCheck();
+r.invalid = [$('yaml-modal-error').textContent, $('yaml-modal-error').style.display, $('yaml-modal-ok').style.display];
+g.yamlModalToggleEdit();
+r.hiddenAfterCancel = $('yaml-check-btn').style.display;
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert out["checkShown"] == ""
+    assert out["valid"] == ["block", "yaml.checkOk", "none"]
+    assert out["req"] == [["POST", {"project": "p", "yaml_text": "task_id: t\n"}]] and out["noPut"] is True
+    assert out["renamed"] == "yaml.checkOk yaml.checkRenamed"
+    assert out["invalid"] == ["t.yaml: 'command' is required", "block", "none"]
+    assert out["hiddenAfterCancel"] == "none"

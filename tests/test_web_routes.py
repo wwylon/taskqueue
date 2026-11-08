@@ -12,12 +12,9 @@ from datetime import UTC, datetime
 from http.client import parse_headers
 from pathlib import Path
 
-import pytest
-
-from taskqueue.db import get_config, open_db, parse_task_yaml
-from taskqueue._db_tasks import get_task, upsert_task
+from taskqueue._db_tasks import get_task
+from taskqueue.db import get_config, open_db
 from taskqueue.web import make_handler
-
 
 # ---------------------------------------------------------------------------
 # Test infrastructure
@@ -642,3 +639,14 @@ def test_project_stop_all_stops_only_that_projects_running_tasks(tmp_path):
     assert flags == {"t1": 1, "t2": 1, "t3": 0}
     audit = db.execute("SELECT action, project FROM operator_audit WHERE action='stop_all'").fetchall()
     assert [(r["action"], r["project"]) for r in audit] == [("stop_all", "a")]
+
+
+def test_handler_home_follows_daemon_db_not_env(tmp_path, monkeypatch):
+    """F-222: transfer/CAS/diagnose routes must use the daemon's --home, not $TASKQUEUE_HOME."""
+    from taskqueue.web.handler import make_handler
+
+    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path / "elsewhere"))
+    daemon_home = tmp_path / "daemon-home"
+    daemon_home.mkdir()
+    bound = make_handler(None, {}, {}, lambda: {}, daemon_home / "queue.db")
+    assert object.__new__(bound)._home == daemon_home

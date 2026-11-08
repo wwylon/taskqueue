@@ -16,7 +16,6 @@ import pytest
 from taskqueue.db import open_db
 from taskqueue.resources import ResourceBudget, cpu_cores_from_load
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

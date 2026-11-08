@@ -7,8 +7,9 @@ Imports from ``scheduler`` are lazy to avoid circular import at module load.
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 # F-140: keyed by db_path so multiple homes in one process do not share a hold.
 # Mutex covers read-modify-write of each home's dict. Default key "" preserves

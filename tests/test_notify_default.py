@@ -7,12 +7,10 @@ import threading
 import time
 from pathlib import Path
 
-import pytest
-
 from taskqueue import config as tqconfig
 from taskqueue import mcp_server
-from taskqueue.db import open_db
 from taskqueue._db_tasks import stamp_provenance
+from taskqueue.db import open_db
 from taskqueue.notify import (
     append_notify_event,
     drain_notifications,

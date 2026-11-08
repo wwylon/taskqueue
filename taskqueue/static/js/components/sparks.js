@@ -81,6 +81,15 @@ export function _sparkCaption(key) {
   return _sparkFmt(key, first) + ' → ' + _sparkFmt(key, last) + unit + ' · ' + mins + 'm';
 }
 
+/** Clear rolling spark history (boot refresh may have primed samples before a test owns the clock). */
+export function tqClearSparks() {
+  Object.keys(_sparkHist).forEach(k => { _sparkHist[k] = []; });
+  _sparkLastAt = 0;
+  _sparkSavedAt = 0;
+  _sparkLoaded = true;
+  try { sessionStorage.removeItem('tq_spark_hist'); } catch (_) {}
+}
+
 export function tqRecordSparks() {
   if (!S.status) return;
   _sparkEnsureLoaded();

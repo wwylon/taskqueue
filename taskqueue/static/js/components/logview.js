@@ -1,4 +1,5 @@
 // Log panel helpers that do not depend on app state.
+/* eslint no-control-regex: "off" -- ANSI escape sequences ([...m) are the whole point of these regexes */
 import { escHtml } from '../util/format.js';
 
 // Browsers allow ~6 connections per origin; unbounded log streams starve fetch().
@@ -6,10 +7,31 @@ export const LOG_SSE_MAX = 3;
 
 /** One log line as HTML: ANSI colour codes stripped, level prefix mapped to a CSS class. */
 export function logLineHtml(line) {
-  const plain = String(line).replace(/\x1b\[[0-9;]*m/g, '');
-  const m = plain.match(/^\[(INFO|DEBUG|PROGRESS|WARN|ERROR)\]/);
-  const cls = m ? (' log-' + m[1].toLowerCase()) : '';
-  return `<div class="tq-log-line${cls}">${escHtml(plain)}</div>`;
+  const raw = String(line);
+  const plain = raw.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+  const kind = classifyLogLine(plain);
+  const m = plain.match(/^\[(INFO|DEBUG|PROGRESS)\]/);
+  const cls = kind === 'errors' ? ' log-error' : kind === 'warnings' ? ' log-warn' : m ? (' log-' + m[1].toLowerCase()) : '';
+  // Keep the task's own ANSI colours (SGR only); ansiToHtml escapes first, so the line stays inert.
+  const body = /\x1b\[[0-9;]*m/.test(raw) ? ansiToHtml(raw.replace(/\x1b\[[0-9;]*[A-Za-ln-z]/g, '')) : escHtml(plain);
+  return `<div class="tq-log-line${cls}">${body}</div>`;
+}
+
+// Mirror of taskqueue.log_issues.classify_log_line (the run's warn/error chip counts), so the dock's level filter
+// and "first error" agree with the counts. Error tokens are case-sensitive: "0 errors" / "an error" are prose.
+const _ERR_RE = /\b(?:ERROR|FATAL|CRITICAL|REJECT)\b/;
+const _ERR_TITLE_RE = /\b(?:Error|Fatal|Critical|Reject):/;
+const _WARN_RE = /\bWARN(?:ING)?\b/i;
+const _OTHER_RE = /LOW SCORE/i;
+
+/** 'errors' | 'warnings' | 'other' | null for one log line (ANSI already stripped or not). */
+export function classifyLogLine(line) {
+  const text = String(line || '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').trim();
+  if (!text) return null;
+  if (_ERR_RE.test(text) || _ERR_TITLE_RE.test(text)) return 'errors';
+  if (_WARN_RE.test(text)) return 'warnings';
+  if (_OTHER_RE.test(text)) return 'other';
+  return null;
 }
 
 /**
@@ -42,7 +64,6 @@ export function ansiToHtml(raw) {
     '94':'#74a0fb','95':'#c084fc','96':'#67e8f9','97':'#fff',
   };
   const BOLD_CODES = new Set(['1']);
-  const DIM_CODES = new Set(['2','2;'+'37']);
   let html = '';
   let spanOpen = false;
   const parts = escaped.split(/(\x1b\[[0-9;]*m)/);

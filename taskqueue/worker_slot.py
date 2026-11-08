@@ -1,10 +1,9 @@
 """Per-slot task execution for remote workers."""
 
 from __future__ import annotations
-from taskqueue.reap import terminate_tree
-from taskqueue.jsonutil import json_list
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -17,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 import psutil
+
+from taskqueue.jsonutil import json_list
+from taskqueue.reap import terminate_tree
+
+_log = logging.getLogger(__name__)
 
 
 def child_stdio_kwargs() -> dict[str, Any]:
@@ -104,7 +108,6 @@ def _transfer_headers(finalize_token: Any = None, extra: dict | None = None) -> 
 
 from taskqueue.worker_journal import append_entry, gc_journal
 
-
 # Task env may not redirect the worker's own control variables.
 _RESERVED_ENV = frozenset({"TQ_HOME", "TQ_PROJECT", "TQ_TASK_ID", "TQ_CONTROL_FILE", "TQ_WORKSPACE", "TQ_PACKAGE_HASH"})
 
@@ -166,7 +169,7 @@ class WorkerSlot:
                     f"[worker] sync {proj_name}: {sync_result.get('error')}",
                     file=sys.stderr,
                 )
-        except Exception as sync_exc:
+        except Exception as sync_exc:  # noqa: BLE001 - one project's sync failure must not stop the task
             print(f"[worker] sync {proj_name} failed: {sync_exc}", file=sys.stderr)
 
     def _materialize_workspace(
@@ -252,7 +255,7 @@ class WorkerSlot:
         transfer_specs: list[Any] = []
         try:
             transfer_specs = json_list(task.get("transfer")) or []
-        except Exception:
+        except (ValueError, TypeError):
             pass
         for spec in transfer_specs:
             if spec.get("direction", "push") != "push":
@@ -287,7 +290,7 @@ class WorkerSlot:
         if _data_raw:
             try:
                 data_block = json.loads(_data_raw) if isinstance(_data_raw, str) else _data_raw
-            except Exception:
+            except (TypeError, ValueError):
                 data_block = None
 
         if data_block and isinstance(data_block.get("inputs"), list):
@@ -303,8 +306,6 @@ class WorkerSlot:
                 mount = inp.get("mount", "")
 
                 if provider == "fetch":
-                    from urllib.parse import quote as _quote
-
                     mount_dest = work_root / mount if mount else work_root
 
                     manifest_url = f"{master_url}/api/data/manifest/{run_id}?run_id={run_id}"
@@ -312,7 +313,7 @@ class WorkerSlot:
                         mreq = urllib.request.Request(manifest_url, headers=_transfer_headers(finalize_token))
                         with urllib.request.urlopen(mreq, timeout=30) as mresp:
                             manifest_data = json.loads(mresp.read().decode("utf-8"))
-                    except Exception as me:
+                    except Exception as me:  # noqa: BLE001 - any manifest fetch error skips this data block
                         print(f"[worker] data manifest fetch failed: {me}", file=sys.stderr)
                         continue
 
@@ -335,7 +336,7 @@ class WorkerSlot:
                                     btmp = cached.with_suffix(".tmp")
                                     btmp.write_bytes(data_bytes)
                                     btmp.replace(cached)
-                                except Exception as be:
+                                except Exception as be:  # noqa: BLE001 - any blob fetch error skips this blob
                                     print(f"[worker] data blob fetch failed {sha256[:8]}: {be}", file=sys.stderr)
                                     continue
 
@@ -390,7 +391,7 @@ class WorkerSlot:
                     with urllib.request.urlopen(file_req, timeout=120) as fresp, open(local_f, "wb") as out:
                         out.write(fresp.read())
                     os.utime(local_f, (time.time(), f_mtime))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any data sync error skips the file sync
             print(f"[worker] Data sync warning (skipping file sync): {e}", file=sys.stderr)
 
     def _pull_transfers(
@@ -428,7 +429,7 @@ class WorkerSlot:
                 with urllib.request.urlopen(upload_req, timeout=60) as uresp:
                     uresp.read()
                 print(f"[worker] transfer pull: {src} → master:{dst} ({len(data)} bytes)")
-            except Exception as te:
+            except Exception as te:  # noqa: BLE001 - any transfer error skips this file
                 print(f"[worker] transfer pull failed for {src}: {te}", file=sys.stderr)
 
     def _upload_outputs(self, work_root: Path, project: Any, proj_name: str, task_start_time: float) -> None:
@@ -473,9 +474,9 @@ class WorkerSlot:
                                     )
                                     with urllib.request.urlopen(upload_req, timeout=120) as upload_resp:
                                         json.loads(upload_resp.read().decode("utf-8"))
-                            except Exception as e:
+                            except Exception as e:  # noqa: BLE001 - any upload error skips this file
                                 print(f"[worker] Output upload error for {f}: {e}", file=sys.stderr)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - output sync is best-effort
             print(f"[worker] Output sync warning: {e}", file=sys.stderr)
 
     def run(self, resp: dict, sl: dict, rid: int) -> None:  # noqa: C901
@@ -494,7 +495,7 @@ class WorkerSlot:
             finally:
                 try:
                     gc_journal(home, rid_)
-                except Exception:
+                except OSError:
                     pass
 
         stop_flag = sl["stop_flag"]
@@ -507,13 +508,14 @@ class WorkerSlot:
         proj_name = task["project"]
         task_id = task["task_id"]
         proc: subprocess.Popen | None = None
+        _gpu_lock_held = False
         try:
             print(f"[worker] Claimed task: {proj_name}/{task_id} (run_id={run_id})")
             try:
                 append_entry(
                     home, run_id, {"t": "claim", "run_id": run_id, "task_id": task_id, "session": self.session_id}
                 )
-            except Exception:
+            except OSError:
                 pass
 
             projects = load_projects(home)
@@ -528,7 +530,7 @@ class WorkerSlot:
 
             try:
                 work_root, pkg = self._materialize_workspace(resp, task, proj_name, project, run_id)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any workspace error fails the run cleanly
                 err_msg = f"Failed to materialize code workspace: {e}"
                 print(f"[worker] {err_msg}", file=sys.stderr)
                 _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
@@ -540,7 +542,7 @@ class WorkerSlot:
             # D1: process data.inputs (content-addressed fetch)
             self._fetch_data_inputs(task, work_root, run_id, finalize_token)
 
-            from taskqueue.platform_utils import resolve_command, pythonw_if_available
+            from taskqueue.platform_utils import pythonw_if_available, resolve_command
 
             command_path = resolve_command(task["command"], project.root)
             command_path = pythonw_if_available(command_path)
@@ -617,9 +619,9 @@ class WorkerSlot:
                 sl["proc"][0] = proc
                 try:
                     append_entry(home, run_id, {"t": "start", "pid": proc.pid, "started_at": time.time()})
-                except Exception:
+                except OSError:
                     pass
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any spawn error fails the run cleanly
                 err_msg = f"Failed to spawn process: {e}"
                 print(f"[worker] {err_msg}", file=sys.stderr)
                 _log_chunk(run_id, f"Execution error: {err_msg}\n")
@@ -647,6 +649,22 @@ class WorkerSlot:
             _res = parse_json_obj(task.get("resources"))
             _gpu_hints = sidecar_name_hints(_res, parse_json_list(task.get("requires_services")))
             _need_gpu = task_requires_gpu(_res) or bool(_gpu_hints)
+            # F-241: same-host worker GPU lock (pytest skip while this machine's GPU is busy).
+            if task_requires_gpu(_res) and proc is not None:
+                try:
+                    from taskqueue.gpu_lock import acquire as _gpu_lock_acquire
+
+                    _gpu_lock_acquire(
+                        home,
+                        project=proj_name,
+                        task_id=task_id,
+                        run_id=int(run_id),
+                        pid=int(proc.pid),
+                        started=task_start_time,
+                    )
+                    _gpu_lock_held = True
+                except Exception:  # noqa: BLE001 - lock file is advisory
+                    _log.debug("gpu.lock acquire failed", exc_info=True)
 
             def monitor_and_cap_watchdog() -> None:
                 """Merged monitor_resources + cap_and_stop_watchdog (§4.12)."""
@@ -661,7 +679,7 @@ class WorkerSlot:
                 parent = None
                 try:
                     parent = psutil.Process(proc.pid)
-                except Exception:
+                except psutil.Error:
                     parent = None
                 while proc.poll() is None:
                     if parent is not None:
@@ -670,18 +688,18 @@ class WorkerSlot:
                             if now - _children_refresh >= 5.0:
                                 try:
                                     _children = parent.children(recursive=True)
-                                except Exception:
+                                except psutil.Error:
                                     _children = []
                                 _children_refresh = now
                             ram_val = 0.0
                             try:
                                 ram_val += parent.memory_info().rss
-                            except Exception:
+                            except psutil.Error:
                                 pass
                             for c in _children:
                                 try:
                                     ram_val += c.memory_info().rss
-                                except Exception:
+                                except psutil.Error:
                                     pass
                             peak_ram = max(peak_ram, ram_val / (1024**3))
                             pids_current = [parent.pid] + [c.pid for c in _children]
@@ -703,8 +721,8 @@ class WorkerSlot:
                                         device_used_gib=device_used,
                                     )
                                     peak_vram = max(peak_vram, vram_gib)
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001 - VRAM sampling is best-effort
+                            _log.debug("VRAM sample failed", exc_info=True)
 
                     if wall_cap_sec > 0 and (time.time() - task_start_time) >= wall_cap_sec:
                         print(
@@ -714,8 +732,8 @@ class WorkerSlot:
                         stop_hard[0] = True
                         try:
                             terminate_tree(proc, background=True)
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001 - terminate is best-effort
+                            _log.debug("terminate after RAM limit failed", exc_info=True)
                         break
                     if stop_flag[0]:
                         if stop_seen_at == 0.0:
@@ -728,8 +746,8 @@ class WorkerSlot:
                             stop_hard[0] = True  # killed on request: interrupted, not failed
                             try:
                                 terminate_tree(proc, background=True)
-                            except Exception:
-                                pass
+                            except Exception:  # noqa: BLE001 - terminate is best-effort
+                                _log.debug("terminate on stop request failed", exc_info=True)
                             break
                     time.sleep(1)
 
@@ -768,7 +786,7 @@ class WorkerSlot:
             exit_code = proc.returncode if proc.returncode is not None else -9
             try:
                 append_entry(home, run_id, {"t": "exit", "code": exit_code, "finished_at": time.time()})
-            except Exception:
+            except OSError:
                 pass
             if stop_hard[0] and exit_code != 0:
                 status = "interrupted"
@@ -789,7 +807,7 @@ class WorkerSlot:
 
             try:
                 append_entry(home, run_id, {"t": "finalize", "payload": {"status": status, "exit_code": exit_code}})
-            except Exception:
+            except OSError:
                 pass
             _finalize_and_gc(
                 run_id,
@@ -802,7 +820,7 @@ class WorkerSlot:
             )
 
             time.sleep(1)
-        except Exception as _task_exc:
+        except Exception as _task_exc:  # noqa: BLE001 - slot guard: a task crash must not crash the worker (W1.7)
             # W1.7: an unhandled exception in the task block must not crash the worker.
             # Log the error, finalize the run as failed, and continue to the next task.
             print(f"[worker] Unhandled exception in task {proj_name}/{task_id}: {_task_exc}", file=sys.stderr)
@@ -811,14 +829,21 @@ class WorkerSlot:
             traceback.print_exc(file=sys.stderr)
             try:
                 _finalize_and_gc(run_id, token=finalize_token, status="failed", exit_code=-1)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - best-effort after a slot crash
+                _log.debug("finalize after slot crash failed", exc_info=True)
         finally:
+            if _gpu_lock_held:
+                try:
+                    from taskqueue.gpu_lock import release as _gpu_lock_release
+
+                    _gpu_lock_release(home, project=proj_name, task_id=task_id, run_id=int(run_id))
+                except Exception:  # noqa: BLE001 - lock file is advisory
+                    _log.debug("gpu.lock release failed", exc_info=True)
             # W1.7: always release stdout pipe to avoid fd leak.
             try:
                 if proc is not None and proc.stdout:
                     proc.stdout.close()
-            except Exception:
+            except OSError:
                 pass
             with slots_lock:
                 slots.pop(rid, None)

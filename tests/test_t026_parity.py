@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from taskqueue.placement import score_assignment
 from taskqueue.scheduler import (
     MASTER_NODE_ID,
     FilterContext,
@@ -14,7 +15,6 @@ from taskqueue.scheduler import (
     node_from_system,
     node_from_worker,
 )
-from taskqueue.placement import score_assignment
 
 
 def _task(

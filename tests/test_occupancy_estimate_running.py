@@ -59,3 +59,68 @@ def test_max_attempts_exhausted_tasks_marked_failed_in_one_pass(tmp_path) -> Non
         row = get_task(conn, "p", tid)
         assert row["status"] == "failed" and row["finished_at"]
         assert "max_attempts=1" in (row["block_reason"] or "")
+
+
+def test_local_admit_considers_stopped_tasks(tmp_path, monkeypatch) -> None:
+    """F-233: auto-restartable ``stopped`` tasks are local admit candidates (lost in F-214)."""
+    from taskqueue import scheduler
+
+    conn = open_db(tmp_path / "q.db")
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, enabled) "
+        "VALUES ('p','evicted','true','stopped',?,?,1)",
+        (now, now),
+    )
+    conn.commit()
+    started = []
+
+    def fake_start(conn, home, project, row, key, use_resume, graceful_stop):
+        started.append(key)
+        return SimpleNamespace(run_id=None)
+
+    monkeypatch.setattr(scheduler, "_start_local_run", fake_start)
+    projects = {"p": Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")}
+    system = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
+    cfg = {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100, "ram_hard_limit_pct": 100}
+    monkeypatch.setattr(scheduler, "ram_used_gib", lambda: 1.0)
+    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 1.0)
+    _local_admit_queued(conn, tmp_path, projects, {}, system, cfg, 30, False)
+    assert started == [("p", "evicted")]
+
+
+def test_local_admit_respects_lock_within_one_pass(tmp_path, monkeypatch) -> None:
+    """Wave 4.7: filter_mutex (live occ.running_locks) alone keeps a lock exclusive in one pass."""
+    import json
+
+    from taskqueue import scheduler
+
+    conn = open_db(tmp_path / "q.db")
+    now = datetime.now(UTC).isoformat()
+    for i, tid in enumerate(("a", "b")):
+        conn.execute(
+            "INSERT INTO tasks (project, task_id, command, status, enqueued_at, updated_at, enabled, priority, "
+            "resources) VALUES ('p',?,'true','queued',?,?,1,?,?)",
+            (tid, now, now, 10 - i, json.dumps({"cpu_cores": 1, "ram_gib": 0.1, "locks": ["corpus"]})),
+        )
+    conn.commit()
+    started = []
+    monkeypatch.setattr(
+        scheduler,
+        "_start_local_run",
+        lambda c, h, p, row, key, r, g: started.append(key) or SimpleNamespace(run_id=None),
+    )
+    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 1.0)
+    monkeypatch.setattr(scheduler, "ram_used_gib", lambda: 1.0)
+    projects = {"p": Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")}
+    system = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
+    cfg = {
+        "cpu_limit_pct": 100,
+        "gpu_limit_pct": 100,
+        "ram_limit_pct": 100,
+        "ram_hard_limit_pct": 100,
+        "admit_max_per_tick": 2,
+    }
+    _local_admit_queued(conn, tmp_path, projects, {}, system, cfg, 30, False)
+    assert started == [("p", "a")]
+    assert get_task(conn, "p", "b")["last_error_code"] == "tq.block.mutex"

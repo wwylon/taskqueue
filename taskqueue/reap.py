@@ -92,10 +92,10 @@ def terminate_tree(proc, *, graceful_sec: float = 10.0, background: bool = False
     def _run() -> None:
         try:
             kill_process_tree(pid, graceful_sec=graceful_sec)
-        except Exception:
+        except Exception:  # noqa: BLE001 - any tree-kill failure falls back to terminate()
             try:
                 proc.terminate()
-            except Exception:
+            except OSError:
                 pass
 
     if background:

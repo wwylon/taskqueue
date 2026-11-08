@@ -1,3 +1,4 @@
+// @ts-check
 // Status badge, wait/error labels, resource tags, copy-name button and sort-header marks (small HTML helpers).
 // Uses app.js globals at call time (i18n, tqAct, TQ_THIS).
 import { escHtml } from './format.js';

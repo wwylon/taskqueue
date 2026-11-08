@@ -10,8 +10,8 @@
       "cli": ["plan", "why", "force", "priority", "pause", "resume", "freeze", "unfreeze", "locks", "fair-share", "deps"]
     },
     "run": {
-      "mcp": ["enqueue_task", "retry_task", "retry_tasks", "patch_task", "stop_task"],
-      "cli": ["start", "stop-daemon", "restart", "retry", "stop", "suspend", "patch", "reverify", "remove", "group", "suite", "tag"]
+      "mcp": ["enqueue_task", "retry_task", "retry_tasks", "patch_task", "stop_task", "hold_task", "unhold_task"],
+      "cli": ["start", "stop-daemon", "restart", "retry", "stop", "suspend", "hold", "unhold", "patch", "reverify", "remove", "group", "suite", "tag"]
     },
     "wait_notify": {
       "mcp": ["wait_for_task", "drain_notifications"],
@@ -35,7 +35,7 @@
     },
     "admin": {
       "mcp": [],
-      "cli": ["archive", "prune", "export", "import", "migrate", "completion", "sleep", "wake"]
+      "cli": ["archive", "prune", "export", "import", "migrate", "completion", "sleep", "wake", "release", "relocate"]
     }
   }
 }

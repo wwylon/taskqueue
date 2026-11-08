@@ -159,3 +159,14 @@ def test_mcp_task_health_tool(tmp_path: Path, monkeypatch) -> None:
     result = _call_tool(home, "task_health", {"project": "p"})
     assert result["ok"] is False
     assert result["missing_deps"][0]["task_id"] == "t"
+
+
+def test_queue_missing_deps_keyed_by_project_and_task(tmp_path: Path) -> None:
+    """F-220: same task_id in two projects must not share missing_deps in the unscoped view."""
+    db = open_db(tmp_path / "q.db")
+    _seed(db, "a", "train", depends_on=["nope"])
+    _seed(db, "b", "train")
+    tasks = {(t["project"], t["task_id"]): t for t in _get_queue_response(db)["tasks"]}
+    assert tasks[("a", "train")]["missing_deps"] == ["nope"]
+    assert tasks[("b", "train")]["missing_deps"] == []
+    db.close()

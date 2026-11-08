@@ -54,6 +54,14 @@
     document.querySelectorAll('[data-i18n-placeholder]').forEach(function(el) {
       el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
     });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(function(el) {
+      el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
+    });
+    document.querySelectorAll('#side-nav button[data-tab]').forEach(function(btn) {
+      var label = btn.querySelector('.side-label');
+      var text = label && (label.textContent || '').trim();
+      if (text) btn.setAttribute('aria-label', text);
+    });
   }
 
   var stored = 'en';

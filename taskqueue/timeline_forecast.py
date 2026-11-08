@@ -10,6 +10,7 @@ import heapq
 import json
 import math
 import re
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
@@ -17,17 +18,17 @@ from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any
 
-import sqlite3
-
-from taskqueue.cron import cron_matches
 from taskqueue._db_runs import gpu_hours_today
 from taskqueue._db_tasks import bulk_prior_run_seconds
+from taskqueue.cron import cron_matches
 from taskqueue.db import (
     blocked_projects,
     get_all_project_limits,
     get_config,
 )
-from taskqueue.dt_utils import iso_utc as _iso, now_utc as _now, parse_utc as _parse_ts
+from taskqueue.dt_utils import iso_utc as _iso
+from taskqueue.dt_utils import now_utc as _now
+from taskqueue.dt_utils import parse_utc as _parse_ts
 from taskqueue.estimate import estimate_task_resources, prefetch_exact_peaks
 
 _UNKNOWN_SEC = 900.0  # 15 min placeholder
@@ -71,7 +72,7 @@ def _next_cron_fire(expr: str, now: datetime, *, hours: int) -> datetime | None:
                 cursor += timedelta(minutes=1)
             else:
                 return cursor
-    except Exception:
+    except Exception:  # noqa: BLE001 - a bad cron expression never fires
         return None
     return None
 
@@ -83,7 +84,7 @@ def _parse_json_list(raw: Any) -> list[Any]:
         return raw
     try:
         val = json.loads(raw)
-    except Exception:
+    except (TypeError, ValueError):
         return []
     return val if isinstance(val, list) else []
 
@@ -95,7 +96,7 @@ def _parse_json_dict(raw: Any) -> dict[str, Any]:
         return raw
     try:
         val = json.loads(raw)
-    except Exception:
+    except (TypeError, ValueError):
         return {}
     return val if isinstance(val, dict) else {}
 

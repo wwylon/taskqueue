@@ -8,8 +8,8 @@ import pytest
 
 import taskqueue.db as dbmod
 from taskqueue import _cli_admin, _cli_task
-from taskqueue.db import open_db as real_open
 from taskqueue.config import db_path as _db_path
+from taskqueue.db import open_db as real_open
 
 
 @pytest.mark.parametrize(

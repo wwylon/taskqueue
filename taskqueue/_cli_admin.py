@@ -1,24 +1,29 @@
 """Daemon, config, and reporting CLI commands — extracted from cli.py."""
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
+
 import json
 import os
+import sqlite3
 import subprocess
-import time
 import sys
+import time
+from datetime import UTC
 from pathlib import Path
-from taskqueue._db_tasks import get_task_status
+
 from taskqueue._cli_helpers import (
-    emit_json,
-    _db,
+    _check_ownership_or_print,
     _daemon_running,
-    _ui_url,
+    _db,
     _ensure_python,
     _split_key,
-    _check_ownership_or_print,
+    _ui_url,
+    emit_json,
 )
-from taskqueue._fmt import fmt_duration as _fmt_dur, fmt_bytes as _fmt_bytes  # H1: shared helpers
+from taskqueue._db_tasks import get_task_status
+from taskqueue._fmt import fmt_bytes as _fmt_bytes
+from taskqueue._fmt import fmt_duration as _fmt_dur  # H1: shared helpers
+from taskqueue._time import parse_iso as _parse_iso
 from taskqueue.rows import row_get
 
 DAEMON_LOG_ROTATE_BYTES = 20 * 1024 * 1024
@@ -53,6 +58,7 @@ def cmd_start(home: Path) -> int:
         proc = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT, close_fds=True, **popen_kw)
 
     import time
+
     from taskqueue.master_client import api_request
 
     ready = False
@@ -76,8 +82,11 @@ def cmd_start(home: Path) -> int:
     return 0
 
 
-def _running_runs(home: Path) -> list[str]:
-    """``project/task`` of runs the daemon would stop on shutdown (read-only; [] if unreadable)."""
+def _running_runs(home: Path, *, skip_adoptable: bool = False) -> list[str]:
+    """``project/task`` of runs the daemon would stop on shutdown (read-only; [] if unreadable).
+
+    ``skip_adoptable``: leave out local runs whose tq wrapper is alive (``tq restart`` keeps those).
+    """
     import sqlite3
 
     db_path = _db(home)
@@ -86,17 +95,23 @@ def _running_runs(home: Path) -> list[str]:
     try:
         conn = sqlite3.connect(f"file:{Path(db_path).as_posix()}?mode=ro", uri=True, timeout=2)
         try:
-            rows = conn.execute("SELECT project, task_id FROM runs WHERE status='running' ORDER BY run_id").fetchall()
+            rows = conn.execute(
+                "SELECT project, task_id, worker_id, pid, pid_create_time FROM runs WHERE status='running' ORDER BY run_id"
+            ).fetchall()
         finally:
             conn.close()
     except sqlite3.Error:
         return []
+    if skip_adoptable:
+        from taskqueue.adopt import live_wrapper
+
+        rows = [r for r in rows if r[2] is not None or not live_wrapper(r[3], r[4])]
     return [f"{r[0]}/{r[1]}" for r in rows]
 
 
-def _refuse_if_running(home: Path, verb: str) -> bool:
+def _refuse_if_running(home: Path, verb: str, *, skip_adoptable: bool = False) -> bool:
     """Print a refusal and return True when ``verb`` would kill running tasks."""
-    running = _running_runs(home)
+    running = _running_runs(home, skip_adoptable=skip_adoptable)
     if not running:
         return False
     shown = ", ".join(running[:8]) + (f", +{len(running) - 8} more" if len(running) > 8 else "")
@@ -128,7 +143,7 @@ def cmd_stop_daemon(home: Path, *, force: bool = False) -> int:
             if ok:
                 print(f"Sent CTRL_BREAK to daemon (pid {pid}). It will stop after current tasks checkpoint.")
                 return 0
-        except Exception:
+        except (AttributeError, OSError):
             pass
         # Fall back to SIGTERM if GenerateConsoleCtrlEvent is unavailable.
     try:
@@ -151,7 +166,13 @@ def cmd_restart(home: Path, *, timeout_sec: float = 180.0, force: bool = False) 
 
     pid = _daemon_running(home)
     if pid:
-        if cmd_stop_daemon(home, force=force) != 0:
+        # Wave 7: runs started with adopt_on_restart=1 survive; only the others would be stopped.
+        if not force and _refuse_if_running(home, "restart the daemon", skip_adoptable=True):
+            return 1
+        from taskqueue.adopt import request_keep_runs
+
+        request_keep_runs(home)
+        if cmd_stop_daemon(home, force=True) != 0:
             return 1
         deadline = time.monotonic() + max(5.0, timeout_sec)
         last_msg = 0.0
@@ -260,7 +281,7 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
         return ", ".join(names)
 
     # I-09: print running tasks with elapsed time and ETA
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from taskqueue._fmt import color_status
 
@@ -275,7 +296,7 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
                 try:
                     iso = r["started_at"].replace("Z", "+00:00")
                     started = datetime.fromisoformat(iso)
-                    now_utc = datetime.now(timezone.utc)
+                    now_utc = datetime.now(UTC)
                     elapsed_sec = (now_utc - started).total_seconds()
                     h = int(elapsed_sec // 3600)
                     m = int((elapsed_sec % 3600) // 60)
@@ -295,7 +316,7 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
                         eta_str += f"  last progress {_fmt_dur(health['age_sec'])} ago"
                         if health.get("stalled"):
                             eta_str += "  " + color_status("POSSIBLY STALLED", "failed")
-                except Exception:
+                except (TypeError, ValueError, ZeroDivisionError):
                     pass
             print(f"  {color_status('running', 'running')}  {base}{bar_str}{elapsed_str}{eta_str}")
     else:
@@ -347,7 +368,7 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
                     dt = datetime.fromisoformat(iso_str)
                     dt_local = dt.astimezone()
                     ts_str = dt_local.strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     ts_str = r["started_at"][:19]
             if r["started_at"] and r["finished_at"]:
                 try:
@@ -355,7 +376,7 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
                     f = _parse_iso(r["finished_at"])
                     sec = int((f - s).total_seconds())
                     dur = f" ({sec // 60}m{sec % 60:02d}s)"
-                except Exception:
+                except (TypeError, ValueError):
                     pass
             code = f" exit={r['exit_code']}" if r["exit_code"] is not None else ""
             worker_str = f" @{r['worker_id']}" if r["worker_id"] else ""
@@ -601,7 +622,7 @@ def cmd_report(home: Path, project: str | None, days: int) -> None:
                     print(f"estimate_accuracy (VRAM, n={len(vr)}): median ratio={vp50:.2f}x")
             else:
                 print("estimate_accuracy: no completed runs with estimate data yet")
-        except Exception as exc:
+        except (sqlite3.Error, TypeError, ZeroDivisionError) as exc:
             print(f"estimate_accuracy: unavailable ({exc})")
     finally:
         conn.close()
@@ -766,7 +787,7 @@ def cmd_audit_projects(home: Path) -> int:
                     fail_rate = f"{100 * row['failed'] / row['total']:.0f}% ({row['failed']}/{row['total']})"
                 else:
                     fail_rate = "0 runs"
-            except Exception:
+            except sqlite3.Error:
                 pass
 
         results.append(
@@ -805,12 +826,12 @@ def cmd_mcp(home: Path) -> int:
 
 
 def cmd_export(home: Path, dest: str | None, *, with_logs: bool) -> int:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from taskqueue.export_import import export_home
 
     if not dest:
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         dest = str(home / "exports" / f"taskqueue-{ts}.tar.gz")
     try:
         path = export_home(home, Path(dest), with_logs=with_logs)
@@ -888,7 +909,7 @@ def _doctor_version(
 
             probe = api_request(home, "GET", "/api/status", timeout=2.0)
             http_ok = probe is not None
-        except Exception:
+        except Exception:  # noqa: BLE001 - any probe failure means the HTTP API is not reachable
             http_ok = False
         if http_ok:
             print(f"daemon:            running (pid {pid}), http: ok")
@@ -903,7 +924,7 @@ def _doctor_version(
             rss = proc.memory_info().rss
             print(f"started_at:        {started.strftime('%Y-%m-%d %H:%M:%S')} (uptime {_fmt_dur(uptime)})")
             print(f"daemon_rss:        {_fmt_bytes(rss)}")
-        except Exception as e:
+        except (OSError, psutil.Error) as e:
             print(f"started_at:        (unavailable: {e})")
     else:
         print("daemon:            not running")
@@ -968,7 +989,7 @@ def _doctor_db(
                         print(f"  {ev['ts']}  {ev['kind']}{extra}")
             finally:
                 _dconn.close()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - one doctor section failing must not hide the rest
         print(f"daemon_events:     (unavailable: {e})")
     print(f"projects.yaml:     {registry_path(home)} ({'exists' if registry_path(home).exists() else 'missing'})")
     print(f"projects:          {len(projects)}" + (f" ({', '.join(sorted(projects))})" if projects else ""))
@@ -997,7 +1018,7 @@ def _doctor_db(
         print(
             f"host_cpu_pct:      {psutil.cpu_percent(interval=0.1):.0f}% ({psutil.cpu_count(logical=True) or 1} cores)"
         )
-    except Exception:
+    except (ImportError, OSError):
         pass
 
 
@@ -1038,7 +1059,7 @@ def _doctor_gpu(check_torch: bool = False) -> None:
                 print(f"  pid={r['pid']:6d}  {r['vram_gib']:6.2f} GiB  {r['cmdline_short']}")
         elif gh["nvidia_smi_ok"]:
             print("gpu_processes:     none (no CUDA compute contexts)")
-    except Exception as _gpu_exc:
+    except Exception as _gpu_exc:  # noqa: BLE001 - one doctor section failing must not hide the rest
         print(f"gpu:               (check failed: {_gpu_exc})")
 
 
@@ -1046,6 +1067,7 @@ def _doctor_processes(pid: int | None) -> None:
     # Stray processes — top RAM consumers outside tq daemon
     try:
         import psutil as _ps
+
         from taskqueue.resources import top_ram_consumers
 
         daemon_pid = pid or 0
@@ -1053,7 +1075,7 @@ def _doctor_processes(pid: int | None) -> None:
         try:
             dp = _ps.Process(daemon_pid)
             tq_pids.update(c.pid for c in dp.children(recursive=True))
-        except Exception:
+        except _ps.Error:
             pass
         scan: dict = {}
         stray = top_ram_consumers(exclude_pids=tq_pids, n=5, budget_sec=5.0, stats=scan)
@@ -1065,7 +1087,7 @@ def _doctor_processes(pid: int | None) -> None:
                 print(f"  pid={r['pid']:6d}  {r['rss_gib']:5.1f} GiB  {r['cmdline_short']}")
         else:
             print("top_ram_consumers: none >0.1 GiB outside tq")
-    except Exception as _stray_exc:
+    except Exception as _stray_exc:  # noqa: BLE001 - one doctor section failing must not hide the rest
         print(f"top_ram_consumers: (check failed: {_stray_exc})")
 
 
@@ -1090,7 +1112,7 @@ def _doctor_config(cfg: dict, projects: dict) -> None:
                 from pathlib import Path as _P
 
                 qdir_attr = _P(getattr(preg, "root", "")) / "experiments" / "operator_queue"
-            except Exception:
+            except (TypeError, ValueError):
                 continue
         try:
             count = sum(1 for _ in qdir_attr.glob("*.yaml")) + sum(1 for _ in qdir_attr.glob("*.yml"))
@@ -1154,13 +1176,13 @@ def cmd_doctor(home: Path, *, check_torch: bool = False) -> None:
                     lease_expires = int(lease["expires_at"])
             finally:
                 conn.close()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - one doctor section failing must not hide the rest
             print(f"warning: could not read DB config: {e}", file=sys.stderr)
 
     projects = {}
     try:
         projects = load_projects(home)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a bad projects.yaml is reported, not fatal
         print(f"warning: projects.yaml: {e}", file=sys.stderr)
 
     daemon_log = home / "daemon.log"
@@ -1195,7 +1217,7 @@ def cmd_doctor(home: Path, *, check_torch: bool = False) -> None:
             f"yaml_cache:        {ys['entries']} entries / {ys['bytes']} bytes "
             f"(budget {ys['max_bytes']} bytes; hits={ys['hits']}, misses={ys['misses']})"
         )
-    except Exception:
+    except (ImportError, KeyError):
         pass
     _doctor_system_alerts(home, db)
 
@@ -1216,7 +1238,7 @@ def _doctor_system_alerts(home: Path, db: Path) -> None:
                 "SELECT COUNT(*) AS n FROM system_alerts WHERE enabled = 1 AND windows_toast = 1"
             ).fetchone()
             n = int(row["n"] or 0) if row else 0
-        except Exception:
+        except sqlite3.Error:
             n = 0
         finally:
             conn.close()
@@ -1225,7 +1247,7 @@ def _doctor_system_alerts(home: Path, db: Path) -> None:
                 f"WARNING: {n} system alert(s) have Windows popup on, but winotify "
                 "is not installed — pip install winotify  (or: pip install 'taskqueue[toast]')"
             )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - one doctor section failing must not hide the rest
         print(f"warning: system alerts check: {e}", file=sys.stderr)
 
 
@@ -1279,6 +1301,7 @@ def cmd_daemon_log(
 def cmd_master_status(home: Path) -> int:
     """R13: Print master_lease holder and expiry."""
     import time
+
     from taskqueue.db import open_db
 
     db = _db(home)
@@ -1323,7 +1346,8 @@ def cmd_master_migrate(home: Path, target_url: str) -> int:
     target_url = target_url.rstrip("/")
 
     # F-062: send Bearer token on all target requests when configured.
-    from taskqueue.db import open_db as _open_db_early, get_config as _get_cfg_early
+    from taskqueue.db import get_config as _get_cfg_early
+    from taskqueue.db import open_db as _open_db_early
 
     _early_conn = _open_db_early(home / "queue.db")
     try:
@@ -1367,7 +1391,7 @@ def cmd_master_migrate(home: Path, target_url: str) -> int:
         archive = Path(tmp) / "migrate.tar.gz"
         try:
             archive = export_home(home, archive, allow_running_daemon=True)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - export reports any failure to the user
             print(f"error: export failed: {exc}")
             return 1
         size_kb = archive.stat().st_size // 1024
@@ -1435,7 +1459,8 @@ def cmd_master_migrate(home: Path, target_url: str) -> int:
         print(f"WARNING: schema version mismatch (source={src_schema_v}, target={tgt_schema}).")
 
     # --- 5. Yield local master lease ---
-    from taskqueue.db import get_config as _get_config_, open_db as _open_db_
+    from taskqueue.db import get_config as _get_config_
+    from taskqueue.db import open_db as _open_db_
 
     _cfg = _get_config_(_open_db_(home / "queue.db"))
     _local_port = int(_cfg.get("web_port", 8765))
@@ -1464,7 +1489,7 @@ def cmd_master_migrate(home: Path, target_url: str) -> int:
             conn.commit()
             conn.close()
             print("  source lease dropped directly in DB (daemon not reachable).")
-        except Exception as exc2:
+        except sqlite3.Error as exc2:
             print(f"  warning: could not drop source lease: {exc2}")
 
     # --- 6. Promote target ---
@@ -1495,6 +1520,7 @@ def cmd_sleep(home: Path, key: str, project: str | None) -> int:
     will **not** SIGTERM while ``sleep_tier=2`` (F-126). Use ``tq wake`` to resume.
     """
     import ctypes
+
     from taskqueue.db import open_db, write_control_action
 
     if "/" in key:
@@ -1532,7 +1558,7 @@ def cmd_sleep(home: Path, key: str, project: str | None) -> int:
     try:
         cfg = conn.execute("SELECT value FROM config WHERE key='suspend_grace_sec'").fetchone()
         grace = float(json.loads(cfg["value"])) if cfg else 10.0
-    except Exception:
+    except (sqlite3.Error, TypeError, ValueError):
         grace = 10.0
 
     write_control_action(home, proj, task_id, "suspend")
@@ -1577,7 +1603,7 @@ def cmd_sleep(home: Path, key: str, project: str | None) -> int:
                         print(f"Tier 2: process {pid} frozen via NtSuspendProcess")
                     else:
                         tier = 3
-            except Exception as exc:
+            except (AttributeError, OSError) as exc:
                 print(f"Tier 2 freeze failed: {exc}", file=sys.stderr)
                 tier = 3
         else:
@@ -1590,11 +1616,11 @@ def cmd_sleep(home: Path, key: str, project: str | None) -> int:
                     os.kill(pid, _sig.SIGSTOP)
                     tier = 2
                     print(f"Tier 2: process {pid} stopped via SIGSTOP")
-                except Exception as exc:
+                except OSError as exc:
                     print(f"Tier 2 SIGSTOP failed: {exc}", file=sys.stderr)
                     try:
                         os.kill(pid, _sig.SIGTERM)
-                    except Exception:
+                    except OSError:
                         pass
                     tier = 3
 
@@ -1661,7 +1687,7 @@ def cmd_wake(home: Path, key: str, project: str | None) -> int:
             )
             conn.commit()
             print(f"Woke {proj}/{task_id} (tier 2 resume via NtResumeProcess)")
-        except Exception as exc:
+        except (AttributeError, OSError, sqlite3.Error) as exc:
             print(f"Wake failed: {exc}", file=sys.stderr)
             conn.close()
             return 1
@@ -1679,20 +1705,19 @@ def cmd_wake(home: Path, key: str, project: str | None) -> int:
             )
             conn.commit()
             print(f"Woke {proj}/{task_id} (tier 2 resume via SIGCONT)")
-        except Exception as exc:
+        except (OSError, sqlite3.Error) as exc:
             print(f"Wake failed: {exc}", file=sys.stderr)
             conn.close()
             return 1
     else:
         # Tier 1 or 3: re-queue from checkpoint (F-105: only resume non-terminal tasks)
-        cur = conn.execute(
-            "UPDATE tasks SET status='queued', stop_requested=0"
-            " WHERE project=? AND task_id=?"
-            " AND status IN ('suspended','stopped','interrupted')",
-            (proj, task_id),
+        from taskqueue._db_tasks import transition_task
+
+        woke = transition_task(
+            conn, proj, task_id, to="queued", from_=("suspended", "stopped", "interrupted"), stop_requested=0
         )
         conn.commit()
-        if cur.rowcount:
+        if woke:
             print(f"Woke {proj}/{task_id} (re-queued from checkpoint)")
         else:
             _row = get_task_status(conn, proj, task_id)

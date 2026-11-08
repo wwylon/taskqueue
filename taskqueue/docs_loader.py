@@ -499,6 +499,7 @@ def extract_error_labels(errors_path: Path | None = None) -> dict[str, str]:
         "tq.block.paused": "Project paused",
         "tq.block.mutex": "Waiting on named lock",
         "tq.block.requires_paths": "Required paths missing",
+        "tq.wait.removed": "Removed while waiting",
         "tq.run.frozen": "No output / idle process",
         "tq.run.cap": "Hit wall-clock cap",
         "tq.run.nonzero": "Non-zero exit",

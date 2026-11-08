@@ -1,26 +1,28 @@
 """Task-level CLI commands — extracted from cli.py."""
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
-from taskqueue._db_tasks import get_task, get_task_status
-from taskqueue.jsonutil import json_list
+
 import json
 import os
 import sys
-
-from taskqueue._cli_helpers import EXIT_UNREACHABLE
+from datetime import UTC
 from pathlib import Path
+
 from taskqueue._cli_helpers import (
-    emit_json,
+    EXIT_UNREACHABLE,
+    _check_ownership_or_print,
     _db,
     _split_key,
-    _check_ownership_or_print,
+    emit_json,
     format_resources,
-    offline_sqlite_write_blocked,
-    warn_enabled_but_terminal,
     last_nonempty_line,
+    offline_sqlite_write_blocked,
     read_last_lines,
+    warn_enabled_but_terminal,
 )
+from taskqueue._db_tasks import get_task, get_task_status
+from taskqueue._time import parse_iso as _parse_iso
+from taskqueue.jsonutil import json_list
 from taskqueue.rows import row_get
 
 
@@ -339,7 +341,7 @@ def cmd_describe(home: Path, key: str) -> int:
         ):
             try:
                 val = json.loads(val) if val else val
-            except Exception:
+            except (TypeError, ValueError):
                 pass
         if val not in (None, "", [], {}):
             print(f"  {k:<22s} {val}")
@@ -357,7 +359,8 @@ def cmd_stop(home: Path, key: str, *, force: bool = False, reason: str | None = 
         if not resp.get("ok"):
             print(f"Error: {resp.get('error', resp)}")
             return 1
-        print(f"Stop requested for {key}.")
+        eta = (resp.get("eta") or {}).get("text")
+        print(f"Stop requested for {key}." + (f" ETA at stop: {eta}." if eta else ""))
         return 0
     print("[tq] daemon not running; writing SQLite directly (offline repair)", file=sys.stderr)
     from taskqueue.db import get_task, open_db, request_stop_with_control, set_run_stop_reason, set_task_status
@@ -561,6 +564,64 @@ def cmd_suspend(home: Path, key: str) -> int:
     return 0
 
 
+def cmd_hold(home: Path, key: str, *, duration_sec: float = 600.0, reason: str | None = None) -> int:
+    """Ask a running task to idle in-process (control action hold). Does not free RAM/GPU."""
+    from taskqueue._cli_helpers import master_mutation
+    from taskqueue.db import get_task, open_db, write_control_action
+
+    project, task_id = _split_key(key)
+    params: dict = {"duration_sec": float(duration_sec)}
+    if reason:
+        params["reason"] = reason
+    resp, mode = master_mutation(home, f"/api/hold/{project}/{task_id}", params=params)
+    if mode == "unreachable":
+        return EXIT_UNREACHABLE
+    if mode == "master":
+        if not resp or not resp.get("ok"):
+            print(f"Error: {(resp or {}).get('error', resp)}")
+            return 1
+        print(f"Hold requested for {key} until {resp.get('until')} ({duration_sec:.0f}s).")
+        return 0
+    db = open_db(_db(home))
+    row = get_task(db, project, task_id)
+    db.close()
+    if row is None:
+        print(f"Error: Task {key} not found.")
+        return 1
+    if row["status"] != "running":
+        print(f"Error: {key} is not running (status={row['status']}).")
+        return 1
+    path = write_control_action(home, project, task_id, "hold", duration_sec=duration_sec, reason=reason)
+    print(f"Hold requested for {key} via {path} (in-process idle; not project freeze).")
+    return 0
+
+
+def cmd_unhold(home: Path, key: str) -> int:
+    """Clear a cooperative hold so the task can resume work."""
+    from taskqueue._cli_helpers import master_mutation
+    from taskqueue.db import clear_control_file, get_task, open_db
+
+    project, task_id = _split_key(key)
+    resp, mode = master_mutation(home, f"/api/unhold/{project}/{task_id}")
+    if mode == "unreachable":
+        return EXIT_UNREACHABLE
+    if mode == "master":
+        if not resp or not resp.get("ok"):
+            print(f"Error: {(resp or {}).get('error', resp)}")
+            return 1
+        print(f"Hold cleared for {key}.")
+        return 0
+    db = open_db(_db(home))
+    row = get_task(db, project, task_id)
+    db.close()
+    if row is None:
+        print(f"Error: Task {key} not found.")
+        return 1
+    clear_control_file(home, project, task_id)
+    print(f"Hold cleared for {key}.")
+    return 0
+
+
 def _print_retry_report(result: dict) -> None:
     requeued = result.get("requeued") or []
     skipped = result.get("skipped") or []
@@ -600,13 +661,13 @@ def _enable_tasks_for_retry(home: Path, project: str, task_ids: list[str]) -> li
             patch_task_yaml(path, {"enabled": True}, task_id=tid)
             upsert_task(db, parse_task_yaml(path, proj, allow_remote_notify=allow_remote))
             enabled.append(tid)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one task failing is reported; the rest continue
             print(f"[WARN] could not enable {project}/{tid}: {exc}", file=sys.stderr)
     db.close()
     return enabled
 
 
-def _print_retry_wait_hint(project: str, task_ids: "list[str]") -> None:
+def _print_retry_wait_hint(project: str, task_ids: list[str]) -> None:
     from taskqueue.waiting import print_wait_hint
 
     keys = [t if "/" in t else f"{project}/{t}" for t in task_ids]
@@ -616,7 +677,7 @@ def _print_retry_wait_hint(project: str, task_ids: "list[str]") -> None:
 def cmd_retry(
     home: Path,
     key: str,
-    set_args: "list[str] | None" = None,
+    set_args: list[str] | None = None,
     *,
     downstream: bool = False,
     enable_downstream: bool = False,
@@ -630,7 +691,6 @@ def cmd_retry(
         retry_task_with_downstream,
         set_args_override,
     )
-    import json as _json
 
     if enable_downstream:
         downstream = True
@@ -663,7 +723,7 @@ def cmd_retry(
         if row is not None and "overridable_args" in row.keys():
             try:
                 allowed = json_list(row["overridable_args"])
-            except Exception:
+            except (TypeError, ValueError, KeyError):
                 pass
         if not allowed:
             print(f"  {key}: overridable_args is empty — no args may be overridden via --set.")
@@ -681,7 +741,7 @@ def cmd_retry(
 
         try:
             base_args = list(json_list(row["args"]))
-        except Exception:
+        except (TypeError, ValueError):
             base_args = []
         base_args = merge_arg_overrides(base_args, list(set_args))
 
@@ -1210,7 +1270,9 @@ def cmd_logs_extended(
     if not row or not row["log_path"]:
         print(f"No log found for {key}.")
         return 1
-    log = Path(row["log_path"])
+    from taskqueue.logio import readable_log
+
+    log = readable_log(row["log_path"])  # gzip-retained logs read transparently
     if not log.exists():
         print(f"Log file missing: {log}")
         return 1
@@ -1233,7 +1295,7 @@ def cmd_logs_extended(
             try:
                 obj = json.loads(stripped)
                 emit_json(obj)
-            except Exception:
+            except ValueError:
                 print(stripped)
     else:
         text = "".join(lines)
@@ -1359,6 +1421,7 @@ def cmd_result(home: Path, key: str) -> int:
 def cmd_tail(home: Path, key: str, *, last_n: int | None = None) -> int:
     """Follow a task log, or dump the last N lines and exit when ``last_n`` is set."""
     import time
+
     from taskqueue.db import open_db
 
     project, task_id = _split_key(key)
@@ -1377,7 +1440,9 @@ def cmd_tail(home: Path, key: str, *, last_n: int | None = None) -> int:
     if not row or not row["log_path"]:
         print(f"No log found for {key}.")
         return 1
-    log = Path(row["log_path"])
+    from taskqueue.logio import readable_log
+
+    log = readable_log(row["log_path"])  # gzip-retained logs read transparently
     if not log.exists():
         print(f"Log file missing: {log}")
         return 1
@@ -1394,7 +1459,7 @@ def cmd_tail(home: Path, key: str, *, last_n: int | None = None) -> int:
 
     print(f"Tailing {log}  (Ctrl+C to stop)")
     try:
-        with open(log, "r", encoding="utf-8", errors="replace") as fh:
+        with open(log, encoding="utf-8", errors="replace") as fh:
             fh.seek(0, 2)  # seek to end
             check_counter = 0
             while True:
@@ -1503,14 +1568,14 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
         if not predicted_sec or not started_at_iso:
             return ""
         try:
-            from datetime import datetime, timezone
+            from datetime import datetime
 
             started = _parse_iso(started_at_iso)
-            elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+            elapsed = (datetime.now(UTC) - started).total_seconds()
             remaining = float(predicted_sec) - elapsed
             if remaining > 0:
                 return f" ETA ~{_fmt_elapsed(remaining)}"
-        except Exception:
+        except (TypeError, ValueError):
             pass
         return ""
 
@@ -1556,10 +1621,10 @@ def cmd_watch(home: Path, *, interval: float = 2.0) -> int:
         return "\n".join(lines)
 
     try:
-        from rich.live import Live
-        from rich.table import Table
-        from rich.panel import Panel
         from rich.console import Console
+        from rich.live import Live
+        from rich.panel import Panel
+        from rich.table import Table
 
         def _render_rich(conn):
             running = conn.execute(
@@ -1700,7 +1765,6 @@ def cmd_wait(
     3 task not found. ``raw_exit`` restores the legacy single-task behaviour
     (task's own exit code, 124 on timeout, 1 on not found).
     """
-    import json as _json
 
     from taskqueue.db import open_db
     from taskqueue.waiting import exit_code_for, resolve_selectors, wait_for
@@ -1736,9 +1800,11 @@ def cmd_wait(
                 ec = "" if t["exit_code"] is None else f" exit={t['exit_code']}"
                 wall = "" if t["wall_sec"] is None else f" {t['wall_sec']}s"
                 err = f" [{t['last_error_code']}]" if t["last_error_code"] else ""
-                print(f"{t['key']}: {t['status']}{ec}{wall}{err}")
+                eta = (t.get("eta") or {}).get("text") if (t.get("eta") or {}).get("at_stop") else None
+                print(f"{t['key']}: {t['status']}{ec}{wall}{err}" + (f" - {eta}" if eta else ""))
+        etas = {t["key"]: (t.get("eta") or {}).get("text") for t in result["tasks"]}
         for k in result["pending"]:
-            print(f"{k}: still pending", file=sys.stderr)
+            print(f"{k}: still pending" + (f" - {etas[k]}" if etas.get(k) else ""), file=sys.stderr)
         for k in result["not_found"]:
             print(f"Task not found: {k}", file=sys.stderr)
         if result["timed_out"]:

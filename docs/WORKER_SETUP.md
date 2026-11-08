@@ -125,6 +125,7 @@ If something fails, jump to [§9 Troubleshooting](#9-troubleshooting). Details f
   queue.db           # master authoritative DB (workers do not share this)
   daemon.pid / daemon.log
   logs/<project>/
+  locks/gpu.lock     # present while a local/same-host GPU task runs (F-241)
   bundles/<project>/
   packages/<project>/
   pending_finalize/  # worker: outbox if finalize HTTP fails

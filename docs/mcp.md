@@ -105,7 +105,7 @@ Use this map to choose a tool. Full schemas and examples follow below.
 
 - **Submit:** `submit_task`, `submit_matrix`, `list_projects`
 - **Admit:** `capacity`, `why_not_running`
-- **Run:** `enqueue_task`, `retry_task`, `retry_tasks`, `patch_task`, `stop_task`
+- **Run:** `enqueue_task`, `retry_task`, `retry_tasks`, `patch_task`, `stop_task`, `hold_task`, `unhold_task`
 - **Wait / notify:** `wait_for_task`, `drain_notifications`
 - **Diagnose:** `diagnose`, `explain_error`, `task_result`, `report`
 - **Observe:** `my_tasks`, `attention_list`, `task_health`, `queue_status`,
@@ -287,6 +287,9 @@ Registered projects with `queue_dir` and `root` paths. No arguments. → `{"proj
 Block until task(s) **settle**. Preferred way to learn that a task finished — no
 `notify_url` needed. Settled = `completed`, `failed`, `interrupted`, `stopped`,
 `suspended`, `unknown` (finished) or `disabled` (will not run; `finished` is false).
+If a selected task existed when wait started and is then deleted (`tq remove` /
+YAML sync), wait settles it as `status: "removed"` with `last_error_code:
+tq.wait.removed` (not `not_found` — that is only for keys never in the DB).
 
 | Arg | Notes |
 |-----|-------|
@@ -297,7 +300,9 @@ Block until task(s) **settle**. Preferred way to learn that a task finished — 
 | `timeout_sec` | default `60`, **hard cap ~100 s** (`TQ_MCP_WAIT_MAX_SEC` in the MCP env to change). Longer waits: call again while `timed_out` is true |
 | `poll_sec` | max poll interval (default `5`; starts at 1 s and backs off) |
 
-→ `{"ok", "done", "timed_out", "waited_sec", "tasks": [{"key", "status", "finished", "settled", "exit_code", "last_error_code", "block_reason", "stop_reason", "wall_sec", "progress_pct", "last_lines", "next_actions", "log_tail"?}], "pending": [...], "not_found": [...]}`.
+→ `{"ok", "done", "timed_out", "waited_sec", "tasks": [{"key", "status", "finished", "settled", "exit_code", "last_error_code", "block_reason", "stop_reason", "wall_sec", "progress_pct", "eta", "last_lines", "next_actions", "log_tail"?}], "pending": [...], "not_found": [...]}`.
+`eta` is described [below](#eta); on a timeout with one task still pending, the
+`hint` repeats its text (`still running; call wait again (~1h15m00s left (rate))`).
 `log_tail` (last ~2 KB) is inlined for settled non-completed tasks. With a single
 task the legacy flat fields `status` / `exit_code` / `last_lines` are also set.
 The wait runs on its own thread, so other tools stay responsive, and clients that
@@ -323,8 +328,8 @@ Usage analytics (counters only, no payloads — see [security.md](security.md#us
 ### `task_result`
 
 Structured result for a task: status, `exit_code`, duration, peak resources,
-`TQ_METRIC` metrics, artifacts, `error_code`, `block_reason`. Call it after
-`wait_for_task` returns.
+`TQ_METRIC` metrics, artifacts, `error_code`, `block_reason`, [`eta`](#eta).
+Call it after `wait_for_task` returns.
 
 | Arg | Required |
 |-----|----------|
@@ -365,7 +370,8 @@ UI metrics dialog / `tq metrics`).
 {"method": "tools/call", "params": {"name": "progress_snapshot", "arguments": {"project": "myproj"}}}
 ```
 
-→ `{"tasks": [{task_id, run_id, progress_pct, eta_sec, last_line, elapsed_sec, status, requires_gpu, log, resources, history_summary, metrics, source}, ...]}`.
+→ `{"tasks": [{task_id, run_id, progress_pct, eta_sec, eta, last_line, elapsed_sec, status, requires_gpu, log, resources, history_summary, metrics, source}, ...]}`.
+`eta_sec` is `eta.remaining_sec`; for a run that already ended, `elapsed_sec` is its wall time.
 
 `requires_gpu` is true when the task declares `gpu_vram_gib > 0`. `log` is
 `{warnings, errors, other}` (zeros when none). `resources.current` / `peak`
@@ -393,15 +399,16 @@ MCP-first and should not depend on shell/`tq sync`.
 | `filename` | no | Hint; default `submitted_*.yaml` under the project's queue dir |
 | `wait` | no | If true, also run `wait_for_task` logic; result gains a `wait` object |
 | `timeout_sec` | no | With `wait`: max seconds (default 60, cap ~100) |
+| `client_key` | no | Idempotency key (≤128 chars, per project). Retrying after a timeout with the same key and body returns the first submission's `task_ids` with `deduplicated: true` instead of a second task file. Same key, different body → error ("different submission"); a retry while the first is still being written → error ("still in progress"), retry shortly. Keys expire after `submit_key_ttl_sec` (default 24 h). |
 
-→ `{"ok", "task_ids", "errors": [{"field","message"}], "next"?}`. On success,
+→ `{"ok", "task_ids", "errors": [{"field","message"}], "deduplicated"?, "next"?}`. On success,
 `next` is a ready-made `wait_for_task` call (unless you already passed `wait`).
 
 ### `submit_matrix` — create many variants
 
 Same as `submit_task`, but builds a matrix from `base_yaml` + `params` list
 (injected as `matrix: [...]`). Returns `{ok, task_ids, errors}`. Also accepts
-`wait` / `timeout_sec`.
+`wait` / `timeout_sec` and `client_key`.
 
 ### `enqueue_task` / `retry_task` — re-queue an existing terminal task
 
@@ -461,14 +468,55 @@ Setting `enabled: true` on a **terminal** task (`completed` / `failed` / …) do
 
 ### `stop_task`
 
-Request cooperative stop of a running task (writes `tq.stop` control file). The task must honour SIGTERM / the control file — it is not force-killed. Equivalent to `tq stop project/task_id`. A **queued** task is cancelled instead (status `interrupted`), like the web UI Stop; that needs the daemon to be reachable.
+Request cooperative stop of a running task (writes control `suspend`). The task must honour the control file / SIGTERM after grace — it is not force-killed. Equivalent to `tq stop project/task_id`. A **queued** task is cancelled instead (status `interrupted`), like the web UI Stop; that needs the daemon to be reachable.
+
+| Arg | Required | Notes |
+|-----|----------|-------|
+| `project` | **yes** | |
+| `task_id` | **yes** | |
+| `reason` | no | Stored on `runs.stop_reason` (max 200 chars); shown in drawer / `task_result` / `why_not_running` |
+
+→ `{"ok": true/false, "status": "...", "message": "...", "eta"?}`. `eta` is the
+estimate at the moment of the stop (tasks are often stopped for being too slow);
+`tq stop` prints it as `ETA at stop: …`.
+
+### ETA
+
+`wait_for_task`, `task_result`, `progress_snapshot` and `stop_task` carry an
+`eta` object (or `null` when there is nothing to estimate from), built from the
+task's latest run:
+
+| Case | Fields |
+|------|--------|
+| running | `remaining_sec`, `finish_at` (UTC ISO), `basis`, `progress_pct`, `text` (`~16m40s left (rate)`) |
+| last run ended before finishing (stopped / interrupted / suspended / failed) | `remaining_sec`, `at_stop: true`, `stopped_at`, `basis`, `progress_pct`, `text` (`was ~2h05m00s from done at 25% when the run ended (stopped, rate)`). It does not change afterwards. |
+| any, when completed runs exist | `typical_sec` (median wall time of the last 10 completed runs) |
+
+`basis` is `rate` (recent `N%` progress rate), `average` (run time / progress, when
+only one progress line was seen) or `history` (`typical_sec` minus time spent, for
+tasks that print no progress). Nothing extra is stored: the estimate at the stop
+is derived from the run's progress, wall time and `metrics_json._progress`, so it
+also covers runs stopped before this field existed.
+
+### `hold_task`
+
+Ask a **running** task to idle in-process for a while (control `hold` + `until`). Keeps RAM/GPU reserved — not project freeze, not suspend/exit 75. The task must poll `TQ_CONTROL_FILE` (`tq_client.maybe_hold` / `maybe_suspend`). Equivalent to `tq hold project/task --for SEC`.
+
+| Arg | Required | Notes |
+|-----|----------|-------|
+| `project` | **yes** | |
+| `task_id` | **yes** | |
+| `duration_sec` | no | default `600` |
+| `reason` | no | optional operator note |
+
+### `unhold_task`
+
+Clear a cooperative hold so work can resume. Equivalent to `tq unhold project/task`. Do not call unless the owner asked.
 
 | Arg | Required |
 |-----|----------|
 | `project` | **yes** |
 | `task_id` | **yes** |
-
-→ `{"ok": true/false, "status": "...", "message": "..."}`.
 
 ---
 

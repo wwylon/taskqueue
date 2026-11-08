@@ -4,20 +4,24 @@ Run `tq detect` once per machine to inspect what the daemon will see.
 """
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
 
 import json
+import logging
 import os
 import shutil
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import UTC
 from typing import Any
 
 import psutil
 
+from taskqueue._time import parse_iso as _parse_iso
 from taskqueue.win_console import hide_console_check_output_kwargs
+
+_log = logging.getLogger(__name__)
 
 # Last successful GPU inventory for this process. A failed nvidia-smi must not
 # be stored as "this machine has 0 GiB VRAM" (see apply_gpu_last_good).
@@ -122,7 +126,7 @@ def probe_gpus(*, timeout: float = 5.0) -> GpuProbeResult:
             error="nvidia-smi not found (no NVIDIA driver or not in PATH)",
             nvidia_smi_path=path,
         )
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         return GpuProbeResult(
             ok=False,
             error=str(exc),
@@ -201,7 +205,7 @@ def parse_json_obj(val: Any) -> dict[str, Any]:
         try:
             parsed = json.loads(val)
             return parsed if isinstance(parsed, dict) else {}
-        except Exception:
+        except (TypeError, ValueError):
             return {}
     return {}
 
@@ -217,7 +221,7 @@ def parse_json_list(val: Any) -> list[Any]:
         try:
             parsed = json.loads(val)
             return parsed if isinstance(parsed, list) else []
-        except Exception:
+        except (TypeError, ValueError):
             return []
     return []
 
@@ -339,7 +343,7 @@ def probe_gpu_memory_used(*, timeout: float = 2.0) -> float | None:
             text=True,
             **hide_console_check_output_kwargs(),
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
         return None
@@ -411,7 +415,7 @@ def probe_gpu_compute_apps(*, timeout: float = 5.0) -> GpuProcessProbe:
             ok=False,
             error="nvidia-smi not found (no NVIDIA driver or not in PATH)",
         )
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         return GpuProcessProbe(ok=False, error=str(exc))
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip().replace("\n", " ")[:300]
@@ -468,7 +472,7 @@ def _gpu_proc_meta(pid: int) -> dict[str, str]:
         return {"name": name, "cmdline_short": cmdline_short}
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
         return {"name": "", "cmdline_short": ""}
-    except Exception:
+    except (OSError, psutil.Error):
         return {"name": "", "cmdline_short": ""}
 
 
@@ -606,8 +610,8 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
             import cpuinfo as _ci  # type: ignore[import]
 
             cpu_model = _ci.get_cpu_info().get("brand_raw")
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - third-party cpuinfo
+        _log.debug("cpu model lookup failed", exc_info=True)
 
     # CPU frequency
     cpu_freq_mhz: float | None = None
@@ -615,7 +619,7 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
         freq = psutil.cpu_freq()
         if freq:
             cpu_freq_mhz = round(freq.current, 0)
-    except Exception:
+    except (OSError, NotImplementedError, RuntimeError, AttributeError):
         pass
 
     # Disk info (main drive)
@@ -635,9 +639,9 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
                         "pct_used": round(usage.percent, 1),
                     }
                 )
-            except Exception:
+            except OSError:
                 pass
-    except Exception:
+    except (OSError, RuntimeError):
         pass
 
     # OS info
@@ -652,7 +656,7 @@ def _detect_system_uncached(*, apply_last_good: bool = True) -> dict[str, Any]:
             "machine": _plat.machine(),
             "node": _plat.node(),
         }
-    except Exception:
+    except OSError:
         pass
 
     live: dict[str, Any] = {
@@ -729,7 +733,7 @@ def top_ram_consumers(
                     rows.append((rss, proc))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-    except Exception:
+    except (psutil.Error, OSError):
         pass
     rows.sort(key=lambda t: t[0], reverse=True)
     out: list[dict[str, Any]] = []
@@ -802,7 +806,7 @@ def cuda_health(*, check_torch: bool = False) -> dict[str, Any]:
             result["torch_device_name"] = torch.cuda.get_device_name(0)
     except ModuleNotFoundError:
         pass  # torch not present — leave None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - torch import and CUDA init fail in many ways
         result["torch_cuda_available"] = False
         result["error"] = result["error"] or str(exc)
 
@@ -873,9 +877,9 @@ def sort_queued_fairshare(
     lower-priority tasks don't wait forever behind high-priority projects.
     """
     usage = usage_by_proj or {}
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     def _sort_key(r):
         try:
@@ -889,10 +893,10 @@ def sort_queued_fairshare(
             try:
                 enq = _parse_iso(enqueued)
                 if enq.tzinfo is None:
-                    enq = enq.replace(tzinfo=timezone.utc)
+                    enq = enq.replace(tzinfo=UTC)
                 waiting_sec = (now_utc - enq).total_seconds()
                 age_bonus = float(min(20, int(waiting_sec // 300)))
-            except Exception:
+            except (TypeError, ValueError):
                 pass
         eff_priority = base_priority + age_bonus
         return (
@@ -929,7 +933,7 @@ def cpu_cores_from_load() -> float:
     try:
         pcts = psutil.cpu_percent(percpu=True)
         return sum(pcts) / 100.0  # e.g. 4 cores at 50% each → 2.0 cores
-    except Exception:
+    except (OSError, psutil.Error):
         return 0.0
 
 
@@ -987,6 +991,14 @@ class ResourceBudget:
             total = float(g.get("vram_gib", 0.0))
             used = float(g.get("vram_used_gib", 0.0))
             self.device_free[idx] = max(0.0, total - used)
+
+    def headroom(self) -> dict[str, float]:
+        """What one more task could take right now, per gate (limit minus reserved, never negative)."""
+        return {
+            "cpu_cores": round(max(0.0, self.cpu_limit - max(self.cpu_ema, self.cpu_declared)), 2),
+            "ram_gib": round(max(0.0, self.ram_limit - self.ram_reserved), 2),
+            "gpu_vram_gib": round(max(0.0, self.gpu_limit - self.gpu_reserved), 2),
+        }
 
     def reserve(self, cpu_cores: float, gpu_vram_gib: float, ram_gib: float) -> None:
         self.cpu_declared += cpu_cores

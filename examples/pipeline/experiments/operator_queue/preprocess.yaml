@@ -1,0 +1,11 @@
+task_id: preprocess
+description: Pipeline step 1
+command: python
+args: [scripts/preprocess.py]
+enabled: false
+priority: 50
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+artifacts:
+  - runs/pipeline/data.txt

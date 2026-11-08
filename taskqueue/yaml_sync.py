@@ -5,23 +5,22 @@ Extracted from daemon.py. daemon re-exports these names for existing callers.
 
 from __future__ import annotations
 
-import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
-from taskqueue.config import Project
-from taskqueue._time import _now
 from taskqueue._db_tasks import _upsert_task_no_commit, stamp_provenance
+from taskqueue._time import _now
+from taskqueue.config import Project
 from taskqueue.db import parse_task_yaml_many
 
-
 # W4.3: mtime cache — skip re-parsing YAML files that haven't changed.
-# Key: absolute path string; value: (mtime_ns, YAML_PARSER_GEN, list[QueueTask]).
+# Key: absolute path string; value: (mtime_ns, YAML_PARSER_GEN, task_ids, file_bytes).
 # Bump YAML_PARSER_GEN when parse_task_yaml_many's field set changes so a
 # deploy is not invisible until every file's mtime changes (F-077).
 YAML_PARSER_GEN = 1
-_yaml_mtime_cache: dict[str, tuple[int, int, object, int]] = {}
+_yaml_mtime_cache: dict[str, tuple[int, int, tuple[str, ...] | None, int]] = {}
 # O1: cap to prevent unbounded memory growth on large repos.
 _YAML_CACHE_MAX = 5000
 _YAML_CACHE_MAX_BYTES = 64 * 1024 * 1024
@@ -73,7 +72,7 @@ def _sync_project(
     project: Project,
     *,
     cache: dict | None = None,
-    home: "Path | None" = None,
+    home: Path | None = None,
     force: bool = False,
 ) -> dict[str, int]:
     """Reconcile one project's YAMLs into the DB. ``force`` ignores the mtime cache (re-parse all).
@@ -121,14 +120,14 @@ def _sync_project(
             f"[queue] {_ts()} warn: {project.name}: queue dir listing failed ({exc}) — skipping sync cleanup",
             file=sys.stderr,
         )
-        return
+        return empty
     if not project.queue_dir.is_dir():
         print(
             f"[queue] {_ts()} warn: {project.name}: queue dir vanished during listing "
             f"({project.queue_dir}) — skipping sync cleanup",
             file=sys.stderr,
         )
-        return
+        return empty
     enumerated_ok = True
 
     pending_cache: dict[str, tuple] = {}
@@ -173,8 +172,7 @@ def _sync_project(
             ):
                 _yaml_cache_hits += 1
                 # F-040: file unchanged — skip upsert to avoid constant WAL churn
-                for _ct in _cached[2]:
-                    found_task_ids.add(_ct.task_id)
+                found_task_ids.update(_cached[2])
                 continue
             _yaml_cache_misses += 1
             # R10: parse_task_yaml_many returns >=1 tasks (>1 for matrix: YAMLs)
@@ -197,6 +195,12 @@ def _sync_project(
                     continue
                 # Batch: execute without committing; commit once after the loop.
                 _upsert_task_no_commit(conn, task)
+                # F-218: the file parses again — drop a stale parse-error annotation.
+                conn.execute(
+                    "UPDATE tasks SET block_reason = NULL "
+                    "WHERE project = ? AND task_id = ? AND block_reason LIKE 'invalid_yaml:%'",
+                    (project.name, task.task_id),
+                )
                 upserted += 1
                 if genuinely_new:
                     stamp_provenance(conn, project.name, [task.task_id], "yaml", commit=False)
@@ -207,25 +211,37 @@ def _sync_project(
             # Only remember the file once every task was upserted (and, below, the batch
             # committed); a failed/skipped upsert must be retried on the next sync.
             if mtime_ns is not None and not _file_skipped:
-                pending_cache[key] = (mtime_ns, YAML_PARSER_GEN, task_list, int(yaml_size))
-        except Exception as exc:
+                # F-235: a cache hit only needs the ids — do not pin parsed QueueTask objects.
+                pending_cache[key] = (mtime_ns, YAML_PARSER_GEN, tuple(t.task_id for t in task_list), int(yaml_size))
+        except Exception as exc:  # noqa: BLE001 - a bad YAML file is disabled, not the whole sync
             print(
                 f"[queue] {_ts()} warn: {project.name}: failed to parse {yaml_path.name}: {exc}",
                 file=sys.stderr,
             )
-            # I-14: upsert a disabled sentinel so tq list shows the parse error
+            # I-14: surface the parse error in tq list / the UI.
             try:
                 stem = yaml_path.stem
-                conn.execute(
-                    "INSERT INTO tasks (project, task_id, status, enabled, block_reason, "
-                    "command, enqueued_at, updated_at) "
-                    "VALUES (?, ?, 'disabled', 0, ?, '', ?, ?) "
-                    "ON CONFLICT(project, task_id) DO UPDATE SET "
-                    "status='disabled', enabled=0, block_reason=excluded.block_reason "
-                    "WHERE status NOT IN ('running', 'queued')",
-                    (project.name, stem, f"invalid_yaml: {exc} in {yaml_path.name}", _now(), _now()),
+                msg = f"invalid_yaml: {exc} in {yaml_path.name}"
+                # F-218: rows already registered from this file keep their status (a
+                # completed task flipped to disabled would be re-queued, i.e. re-run,
+                # once the file parses again); only annotate them. A sentinel row is
+                # inserted only for a file that never parsed.
+                cur = conn.execute(
+                    "UPDATE tasks SET block_reason = ?, updated_at = ? "
+                    "WHERE project = ? AND (yaml_source = ? OR task_id = ?) AND status != 'running'",
+                    (msg, _now(), project.name, str(yaml_path), stem),
                 )
-                dirty = True
+                known = conn.execute(
+                    "SELECT 1 FROM tasks WHERE project = ? AND (yaml_source = ? OR task_id = ?) LIMIT 1",
+                    (project.name, str(yaml_path), stem),
+                ).fetchone()
+                if known is None:
+                    conn.execute(
+                        "INSERT INTO tasks (project, task_id, status, enabled, block_reason, "
+                        "command, enqueued_at, updated_at) VALUES (?, ?, 'disabled', 0, ?, '', ?, ?)",
+                        (project.name, stem, msg, _now(), _now()),
+                    )
+                dirty = dirty or known is None or (cur.rowcount or 0) > 0
                 found_task_ids.add(stem)
                 # Keep every task already registered from this file (matrix / multi-doc
                 # ids differ from the stem), or delete-missing cleanup wipes them and
@@ -235,7 +251,7 @@ def _sync_project(
                     (project.name, str(yaml_path)),
                 ):
                     found_task_ids.add(_kept["task_id"])
-            except Exception as _exc2:
+            except Exception as _exc2:  # noqa: BLE001 - a failed sentinel write must roll back, whatever the cause
                 # A failed DML leaves the implicit transaction open, holding the
                 # write lock and starving every HTTP write (retry, lease renew).
                 if not dirty:
@@ -262,12 +278,12 @@ def _sync_project(
     if dirty:
         try:
             conn.commit()
-        except Exception as exc:
+        except sqlite3.Error as exc:
             # F-158: roll back so the connection is not left holding a failed txn
             # that blocks later HTTP writers on the same connection.
             try:
                 conn.rollback()
-            except Exception:
+            except sqlite3.Error:
                 pass
             pending_cache.clear()
             print(f"[queue] {_ts()} warn: {project.name}: batch upsert commit failed: {exc}", file=sys.stderr)
@@ -312,7 +328,7 @@ def _sync_project(
                     old = cache.pop(k, None)
                     if cache is _yaml_mtime_cache and old is not None:
                         _yaml_cache_bytes -= int(old[3]) if len(old) >= 4 else 0
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 continue
         return {"upserted": upserted, "deleted": 0}
     if enumerated_ok and project.queue_dir.is_dir():
@@ -336,7 +352,7 @@ def _sync_project(
                         print(f"[queue] {_ts()} unregistered old task: {project.name}/{tid}", flush=True)
             if deleted_any:
                 conn.commit()
-        except Exception as exc:
+        except sqlite3.Error as exc:
             print(
                 f"[queue] {_ts()} warn: {project.name}: sync cleanup failed (will retry next sync): {exc}",
                 file=sys.stderr,
@@ -352,7 +368,7 @@ def _sync_project(
             try:
                 if k not in live_keys and _in_queue_dir(k, qdir_str, qdir_resolved):
                     stale.append(k)
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 continue
         for k in stale:
             old = cache.pop(k, None)

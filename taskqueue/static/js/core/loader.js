@@ -1,3 +1,4 @@
+// @ts-check
 // Page loading plumbing: header project filter, per-tab loader dispatch, the single-flight back-off loop (tqLoop),
 // the operator-started busy indicator (tqBusy) and small data-<event> delegation targets.
 // Tab loaders (loadDeps, loadAudit, ...) and refresh/i18n are app.js / other-module globals resolved at call time.

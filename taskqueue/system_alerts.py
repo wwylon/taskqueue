@@ -12,7 +12,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from taskqueue.dt_utils import iso_utc as _iso, now_utc as _now, parse_utc as _parse_ts, within_window
+from taskqueue.dt_utils import iso_utc as _iso
+from taskqueue.dt_utils import now_utc as _now
+from taskqueue.dt_utils import within_window
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +55,9 @@ _ERROR_CODE_LABELS = {
     "tq.block.service_down": "required service unavailable",
     "tq.block.service_vram": "insufficient VRAM for required service",
 }
+
+
+_log = logging.getLogger(__name__)
 
 
 def _fmt_elapsed(sec: float | None) -> str:
@@ -114,7 +119,7 @@ def _run_context(conn: sqlite3.Connection, project: str, task_id: str, run_id: i
                 (project, task_id, run_id),
             ).fetchone()[0]
             out["attempt"] = int(n)
-    except Exception:
+    except (sqlite3.Error, OSError):
         pass
     return out
 
@@ -125,7 +130,7 @@ def _log_tail(path: str, n: int = 5) -> list[str]:
 
         lines = [ln.strip()[:240] for ln in tail_log_lines(path, 40) if ln.strip()]
         return lines[-n:]
-    except Exception:
+    except (OSError, ValueError):
         return []
 
 
@@ -412,8 +417,8 @@ def maybe_emit_system_alert(
                     detail=detail,
                 ),
             )
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - alert notification is best-effort
+            _log.debug("alert notification failed", exc_info=True)
     if send_toast and int(row["windows_toast"] or 0) and home is not None:
         r, f, q = queue_status_triplet(conn)
         from taskqueue.notify import _send_toast
@@ -533,7 +538,7 @@ def emit_task_frozen(
     """Emit task_frozen (caller enforces once-per-run_id)."""
     try:
         elapsed_str = f" (running for {_fmt_elapsed(elapsed_sec)})" if elapsed_sec is not None else ""
-        detail = {
+        detail: dict[str, Any] = {
             "project": project,
             "task_id": task_id,
             "run_id": run_id,
@@ -589,7 +594,7 @@ def evaluate_all_done(
                     "SELECT project, task_id FROM tasks WHERE status = 'failed' ORDER BY updated_at DESC LIMIT 5"
                 ).fetchall()
             ]
-        except Exception:
+        except sqlite3.Error:
             pass
         done = sum((detail.get("last_hour_runs") or {}).values())
         body = f"Queue is idle — nothing queued or running{fail_str}"

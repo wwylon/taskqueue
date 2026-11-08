@@ -6,8 +6,8 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue.db import open_db
 from taskqueue._db_runs import reclaim_expired_leases
+from taskqueue.db import open_db
 from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import (
     clear_master_lease,

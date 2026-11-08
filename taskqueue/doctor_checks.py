@@ -6,6 +6,7 @@ A ``fail`` makes `tq doctor` exit 1. Checks are read-only: the DB is opened with
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sqlite3
@@ -19,6 +20,30 @@ DISK_FAIL_BYTES = 200 * 1024**2
 
 def _check(name: str, level: str, detail: str) -> dict[str, str]:
     return {"name": name, "level": level, "detail": detail}
+
+
+def _check_legacy_limits(db: Path, checks: list[dict[str, str]]) -> None:
+    """Advise on ``max_concurrent_tasks`` (Wave 4.7): it overlaps ``max_running_tasks``."""
+    conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5.0)
+    try:
+        row = conn.execute("SELECT value FROM config WHERE key = 'max_concurrent_tasks'").fetchone()
+    except sqlite3.Error:
+        return
+    finally:
+        conn.close()
+    try:
+        value = int(json.loads(row[0])) if row else 0
+    except (TypeError, ValueError):
+        value = 0
+    if value > 0:
+        checks.append(
+            _check(
+                "limits",
+                "warn",
+                f"max_concurrent_tasks={value} is legacy (force bypasses it, excess is never stopped); "
+                f"use: tq config set max_running_tasks={value} max_concurrent_tasks=0",
+            )
+        )
 
 
 def run_checks(home: Path) -> dict[str, Any]:
@@ -54,6 +79,7 @@ def run_checks(home: Path) -> dict[str, Any]:
             finally:
                 conn.close()
             checks.append(_check("database", "ok" if res == "ok" else "fail", f"quick_check: {res}"))
+            _check_legacy_limits(db, checks)
         except sqlite3.Error as exc:
             checks.append(_check("database", "fail", f"cannot read: {exc}"))
         wal = db.with_name(db.name + "-wal")
@@ -85,7 +111,7 @@ def run_checks(home: Path) -> dict[str, Any]:
                 "; ".join(missing) if missing else f"{len(projects)} registered",
             )
         )
-    except Exception as exc:  # malformed projects.yaml
+    except Exception as exc:  # noqa: BLE001 - a malformed projects.yaml is a failed check; malformed projects.yaml
         checks.append(_check("projects", "fail", f"projects.yaml: {exc}"))
 
     if os.environ.get("TASKQUEUE_HOME") and Path(os.environ["TASKQUEUE_HOME"]) != home:
@@ -103,7 +129,7 @@ def run_checks(home: Path) -> dict[str, Any]:
                 f"(budget {stats['max_bytes']} bytes), hits={stats['hits']}, misses={stats['misses']}",
             )
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - one doctor check failing must not hide the rest
         checks.append(_check("yaml_cache", "warn", f"unavailable: {exc}"))
 
     worst = (
@@ -112,3 +138,118 @@ def run_checks(home: Path) -> dict[str, Any]:
         else ("warn" if any(c["level"] == "warn" for c in checks) else "ok")
     )
     return {"ok": worst != "fail", "status": worst, "checks": checks, "home": str(home)}
+
+
+def propose_remediations(home: Path, checks: list[dict[str, str]] | None = None) -> list[dict[str, str]]:
+    """F-215 / C-004: read-only remediation proposals for ``tq doctor --fix``.
+
+    Never writes SQLite or deletes files. Each item has ``id``, ``summary``, and
+    usually a ``command`` the operator can run after review.
+    """
+    from taskqueue._cli_helpers import _ENABLED_NEEDS_RETRY_STATUSES, _pid_path
+    from taskqueue.config import db_path
+
+    home = Path(home)
+    if checks is None:
+        checks = run_checks(home)["checks"]
+    by_name = {c["name"]: c for c in checks}
+    out: list[dict[str, str]] = []
+
+    daemon = by_name.get("daemon")
+    if daemon and daemon["level"] == "warn" and "not running" in daemon["detail"]:
+        out.append(
+            {
+                "id": "start_daemon",
+                "summary": "Daemon is not running",
+                "command": "tq start",
+            }
+        )
+    if daemon and daemon["level"] == "fail":
+        out.append(
+            {
+                "id": "restart_daemon",
+                "summary": "Daemon process up but HTTP not answering",
+                "command": "tq restart --force",
+            }
+        )
+    pid_file = by_name.get("pid_file")
+    if pid_file and pid_file["level"] == "warn":
+        out.append(
+            {
+                "id": "remove_stale_pid",
+                "summary": f"Stale pid file at {_pid_path(home)}",
+                "command": f"Remove-Item -Force {_pid_path(home)}" if os.name == "nt" else f"rm -f {_pid_path(home)}",
+            }
+        )
+    wal = by_name.get("wal")
+    if wal and wal["level"] == "warn":
+        out.append(
+            {
+                "id": "checkpoint_wal",
+                "summary": f"WAL is large ({wal['detail']})",
+                "command": "tq prune  # review dry-run; then tq prune --apply if OK",
+            }
+        )
+    disk = by_name.get("disk")
+    if disk and disk["level"] in ("warn", "fail"):
+        out.append(
+            {
+                "id": "free_disk",
+                "summary": f"Low free disk ({disk['detail']})",
+                "command": "tq prune  # dry-run default; tq prune --apply after review",
+            }
+        )
+    projects = by_name.get("projects")
+    if projects and projects["level"] == "warn" and "registered" not in projects["detail"]:
+        out.append(
+            {
+                "id": "fix_projects_yaml",
+                "summary": f"Project path problems: {projects['detail']}",
+                "command": "Edit projects.yaml (or re-register roots) then tq sync",
+            }
+        )
+
+    db = db_path(home)
+    if db.is_file():
+        try:
+            conn = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                statuses = tuple(sorted(_ENABLED_NEEDS_RETRY_STATUSES))
+                placeholders = ",".join("?" * len(statuses))
+                rows = conn.execute(
+                    f"SELECT project, COUNT(*) AS n FROM tasks "
+                    f"WHERE enabled = 1 AND status IN ({placeholders}) "
+                    f"GROUP BY project ORDER BY n DESC LIMIT 12",
+                    statuses,
+                ).fetchall()
+                for row in rows:
+                    proj = str(row["project"])
+                    n = int(row["n"])
+                    out.append(
+                        {
+                            "id": f"retry_enabled_{proj}",
+                            "summary": f"{n} enabled terminal task(s) in {proj} need tq retry",
+                            "command": (
+                                f"tq retry --project {proj} --status {','.join(sorted(_ENABLED_NEEDS_RETRY_STATUSES))}"
+                            ),
+                        }
+                    )
+                offline = conn.execute(
+                    "SELECT worker_id, last_seen FROM workers WHERE status != 'online' ORDER BY last_seen DESC LIMIT 8"
+                ).fetchall()
+                for w in offline:
+                    wid = str(w["worker_id"])
+                    out.append(
+                        {
+                            "id": f"worker_offline_{wid}",
+                            "summary": f"Worker {wid} is offline (last_seen={w['last_seen']})",
+                            "command": "Re-attach with tq worker start (see docs/WORKER_SETUP.md)",
+                        }
+                    )
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            pass
+
+    return out

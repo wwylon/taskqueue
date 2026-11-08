@@ -27,9 +27,14 @@ def row_dep_refs(row: Any, col: str, owner_project: str) -> list[tuple[str, str,
     can never abort a scheduler pass.
     """
     try:
-        if col not in row.keys():
-            return []
-        refs = json_list(row[col])
+        raw = row[col]
+    except (KeyError, IndexError):
+        return []
+    # F-234: most rows have no deps; skip the JSON parse (hot on every admit pass).
+    if not raw or raw == "[]":
+        return []
+    try:
+        refs = json_list(raw)
     except (ValueError, TypeError, KeyError, IndexError):
         return []
     if not isinstance(refs, list):

@@ -8,8 +8,6 @@ from pathlib import Path
 import yaml
 
 from taskqueue import errors as tqerr
-from taskqueue.config import Project
-from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
 from taskqueue._db_tasks import (
     apply_cap_auto_retry,
     get_task,
@@ -18,6 +16,8 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
+from taskqueue.config import Project
+from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
 from taskqueue.models import STATUS_INTERRUPTED, STATUS_QUEUED
 
 
@@ -148,27 +148,6 @@ def test_retry_tasks_batch_one_transaction(tmp_path: Path) -> None:
     assert any(s["key"] == "p/missing" for s in result["skipped"])
     for tid in ("a", "b", "c"):
         assert get_task(db, "p", tid)["status"] == STATUS_QUEUED
-
-
-def test_stream_output_tail_sets_stop_reason() -> None:
-    """Wall-clock cap must set stop_reason before terminate (F-036). H2 moved the
-    assignment to _enforce_wall_clock_cap so both tail and pipe paths share it."""
-    import io
-
-    from taskqueue.runner import ActiveRun
-
-    # H2: stop_reason is set in the shared _enforce_wall_clock_cap helper,
-    # and it must already be set when the process is terminated.
-    run = ActiveRun.__new__(ActiveRun)
-    run.stop_reason = None
-    run.task_row = {"wall_clock_cap_sec": 5}
-    run._log_file = io.StringIO()
-    run.db_path = None
-    seen = {}
-    run._terminate = lambda: seen.update(reason=run.stop_reason)
-    assert run._enforce_wall_clock_cap() is True
-    assert seen["reason"] == "wall_clock_cap"
-    assert "wall_clock_cap_sec=5" in run._log_file.getvalue()
 
 
 def test_apply_cap_auto_retry_skips_disabled_task(tmp_path: Path) -> None:

@@ -119,7 +119,11 @@ export function tqHandleKey(e) {
         i18n.t('toast.retried'), refresh);
     } else if (t.status === 'running' || t.status === 'queued') {
       if (!window.confirm(i18n.t('confirm.stopTask', { task: t.task_id }))) return;
-      toastResult(_postJson(`/api/stop/${encodeURIComponent(t.project)}/${encodeURIComponent(t.task_id)}`),
+      const reason = (typeof window !== 'undefined' && window.tqStopReasonDefault != null)
+        ? String(window.tqStopReasonDefault)
+        : 'owner_request';
+      const q = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+      toastResult(_postJson(`/api/stop/${encodeURIComponent(t.project)}/${encodeURIComponent(t.task_id)}${q}`),
         i18n.t('toast.stopped'), refresh);
     }
   }

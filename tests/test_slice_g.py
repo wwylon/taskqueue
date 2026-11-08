@@ -8,9 +8,9 @@ from pathlib import Path
 import yaml
 
 from taskqueue import errors as tqerr
+from taskqueue._db_tasks import set_task_error, upsert_task
 from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml
-from taskqueue._db_tasks import set_task_error, upsert_task
 from taskqueue.diagnose import build_diagnose
 from taskqueue.progress_sanity import (
     is_frozen,

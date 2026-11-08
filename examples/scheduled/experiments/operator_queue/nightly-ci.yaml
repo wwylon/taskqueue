@@ -1,0 +1,11 @@
+task_id: nightly-ci
+description: Cron example (02:00 UTC daily). Keep enabled true after first enable for re-queue.
+command: python
+args: [scripts/nightly_ci.py]
+schedule:
+  cron: "0 2 * * *"
+enabled: false
+priority: 30
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25

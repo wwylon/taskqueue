@@ -7,9 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from taskqueue._db_tasks import stamp_provenance
 from taskqueue.config import Project
 from taskqueue.db import SCHEMA_VERSION, open_db
-from taskqueue._db_tasks import stamp_provenance
 from tests.helpers.master_worker import http_request, make_handler_env
 
 

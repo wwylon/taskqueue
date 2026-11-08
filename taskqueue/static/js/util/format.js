@@ -1,3 +1,4 @@
+// @ts-check
 // Pure formatting / escaping helpers (no dependency on app state).
 
 // Same breakpoint as app.css: below it Queue/History show cards, above it tables.
@@ -31,10 +32,16 @@ export function domIdPart(s) {
   return String(s).replace(/[^A-Za-z0-9_-]/g, (c) => '_' + c.charCodeAt(0).toString(16));
 }
 
+/** Current value of the input/select/textarea with this id, or '' when it is absent. */
+export function inputValue(id) {
+  const el = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+  return el ? el.value : '';
+}
+
 export function fmt(s) {
   if (!s) return '—';
   const d = new Date(s);
-  return isNaN(d) ? escHtml(s) : d.toLocaleString();
+  return isNaN(d.getTime()) ? escHtml(s) : d.toLocaleString();
 }
 
 export function dur(sec) {
@@ -57,6 +64,27 @@ export function appendLog(state, line) {
     if (nl >= 0) c = c.slice(nl + 1);
   }
   state.content = c;
+}
+
+/**
+ * One line for the server's `eta` block (taskqueue/eta.py): time left while running, how much was
+ * left when a run stopped, else the usual run length. '' when there is nothing to say.
+ */
+export function etaText(eta) {
+  if (!eta) return '';
+  const t = (k, v) => (globalThis.i18n ? globalThis.i18n.t(k, v) : k);
+  if (eta.remaining_sec != null && eta.at_stop) {
+    const left = dur(eta.remaining_sec);
+    return eta.progress_pct != null
+      ? t('eta.atStop', { left, pct: Math.round(eta.progress_pct) })
+      : t('eta.atStopNoPct', { left });
+  }
+  if (eta.remaining_sec != null) {
+    const d = eta.finish_at ? new Date(eta.finish_at) : null;
+    const at = d && !isNaN(d.getTime()) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    return at ? t('eta.left', { left: dur(eta.remaining_sec), at }) : t('eta.leftNoAt', { left: dur(eta.remaining_sec) });
+  }
+  return eta.typical_sec != null ? t('eta.typical', { dur: dur(eta.typical_sec) }) : '';
 }
 
 /**

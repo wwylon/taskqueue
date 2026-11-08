@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from taskqueue import timeline_forecast as tf
 from taskqueue.db import open_db
 from tests.test_operator_features import _insert_run, _mk_task
 
-NOW = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
 
 
 def _hist(db, project, tid, secs):

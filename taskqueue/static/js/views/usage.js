@@ -171,7 +171,7 @@ function _setupUsageHover(canvas) {
   };
   function _hover(e) {
     if (!S.usageChart || !tt) return;
-    const {allSeries, tsSorted, maxY, COLORS, _pad, _chartW, _chartH} = S.usageChart;
+    const {allSeries, tsSorted, COLORS, _pad, _chartW, _chartH} = S.usageChart;
     if (!_pad) return;
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX - rect.left) * (canvas.width / rect.width);

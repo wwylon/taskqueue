@@ -1,12 +1,12 @@
 """Project-level CLI commands — extracted from cli.py."""
 
 from __future__ import annotations
+
 import os
 import sys
-
-from taskqueue._cli_helpers import EXIT_UNREACHABLE
 from pathlib import Path
-from taskqueue._cli_helpers import _db, _daemon_running, offline_sqlite_write_blocked
+
+from taskqueue._cli_helpers import EXIT_UNREACHABLE, _daemon_running, _db, offline_sqlite_write_blocked
 from taskqueue.waiting import print_wait_hint
 
 
@@ -25,9 +25,9 @@ def cmd_sync(
     projects: list[str] | None = None,
     force: bool = False,
 ) -> int:
-    from taskqueue.master_client import CLI_SYNC_TIMEOUT_SEC, via_master
     from taskqueue._cli_helpers import warn_enabled_terminal_summary
     from taskqueue.db import open_db
+    from taskqueue.master_client import CLI_SYNC_TIMEOUT_SEC, via_master
 
     body: dict = {}
     if projects:
@@ -92,7 +92,7 @@ def cmd_sync(
         if not project.queue_dir.is_dir():
             print(f"  {project.name}: queue_dir not found ({project.queue_dir}), skipping")
             continue
-        stats = _sync_project(db, project, home=home, force=force) or {}
+        stats = _sync_project(db, project, home=home, force=force)
         up = int(stats.get("upserted", 0))
         deleted = int(stats.get("deleted", 0))
         print(f"  {project.name}: upserted {up}, deleted {deleted}")
@@ -260,6 +260,90 @@ def cmd_unfreeze(home: Path, project: str) -> int:
     return 0
 
 
+def cmd_release(home: Path, project: str) -> int:
+    """F-240: drop the daemon's queue-dir watch so the project folder can be renamed."""
+    if not _project_exists(home, project):
+        return 1
+    from taskqueue._cli_helpers import EXIT_UNREACHABLE, master_mutation
+
+    resp, mode = master_mutation(home, f"/api/project/release/{project}")
+    if mode == "unreachable":
+        return EXIT_UNREACHABLE
+    if mode == "master":
+        if not resp or not resp.get("ok"):
+            print(f"Error: {(resp or {}).get('error', 'failed')}", file=sys.stderr)
+            return 1
+        print(f"Project {project} released (queue-dir watch dropped; safe to rename the folder).")
+        return 0
+    # Offline: nothing holds a watch.
+    print(f"Project {project}: no daemon running — nothing to release (rename is already free).")
+    return 0
+
+
+def cmd_relocate(home: Path, project: str, new_root: str) -> int:
+    """F-240: rewrite projects.yaml root + yaml_source after the folder has moved."""
+    if not _project_exists(home, project):
+        return 1
+    from taskqueue._cli_helpers import EXIT_UNREACHABLE, master_mutation
+
+    new_path = Path(new_root)
+    resp, mode = master_mutation(
+        home, f"/api/project/relocate/{project}", body={"new_root": str(new_path)}
+    )
+    if mode == "unreachable":
+        return EXIT_UNREACHABLE
+    if mode == "master":
+        if not resp or not resp.get("ok"):
+            print(f"Error: {(resp or {}).get('error', 'failed')}", file=sys.stderr)
+            return 1
+        before = resp.get("before") or {}
+        after = resp.get("after") or {}
+        print(
+            f"Project {project} relocated: {resp.get('old_root')} -> {resp.get('new_root')} "
+            f"(tasks {before.get('count')}->{after.get('count')}, "
+            f"yaml_source rewrites={resp.get('yaml_source_rewritten', 0)}, "
+            f"backup={resp.get('backup')})"
+        )
+        return 0
+    # Offline path: rewrite files + DB directly, then sync.
+    from taskqueue.db import open_db
+    from taskqueue.project_relocate import (
+        count_running,
+        relocate_project_files,
+        status_histogram,
+    )
+    from taskqueue.yaml_sync import _sync_project
+
+    db = open_db(_db(home))
+    try:
+        n_run = count_running(db, project)
+        if n_run:
+            print(f"Error: {n_run} task(s) running in {project}; stop them first", file=sys.stderr)
+            return 1
+        try:
+            summary = relocate_project_files(home, db, project, new_path)
+        except (KeyError, ValueError, FileNotFoundError, OSError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        proj = summary.pop("project_obj")
+        sync_stats = _sync_project(db, proj, home=home, force=True)
+        after = status_histogram(db, project)
+        after_n = sum(after.values())
+        before = summary["before"]
+        matched = before["count"] == after_n and before["status"] == after
+        print(
+            f"Project {project} relocated (offline): {summary['old_root']} -> {summary['new_root']} "
+            f"(tasks {before['count']}->{after_n}, yaml_source rewrites={summary['yaml_source_rewritten']}, "
+            f"backup={summary['backup']}, sync={sync_stats})"
+        )
+        if not matched:
+            print("Error: task count/status mismatch after relocate sync", file=sys.stderr)
+            return 1
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_retry_project(
     home: Path,
     project: str,
@@ -353,7 +437,7 @@ def cmd_retry_keys(home: Path, keys: list[str]) -> int:
 
 def cmd_validate(
     home: Path,
-    path: "str | None" = None,
+    path: str | None = None,
     *,
     fix: bool = False,
 ) -> int:
@@ -470,7 +554,7 @@ def _suite_set_enabled(home: Path, conn, suite_name: str, value: bool) -> int:
                 upsert_task(conn, parse_task_yaml(path, proj, allow_remote_notify=allow_remote))
                 n += 1
                 continue
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - one task failing is reported; the rest continue
                 print(f"[WARN] YAML patch failed for {row['project']}/{row['task_id']}: {exc}")
         conn.execute(
             "UPDATE tasks SET enabled=? WHERE project=? AND task_id=?",
@@ -571,7 +655,7 @@ def cmd_resync(
                 ok += 1
             else:
                 print(f"Worker '{wid}': {result.get('error', 'failed')}", file=sys.stderr)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any network error is reported per worker
             print(f"Worker '{wid}': {e}", file=sys.stderr)
     return 0 if ok == len(worker_ids) else 1
 

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
-import textwrap
 import time
 from pathlib import Path
 
 import pytest
 
-from taskqueue.config import Project
 from taskqueue._db_tasks import (
     get_all_tasks,
     get_queued_tasks,
@@ -19,6 +16,7 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
+from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
 from tests.helpers.wait import wait_until
@@ -165,7 +163,6 @@ def test_filter_by_project(tmp_path: Path) -> None:
 
 
 def test_run_success(tmp_path: Path) -> None:
-    from taskqueue.db import get_run, get_runs_for_task, insert_run
     from taskqueue.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
@@ -503,6 +500,7 @@ def test_config_roundtrip(tmp_path: Path) -> None:
 
 def test_load_projects_basic(tmp_path: Path) -> None:
     import yaml
+
     from taskqueue.config import load_projects
 
     reg = tmp_path / "projects.yaml"

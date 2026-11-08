@@ -7,6 +7,7 @@ in ``db.py``, so callers continue to use ``from taskqueue.db import X``.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -14,8 +15,10 @@ from typing import Any
 from taskqueue._db_tasks import get_task_status
 from taskqueue._time import _now  # noqa: F401  # canonical ISO timestamp helper
 
-
 # --- run records ---
+
+
+_log = logging.getLogger(__name__)
 
 
 def insert_run(
@@ -202,11 +205,14 @@ def finalize_run_and_task(
     stop_reason: str | None = None,
     only_if_running: bool = True,
     clear_task_error: bool = False,
+    clear_stop: bool = False,
 ) -> bool:
     """Atomically finalize a run and its task row. Returns False if run was not running.
 
-    ``clear_task_error`` (successful runs) also resets last_error_code / block_reason / the
-    cap auto-retry counter in the same transaction; otherwise ``last_error_code`` is stamped on the task.
+    ``clear_task_error`` (successful runs) also resets last_error_code / block_reason in the
+    same transaction; otherwise ``last_error_code`` is stamped on the task (block_reason kept,
+    or filled from the code's description). A completed run resets the cap auto-retry
+    counter. ``clear_stop`` clears ``stop_requested`` in the same transaction (F-221).
     """
     from taskqueue._db_tasks import _TERMINAL_STATUSES
 
@@ -231,39 +237,38 @@ def finalize_run_and_task(
         if not updated:
             conn.rollback()
             return False
-        now = _now()
-        if status in _TERMINAL_STATUSES:
-            cur = conn.execute(
-                "UPDATE tasks SET status = ?, updated_at = ?, finished_at = ? "
-                "WHERE project = ? AND task_id = ? AND status = 'running'",
-                (status, now, now, project, task_id),
-            )
-        else:
-            cur = conn.execute(
-                "UPDATE tasks SET status = ?, updated_at = ? WHERE project = ? AND task_id = ? AND status = 'running'",
-                (status, now, project, task_id),
-            )
-        if (cur.rowcount or 0) == 0:
+        from taskqueue._db_tasks import transition_task
+
+        if not transition_task(
+            conn, project, task_id, to=status, from_="running", finished=status in _TERMINAL_STATUSES
+        ):
             conn.rollback()
             return False
         if clear_task_error:
             conn.execute(
-                "UPDATE tasks SET last_error_code = NULL, block_reason = NULL, cap_auto_retry_count = 0 "
-                "WHERE project = ? AND task_id = ?",
+                "UPDATE tasks SET last_error_code = NULL, block_reason = NULL WHERE project = ? AND task_id = ?",
                 (project, task_id),
             )
         elif last_error_code:
+            from taskqueue.errors import describe
+
             conn.execute(
-                "UPDATE tasks SET last_error_code = ? WHERE project = ? AND task_id = ?",
-                (last_error_code, project, task_id),
+                "UPDATE tasks SET last_error_code = ?, block_reason = COALESCE(block_reason, ?) "
+                "WHERE project = ? AND task_id = ?",
+                (last_error_code, describe(last_error_code) or last_error_code, project, task_id),
+            )
+        if clear_stop:
+            conn.execute(
+                "UPDATE tasks SET stop_requested = 0 WHERE project = ? AND task_id = ?",
+                (project, task_id),
             )
         # G3: update predicted_duration_sec (p50 of last 10 wall_sec for this task).
         if status in _TERMINAL_STATUSES:
             _update_predicted_duration(conn, project, task_id)
         if status == "completed":
             conn.execute(
-                "UPDATE tasks SET completed_run_count = COALESCE(completed_run_count, 0) + 1 "
-                "WHERE project = ? AND task_id = ?",
+                "UPDATE tasks SET completed_run_count = COALESCE(completed_run_count, 0) + 1, "
+                "cap_auto_retry_count = 0 WHERE project = ? AND task_id = ?",
                 (project, task_id),
             )
         conn.commit()
@@ -275,6 +280,7 @@ def finalize_run_and_task(
 
 def lease_expiry_iso(ttl_sec: int | None = None) -> str:
     from datetime import timedelta
+
     from taskqueue.config import LEASE_TTL_SEC
 
     sec = LEASE_TTL_SEC if ttl_sec is None else ttl_sec
@@ -364,10 +370,19 @@ def reclaim_expired_leases(conn: sqlite3.Connection, *, heartbeat_sec: float = 3
         "AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
         (now,),
     ).fetchall()
+    # F-248: one workers lookup for all expired leases (was N+1).
+    worker_ids = sorted({str(r["worker_id"]) for r in rows if r["worker_id"]})
+    last_seen_by_worker: dict[str, str | None] = {}
+    if worker_ids:
+        marks = ",".join("?" * len(worker_ids))
+        for wr in conn.execute(
+            f"SELECT worker_id, last_seen FROM workers WHERE worker_id IN ({marks})",
+            worker_ids,
+        ).fetchall():
+            last_seen_by_worker[str(wr["worker_id"])] = wr["last_seen"]
     reclaimed: list[tuple[str, str]] = []
     for row in rows:
-        worker_row = conn.execute("SELECT last_seen FROM workers WHERE worker_id = ?", (row["worker_id"],)).fetchone()
-        last_seen = worker_row["last_seen"] if worker_row else None
+        last_seen = last_seen_by_worker.get(str(row["worker_id"]))
         code = (
             tqerr.INFRA_LEASE_EXPIRED_WORKER_ALIVE
             if worker_health(last_seen, heartbeat_sec=heartbeat_sec) == "online"
@@ -397,15 +412,21 @@ def reclaim_expired_leases(conn: sqlite3.Connection, *, heartbeat_sec: float = 3
             idem = bool(int(task_row["idempotent"] or 0)) if "idempotent" in keys else False
         semantics = resolve_execution_semantics(raw_sem, idempotent=idem)
         new_status = lost_attempt_task_status(semantics)
-        conn.execute(
-            # W0.7: also clear stop_requested so a re-queued task doesn't
-            # immediately stop again (permanent flap when lease expires under stop).
-            # F-144: clear stale block_reason so UI does not show a pre-lease capacity
-            # explanation after the task is requeued from lease loss.
-            "UPDATE tasks SET status = ?, stop_requested = 0, last_error_code = ?, "
-            "block_reason = NULL, updated_at = ? "
-            "WHERE project = ? AND task_id = ? AND status = 'running'",
-            (new_status, code, now, row["project"], row["task_id"]),
+        # W0.7: also clear stop_requested so a re-queued task doesn't immediately stop again
+        # (permanent flap when lease expires under stop). F-144: clear the stale block_reason so the
+        # UI does not show a pre-lease capacity explanation after a requeue from lease loss.
+        from taskqueue._db_tasks import transition_task
+
+        transition_task(
+            conn,
+            row["project"],
+            row["task_id"],
+            to=new_status,
+            from_="running",
+            now=now,
+            stop_requested=0,
+            last_error_code=code,
+            block_reason=None,
         )
         reclaimed.append((row["project"], row["task_id"]))
     if reclaimed:
@@ -415,6 +436,7 @@ def reclaim_expired_leases(conn: sqlite3.Connection, *, heartbeat_sec: float = 3
 
 def mark_stale_workers_offline(conn: sqlite3.Connection, offline_sec: int | None = None) -> int:
     from datetime import timedelta
+
     from taskqueue.config import WORKER_OFFLINE_SEC
 
     sec = WORKER_OFFLINE_SEC if offline_sec is None else offline_sec
@@ -456,8 +478,8 @@ def force_task(conn: sqlite3.Connection, project: str, task_id: str) -> str | No
         from taskqueue.sched_wake import wake_scheduler
 
         wake_scheduler()
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - scheduler wake is best-effort
+        _log.debug("scheduler wake failed", exc_info=True)
     return None
 
 
@@ -492,6 +514,7 @@ def _runs_filter_sql(
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
     status: str | None = None,
+    worker: str | None = None,
 ) -> tuple[str, list[Any]]:
     """Build WHERE clause + params for recent-runs queries (project + text search + status)."""
     where: list[str] = []
@@ -511,6 +534,12 @@ def _runs_filter_sql(
             "AND _sb.task_id = runs.task_id AND _sb.started_by = ?)"
         )
         params.append(started_by)
+    if worker:
+        if worker == "master":
+            where.append("(worker_id IS NULL OR worker_id = '')")
+        else:
+            where.append("worker_id = ?")
+            params.append(worker)
     raw = (search or "").strip()
     exact_run = raw.startswith("#")
     q = raw[1:].strip() if exact_run else raw
@@ -530,6 +559,29 @@ def _runs_filter_sql(
     return "WHERE " + " AND ".join(where), params
 
 
+def _history_order_by(sort: str, sort_dir: str) -> str:
+    """F-258: SQL ORDER BY for history pages (must match UI historySort fields)."""
+    direction = "ASC" if sort_dir == "asc" else "DESC"
+    field = (sort or "run_id").strip()
+    if field == "started_at":
+        return f"started_at {direction}, run_id DESC"
+    if field == "status":
+        # Approximate client STATUS_ORDER for stable paging.
+        return (
+            "CASE status "
+            "WHEN 'running' THEN 1 WHEN 'queued' THEN 2 WHEN 'interrupted' THEN 3 "
+            "WHEN 'failed' THEN 4 WHEN 'unknown' THEN 4 WHEN 'completed' THEN 5 "
+            "WHEN 'disabled' THEN 6 ELSE 99 END "
+            f"{direction}, run_id DESC"
+        )
+    if field == "duration":
+        return (
+            f"(julianday(COALESCE(finished_at, started_at)) - julianday(started_at)) "
+            f"{direction}, run_id DESC"
+        )
+    return f"run_id {direction}"
+
+
 def get_recent_runs(
     conn: sqlite3.Connection,
     limit: int = 50,
@@ -539,6 +591,9 @@ def get_recent_runs(
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
     status: str | None = None,
+    sort: str = "run_id",
+    sort_dir: str = "desc",
+    worker: str | None = None,
 ) -> list[sqlite3.Row]:
     # W0.3: filter by project in SQL before LIMIT so low-traffic projects aren't
     # starved by the global 100-row cap (previously filtered in Python after LIMIT).
@@ -548,9 +603,11 @@ def get_recent_runs(
         exclude_projects=exclude_projects,
         started_by=started_by,
         status=status,
+        worker=worker,
     )
+    order = _history_order_by(sort, sort_dir)
     return conn.execute(
-        f"SELECT * FROM runs {where_sql} ORDER BY run_id DESC LIMIT ? OFFSET ?",
+        f"SELECT * FROM runs {where_sql} ORDER BY {order} LIMIT ? OFFSET ?",
         (*params, limit, offset),
     ).fetchall()
 
@@ -563,6 +620,7 @@ def count_recent_runs(
     exclude_projects: list[str] | None = None,
     started_by: str | None = None,
     status: str | None = None,
+    worker: str | None = None,
 ) -> int:
     where_sql, params = _runs_filter_sql(
         project=project,
@@ -570,6 +628,7 @@ def count_recent_runs(
         exclude_projects=exclude_projects,
         started_by=started_by,
         status=status,
+        worker=worker,
     )
     row = conn.execute(f"SELECT COUNT(*) FROM runs {where_sql}", params).fetchone()
     return int(row[0]) if row else 0
@@ -631,8 +690,8 @@ def get_last_run_for_task(conn: sqlite3.Connection, project: str, task_id: str) 
 
 def get_last_runs_for_tasks(
     conn: sqlite3.Connection,
-    keys: "list[tuple[str, str]]",
-) -> "dict[tuple[str, str], sqlite3.Row]":
+    keys: list[tuple[str, str]],
+) -> dict[tuple[str, str], sqlite3.Row]:
     """Latest run row per (project, task_id); keys with no run are absent.
 
     Batched equivalent of :func:`get_last_run_for_task` for the admit loop.

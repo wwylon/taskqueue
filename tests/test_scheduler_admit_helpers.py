@@ -113,3 +113,14 @@ def test_p6_disabled_never_picks(monkeypatch):
     monkeypatch.setattr(scheduler, "pick_reservation_top", lambda *a: (_ for _ in ()).throw(AssertionError))
     top, key, *_ = scheduler._p6_reserve_top(None, [object()], None, 0, {}, None, {}, {}, None, 1.0, 5)
     assert top is None and key is None
+
+
+def test_resettle_budget_keeps_reservations():
+    """F-225: the admit_settle_sec re-seed must not erase holds and unsettled reservations."""
+    from types import SimpleNamespace
+
+    b = SimpleNamespace(ram_live=10.0, ram_reserved=10.0 + 4.0 + 6.0)  # live + P6 hold + new task est
+    scheduler._resettle_budget(b, 13.0, admitted_ram=6.0)  # new task allocated 3 of its 6
+    assert (b.ram_live, b.ram_reserved) == (13.0, 20.0)
+    scheduler._resettle_budget(b, 21.0, admitted_ram=0.0)  # 8 GiB of foreign growth
+    assert (b.ram_live, b.ram_reserved) == (21.0, 28.0)

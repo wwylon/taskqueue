@@ -63,6 +63,7 @@ class QueueTask:
     # Cap auto-retry (opt-in): re-queue checkpointable/idempotent tasks after wall_clock_cap.
     auto_retry_on_cap: bool = False
     max_auto_retries: int = 20  # 0 = unlimited; default 20
+    retry_backoff_sec: int = 0  # backoff base after a failed run (0 = off); see taskqueue.backoff
     data: dict | None = None  # D1: data.inputs / outputs / services block
     on_dependency_failure: str = "block"  # T-206: block | cancel
     negative_exit_codes: tuple[

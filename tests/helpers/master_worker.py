@@ -8,15 +8,17 @@ import socket
 import threading
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from http.client import parse_headers
 from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any
 
-from taskqueue.config import PROTOCOL_VERSION, Project
+from taskqueue._db_tasks import count_online_workers
+from taskqueue.config import PROTOCOL_VERSION
 from taskqueue.db import open_db
 from taskqueue.scheduler import (
     FilterContext,
@@ -24,7 +26,6 @@ from taskqueue.scheduler import (
     node_from_worker,
     should_schedule_locally,
 )
-from taskqueue._db_tasks import count_online_workers
 from taskqueue.web import make_handler
 
 

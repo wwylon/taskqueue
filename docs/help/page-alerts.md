@@ -31,7 +31,7 @@ guide_anchors:
 | **Any failure** | A run finishes with status `failed` (any project). |
 | **No more tasks to run** | Nothing is `queued` or `running`, and at least one run finished recently. Quiet for one hour after it fires. |
 | **Task frozen** | A running task has no stdout and no process CPU for ≥2× `frozen_threshold_sec` (same condition as the FROZEN badge). |
-| **Stopped by TaskQueue** | An automated stop (`stopped_by=tq`), not a human/`tq stop`. The popup includes **why** (for example RAM hard limit, wall-clock cap, frozen, dependency invalidated). |
+| **Stopped by TaskQueue** | An automated stop (`stopped_by=tq`), not a human/`tq stop`. The popup includes **why** (for example RAM hard limit, wall-clock cap, frozen, dependency invalidated). Human UI/CLI stop reasons appear on the run / drawer / `tq why`, not as this alert. |
 | **Unusual run** | A run finishes `completed` but its wall time, peak RAM or peak VRAM is above 1.5x the p95 of the last 20 completed runs of the same task (needs at least 5 earlier runs). The same runs get a ⚠ **Unusual** badge in History (hover for values). Toast colour: amber. |
 
 The sidebar badge counts enabled alerts that are **hot now** (queue idle, or a currently frozen run). One-shot events (failure, TQ stop) do not keep the badge lit after the toast.

@@ -7,11 +7,11 @@ from pathlib import Path
 
 import yaml
 
+from taskqueue._db_tasks import set_started_by, upsert_task
 from taskqueue.capacity import build_capacity
 from taskqueue.config import Project
 from taskqueue.db import open_db, parse_task_yaml
-from taskqueue._db_tasks import set_started_by, upsert_task
-from taskqueue.validate import validate_home, validate_file
+from taskqueue.validate import validate_home
 
 
 def test_build_capacity_shape(tmp_path: Path) -> None:

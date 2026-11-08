@@ -33,7 +33,7 @@ console.log('RESULT:' + JSON.stringify(r));
     )
     # empty name sorts first; project names are colored .proj-tag spans (stub textContent is direct text only)
     assert out["rows"] == [
-        {"label": "(ungrouped)", "tags": ["p2"]},
+        {"label": "filter.ungrouped", "tags": ["p2"]},
         {"label": "alpha", "tags": ["p1", "p2"]},
         {"label": "zeta", "tags": ["p1"]},
     ]
@@ -56,7 +56,7 @@ const el = doc.getElementById('groups-content');
 const r = { empty: el.innerHTML.includes('groups.noGroups') };
 g.fetch = async () => { throw new Error('boom'); };
 await g.loadGroups();
-r.err = el.innerHTML.includes('Error: Error: boom');
+r.err = el.innerHTML.includes('status.errorMsg');
 console.log('RESULT:' + JSON.stringify(r));
 """
     )

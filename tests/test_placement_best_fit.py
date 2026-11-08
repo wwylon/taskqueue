@@ -9,16 +9,15 @@ from pathlib import Path
 import pytest
 
 from taskqueue.db import open_db, set_config
-from taskqueue.scheduler import Node
 from taskqueue.placement import (
+    claiming_worker_is_best_fit,
     clear_remote_reservation,
     get_remote_reservation,
-    refresh_remote_reservation,
     score_assignment,
     select_task_for_node,
     task_wait_aged,
-    claiming_worker_is_best_fit,
 )
+from taskqueue.scheduler import Node
 from taskqueue.worker_api import claim_next_remote_task
 
 
@@ -113,7 +112,7 @@ def test_select_skips_when_peer_better():
         "requires_services": "[]",
         "enqueued_at": datetime.now(UTC).isoformat(),
     }
-    from taskqueue.scheduler import FilterContext, filter_task
+    from taskqueue.scheduler import FilterContext
 
     tight = Node(
         node_id="tight",

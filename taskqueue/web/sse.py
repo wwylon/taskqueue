@@ -2,21 +2,25 @@
 
 from __future__ import annotations
 
+import logging
+import threading
+import time as _time_mod
+from typing import Any
+
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
-    Path,
     _live_run_dict,
     _slim_status_payload,
     json,
 )
-from typing import Any
-import threading
-import time as _time_mod
 
 # T-201 / F-146: one status compute per DB path shared across SSE clients (≤2s TTL).
 _status_snap_lock = threading.Lock()
 _status_snap_by_db: dict[str, dict[str, Any]] = {}
 _STATUS_SNAP_TTL_SEC = 2.0
+
+
+_log = logging.getLogger(__name__)
 
 
 def clear_status_snapshot_cache() -> None:
@@ -58,6 +62,7 @@ class SSEMixin:
 
     def _stream_log_sse_body(self, run_id: int) -> None:
         import time as _time
+
         from taskqueue.db import get_run
 
         row = get_run(self._rconn(), run_id)
@@ -68,7 +73,9 @@ class SSEMixin:
         if not row or not row["log_path"]:
             self.send_error(404)
             return
-        log_path = Path(row["log_path"])
+        from taskqueue.logio import readable_log
+
+        log_path = readable_log(row["log_path"])
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -91,13 +98,13 @@ class SSEMixin:
             try:
                 if event_id is not None:
                     # The byte offset lets a reconnecting EventSource resume via Last-Event-ID.
-                    self.wfile.write(f"id: {event_id}\n".encode("utf-8"))
+                    self.wfile.write(f"id: {event_id}\n".encode())
                 for line in text.split("\n"):
                     if len(line) <= _SSE_LINE_CAP:
-                        self.wfile.write(f"data: {line}\n".encode("utf-8"))
+                        self.wfile.write(f"data: {line}\n".encode())
                     else:
                         for i in range(0, len(line), _SSE_LINE_CAP):
-                            self.wfile.write(f"data: {line[i : i + _SSE_LINE_CAP]}\n".encode("utf-8"))
+                            self.wfile.write(f"data: {line[i : i + _SSE_LINE_CAP]}\n".encode())
                 self.wfile.write(b"\n")
                 self.wfile.flush()
                 return True
@@ -235,7 +242,7 @@ class SSEMixin:
             # The reconnect hint rides on the first event (one write per frame).
             prefix = getattr(self, "_sse_prefix", "")
             self._sse_prefix = ""
-            payload = (f"{prefix}event: {event}\ndata: {json.dumps(data, default=str)}\n\n").encode("utf-8")
+            payload = (f"{prefix}event: {event}\ndata: {json.dumps(data, default=str)}\n\n").encode()
             self.wfile.write(payload)
             self.wfile.flush()
             return True
@@ -278,8 +285,8 @@ class SSEMixin:
                     from taskqueue.web.change_tracker import tracker_for
 
                     slim["data_version"] = tracker_for(self._db_path).token()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - data_version is optional
+                    _log.debug("data_version lookup failed", exc_info=True)
 
                 if first:
                     alive = self._sse_event("snapshot", slim)
@@ -328,7 +335,7 @@ class SSEMixin:
                 # Named events above carry transitions; keep one slim default payload.
                 if alive:
                     try:
-                        self.wfile.write(f"data: {json.dumps(slim, default=str)}\n\n".encode("utf-8"))
+                        self.wfile.write(f"data: {json.dumps(slim, default=str)}\n\n".encode())
                         self.wfile.flush()
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         alive = False

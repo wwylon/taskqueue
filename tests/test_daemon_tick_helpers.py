@@ -8,7 +8,11 @@ class FakeRun:
         self.stop_reason = None
         self.stopped = False
         self.coop = 0
+        self.cap_notes = 0
         self._elapsed = elapsed
+
+    def note_cap_reached(self):
+        self.cap_notes += 1
 
     def request_cooperative_suspend(self, home):
         self.coop += 1
@@ -261,3 +265,113 @@ def test_stop_request_logs_requester_once(monkeypatch, tmp_path, capsys):
     assert daemon._control_requester(tmp_path, "p", "t") == "ada via cli"
     write_control_action(tmp_path, "p", "u", "suspend")
     assert daemon._control_requester(tmp_path, "p", "u") is None
+
+
+def test_wall_clock_cap_requests_and_logs_once(monkeypatch, capsys):
+    """F-224: during the grace window a cap stop is requested and logged once, not every tick."""
+    import taskqueue.db as db
+
+    seen = []
+    monkeypatch.setattr(db, "request_stop", lambda conn, p, t: seen.append((p, t)))
+    run = FakeRun(elapsed=9)
+    runs = {("p", "t"): run}
+    _patch_task(monkeypatch, _Row(stop_requested=0, wall_clock_cap_sec=5))
+    daemon._enforce_stops_and_caps(_Conn(), runs, None, 10.0)
+    # Next ticks: the DB now says stop_requested=1 (set by request_stop).
+    _patch_task(monkeypatch, _Row(stop_requested=1, wall_clock_cap_sec=5))
+    for _ in range(3):
+        daemon._enforce_stops_and_caps(_Conn(), runs, None, 10.0)
+    assert seen == [("p", "t")] and not run.stopped and run.stop_reason == "wall_clock_cap"
+    assert capsys.readouterr().out.count("cooperative suspend requested") == 1
+    assert run.cap_notes == 1  # the task log gets one cap notice (the daemon owns the cap)
+
+
+def test_queue_dir_watches_follow_registry(tmp_path):
+    """F-226: projects added/removed after startup gain/lose their file watch."""
+    from taskqueue.config import Project
+
+    class Obs:
+        def __init__(self):
+            self.live = {}
+
+        def schedule(self, handler, path, recursive=False):
+            self.live[path] = object()
+            return path
+
+        def unschedule(self, watch):
+            del self.live[watch]
+
+    def proj(name):
+        q = tmp_path / name / "q"
+        q.mkdir(parents=True)
+        return Project(name=name, root=tmp_path / name, queue_dir=q)
+
+    obs = Obs()
+    w = daemon._QueueDirWatches(obs, handler=None)
+    a, b = proj("a"), proj("b")
+    assert w.update({"a": a}) == 1
+    assert w.update({"a": a, "b": b}) == 2 and str(b.queue_dir) in obs.live
+    assert w.update({"b": b}) == 1 and str(a.queue_dir) not in obs.live
+
+
+def test_queue_dir_release_survives_update(tmp_path):
+    """F-240: release unwatches and update/resync must not re-watch until clear_release."""
+    from taskqueue.config import Project
+
+    class Obs:
+        def __init__(self):
+            self.live = {}
+
+        def schedule(self, handler, path, recursive=False):
+            self.live[path] = object()
+            return path
+
+        def unschedule(self, watch):
+            del self.live[watch]
+
+    def proj(name):
+        q = tmp_path / name / "q"
+        q.mkdir(parents=True)
+        return Project(name=name, root=tmp_path / name, queue_dir=q)
+
+    obs = Obs()
+    w = daemon._QueueDirWatches(obs, handler=None)
+    a, b = proj("a"), proj("b")
+    w.update({"a": a, "b": b})
+    assert w.release("a", {"a": a, "b": b}) is True
+    assert str(a.queue_dir) not in obs.live
+    assert w.is_released("a")
+    # Simulate _resync calling update with the same registry — must stay unwatched.
+    assert w.update({"a": a, "b": b}) == 1
+    assert str(a.queue_dir) not in obs.live and str(b.queue_dir) in obs.live
+    w.clear_release("a")
+    assert w.update({"a": a, "b": b}) == 2
+    assert str(a.queue_dir) in obs.live
+
+
+def test_resync_calls_registry_hook(tmp_path, monkeypatch):
+    import threading
+
+    seen = []
+    monkeypatch.setattr(daemon, "load_projects", lambda home: {"x": 1})
+    monkeypatch.setattr(daemon, "_sync_project", lambda *a, **k: None)
+    env = SimpleNamespace(
+        home=tmp_path, conn=None, sync_requested=threading.Event(), on_registry_change=lambda p: seen.append(dict(p))
+    )
+    st = daemon.TickState({})
+    daemon._resync(env, st)
+    assert seen == [{"x": 1}]
+
+
+def test_usage_snapshot_bucket_is_the_hour_samples_were_taken(monkeypatch):
+    """F-227: usage gathered in hour H lands in bucket H, flushed once H has rolled over."""
+    u = daemon._UsageAccumulator()
+    conn = _usage_conn()
+    u.last_flush = 1.0  # past the start-up flush
+    monkeypatch.setattr(daemon.time, "time", lambda: 7200.0 + 100)  # hour bucket 7200
+    u.accumulate({("p", "t"): UsageRun()}, 5.0)
+    u.flush_if_due(conn, {}, 50.0, wall=7200.0 + 3000)  # same hour: no flush
+    assert conn.execute("SELECT COUNT(*) FROM usage_snapshot").fetchone()[0] == 0
+    u.flush_if_due(conn, {}, 60.0, wall=10800.0 + 5)  # next hour: flush into 7200
+    assert [r[0] for r in conn.execute("SELECT ts FROM usage_snapshot")] == [7200]
+    assert u.op_since is None

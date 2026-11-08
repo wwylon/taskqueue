@@ -64,7 +64,7 @@ console.log('RESULT:' + JSON.stringify(r));
     assert "F1" not in out["health"][1]  # frozen projects are not shown in the pill
     assert out["health"][2:] == [False, False, True]
     assert out["badge"] == ["2", False]
-    assert out["version"] == "tq v9.9 · db v7 · abc"
+    assert out["version"] == "app.versionBadge · abc"
     assert out["fallbackTitle"] == "tq 0/0/5 proj"
 
 
@@ -165,6 +165,7 @@ r.ignored = !!(S.status && S.status.hello === 1);
 S.sseState = 'error';
 es.emit(JSON.stringify({ running: [{ project: 'a', task_id: 'x', run_id: 5 }], config: { max_running_tasks: 2 },
   status_counts: { running: 1, queued: 0, failed: 0 }, projects: ['a'] }));
+g.fireTimers(0); await g.flush();                                    // F-256: SSE DOM work is rAF-batched
 r.state = [S.status.running.length, S.cfg.max_running_tasks, S.projects, S.sseState];
 r.dot = doc.getElementById('sse-dot').title;
 r.pill = doc.getElementById('daemon-pill').textContent;
@@ -200,9 +201,43 @@ S.lastDataVersion = 1;
 S.queue = [{ project: 'a', task_id: 'x', status: 'running', priority: 50, run_id: 5 }];
 g.timers.splice(0);
 es.emit(JSON.stringify(snap));
+g.fireTimers(0); await g.flush();                                    // F-256: apply SSE UI via rAF
 const waits = g.timers.filter(t => t.live).map(t => t.ms);
 console.log('RESULT:' + JSON.stringify({ waits, min: waits.length ? Math.min(...waits) : null }));
 """
     )
     assert out["waits"], out
     assert out["min"] >= 1000  # throttled path (not forceSoon 400)
+
+
+def test_hidden_tab_closes_sse_after_grace_and_reconnects_on_show():
+    out = run_js(
+        EV
+        + """
+const { g, doc, S } = await setup({ app: true });
+await g.flush();
+const r = {};
+const streams = () => g.eventSources.filter(e => e.url.startsWith('/api/events'));
+const es = streams()[0]; es.onopen();
+doc.hidden = true; fire(doc, 'visibilitychange', doc);
+const pause = g.timers.filter(t => t.live && t.ms === 120000 && t.fn.name === '_pauseSSE');
+r.armed = pause.length;
+fire(doc, 'visibilitychange', doc);                   // a second hidden event does not stack timers
+r.armedOnce = g.timers.filter(t => t.live && t.fn.name === '_pauseSSE').length;
+pause[0].live = false; pause[0].fn();                  // grace elapsed while still hidden
+r.paused = [es.closed, S.sseState, doc.getElementById('sse-dot').title];
+doc.hidden = false; fire(doc, 'visibilitychange', doc);
+await g.flush();
+r.reopened = [streams().length, streams()[1] && !streams()[1].closed];
+// shown again before the grace ends: the pending close is cancelled
+const es2 = streams()[1]; es2.onopen();
+doc.hidden = true; fire(doc, 'visibilitychange', doc);
+doc.hidden = false; fire(doc, 'visibilitychange', doc);
+r.cancelled = [g.timers.filter(t => t.live && t.fn.name === '_pauseSSE').length, es2.closed, S.sseState];
+console.log('RESULT:' + JSON.stringify(r));
+"""
+    )
+    assert out["armed"] == 1 and out["armedOnce"] == 1
+    assert out["paused"] == [True, "paused", "sse.paused"]
+    assert out["reopened"] == [2, True]
+    assert out["cancelled"] == [0, False, "live"]

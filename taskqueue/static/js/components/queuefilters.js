@@ -1,6 +1,7 @@
 // Queue toolbar: saved filters, status chips, row selection, bulk actions, retry-all and CSV/JSON export.
 // Uses app.js globals at call time (i18n, refresh, renderQueue, openConfirm/openAlert/showToast, ...).
 import { S } from '../core/state.js';
+import { _isRestartStatus } from '../core/nav.js';
 
 // v3 queue: saved filters, bulk actions, export, retry-all, empty state
 const _SAVED_FILTER_SEEDS = [
@@ -151,13 +152,13 @@ export function tqRenderFilterSummary() {
       + `</span>`
     );
   };
-  if (S.mineOnly && S.operator) add(i18n.t('filter.mine') || 'mine', [['tqSetMineScope', false]]);
-  if (S.queueActiveOnly) add(i18n.t('filter.active') || 'active', [['setProject', 'all']]);
+  if (S.mineOnly && S.operator) add(i18n.t('filter.mine'), [['tqSetMineScope', false]]);
+  if (S.queueActiveOnly) add(i18n.t('filter.active'), [['setProject', 'all']]);
   if (S.selectedProject && S.selectedProject !== 'all') {
-    add((i18n.t('filter.labelProject') || 'project') + ' ' + S.selectedProject, [['setProject', 'all']]);
+    add((i18n.t('filter.labelProject')) + ' ' + S.selectedProject, [['setProject', 'all']]);
   }
   if (S.queueStatusFilter && S.queueStatusFilter !== 'all') {
-    add((i18n.t('filter.labelStatus') || 'status') + ' ' + S.queueStatusFilter,
+    add((i18n.t('filter.labelStatus')) + ' ' + S.queueStatusFilter,
       [['setQueueFilter', 'all', null]]);
   }
   if (S.tagFilter) add('tag ' + S.tagFilter, [['toggleTagFilter', S.tagFilter]]);
@@ -167,7 +168,7 @@ export function tqRenderFilterSummary() {
   if (!chips.length) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = chips.join('')
-    + `<button type="button" class="cfg-btn fs-clear" data-click="${tqAct([['tqClearQueueFilter']])}">${escHtml(i18n.t('queue.clearAllFilters') || 'Clear all')}</button>`;
+    + `<button type="button" class="cfg-btn fs-clear" data-click="${tqAct([['tqClearQueueFilter']])}">${escHtml(i18n.t('queue.clearAllFilters'))}</button>`;
 }
 export function tqSyncQueueChrome() {
   const btn = document.getElementById('retry-all-failed-btn');
@@ -274,8 +275,8 @@ export async function tqBulkAction(kind) {
   };
   const msg = labels[kind] || `Apply to ${n} tasks?`;
   const confirmLabel = kind === 'stop'
-    ? (i18n.t('btn.stop') || 'Stop')
-    : (i18n.t('btn.retry') || 'OK');
+    ? (i18n.t('btn.stop'))
+    : (i18n.t('btn.retry'));
   openConfirm(msg, () => _tqBulkActionRun(kind), { confirmLabel });
 }
 async function _tqBulkActionRun(kind) {

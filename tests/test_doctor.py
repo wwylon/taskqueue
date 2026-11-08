@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
 from pathlib import Path
+
+import pytest
 
 from taskqueue import __version__
 from taskqueue.cli import cmd_doctor

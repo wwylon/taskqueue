@@ -1,0 +1,10 @@
+task_id: train
+description: Pipeline step 2 (depends_on preprocess)
+command: python
+args: [scripts/train.py]
+depends_on: [preprocess]
+enabled: false
+priority: 45
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25

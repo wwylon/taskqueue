@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 
+from taskqueue import sched_wake
 from taskqueue._db_tasks import RETRYABLE_STATUSES, retry_task
 from taskqueue.db import open_db
 from taskqueue.models import STATUS_RUNNING
-from taskqueue import sched_wake
 
 
 def _insert_task(db, task_id: str, *, status: str = "queued") -> None:

@@ -18,7 +18,6 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-
 PROVIDER_GIT_PATCH = "git_patch"
 PROVIDER_BUNDLE = "bundle"
 PROVIDER_PROJECT_ROOT = "project_root"
@@ -374,7 +373,7 @@ def gc_orphan_packages(home: Path, db_path: Path) -> int:
             " AND code_package IS NOT NULL"
         ).fetchall()
         conn.close()
-    except Exception:
+    except _sqlite3.Error:
         return 0
 
     live_patch_hashes: set[str] = set()
@@ -384,7 +383,7 @@ def gc_orphan_packages(home: Path, db_path: Path) -> int:
             ph = pkg.get("patch_hash") or ""
             if ph:
                 live_patch_hashes.add(ph)
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             pass
 
     import time as _time

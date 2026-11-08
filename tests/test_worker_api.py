@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import json
-import sqlite3
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-
-import pytest
 
 from taskqueue.db import open_db
 from taskqueue.worker_api import claim_next_remote_task
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -129,6 +125,27 @@ def test_claim_skips_wrong_project(tmp_path: Path):
     worker = _insert_worker(db, projects=["proj"])  # not "other"
     result = claim_next_remote_task(db_path, worker, lambda: {"proj": None})
     assert result["task"] is None
+
+
+def test_claim_stopped_dispatch_remote_f244(tmp_path: Path):
+    """F-244: hard-stop auto-restart — workers must claim status=stopped + dispatch:remote."""
+    db_path = tmp_path / "q.db"
+    db = open_db(db_path)
+    _insert_task(db, status="stopped", dispatch="remote")
+    now = datetime.now(UTC).isoformat()
+    db.execute(
+        "INSERT INTO runs (project, task_id, started_at, finished_at, status, exit_code) "
+        "VALUES ('proj', 'T1', ?, ?, 'stopped', NULL)",
+        (now, now),
+    )
+    db.commit()
+    worker = _insert_worker(db)
+    result = _claim(db_path, worker)
+    assert result["task"] is not None
+    assert result["task"]["task_id"] == "T1"
+    assert result.get("use_resume") is True
+    row = db.execute("SELECT status FROM tasks WHERE task_id='T1'").fetchone()
+    assert row["status"] == "running"
 
 
 # ---------------------------------------------------------------------------

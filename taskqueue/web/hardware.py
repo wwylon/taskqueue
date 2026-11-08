@@ -78,23 +78,23 @@ def _get_hardware_data() -> dict:
             result["swap_total_gib"] = round(sw.total / (1024**3), 2)
             result["swap_used_gib"] = round(sw.used / (1024**3), 2)
             result["swap_pct"] = sw.percent
-        except Exception:
+        except (OSError, AttributeError):
             pass
         try:
             temps = psutil.sensors_temperatures()  # type: ignore[attr-defined]
             if temps:
-                for _name, entries in temps.items():
+                for entries in temps.values():
                     if entries:
                         result["cpu_temp_c"] = round(entries[0].current, 1)
                         break
-        except Exception:
+        except (OSError, AttributeError):
             pass
     except ImportError:
         pass
 
     try:
         result["cpu_model"] = platform.processor() or None
-    except Exception:
+    except OSError:
         pass
 
     try:
@@ -127,7 +127,7 @@ def _get_hardware_data() -> dict:
                 for bit, label in _THROTTLE.items():
                     if mask & bit:
                         throttle_reasons.append(label)
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             gpu_entry: dict[str, Any] = {
                 "name": name,
@@ -141,11 +141,11 @@ def _get_hardware_data() -> dict:
             try:
                 gpu_entry["power_draw_w"] = round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000.0, 1)
                 gpu_entry["power_limit_w"] = round(pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000.0, 1)
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 gpu_entry["fan_speed_pct"] = pynvml.nvmlDeviceGetFanSpeed(handle)
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 gpu_entry["clock_graphics_mhz"] = pynvml.nvmlDeviceGetClockInfo(handle, pynvml.NVML_CLOCK_GRAPHICS)
@@ -155,36 +155,36 @@ def _get_hardware_data() -> dict:
                     handle, pynvml.NVML_CLOCK_GRAPHICS
                 )
                 gpu_entry["clock_max_mem_mhz"] = pynvml.nvmlDeviceGetMaxClockInfo(handle, pynvml.NVML_CLOCK_MEM)
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 pcie = pynvml.nvmlDeviceGetCurrPcieLinkGeneration(handle)
                 pcie_w = pynvml.nvmlDeviceGetCurrPcieLinkWidth(handle)
                 gpu_entry["pcie_gen"] = pcie
                 gpu_entry["pcie_width"] = pcie_w
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 cc = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
                 gpu_entry["compute_capability"] = f"{cc[0]}.{cc[1]}"
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 serial = pynvml.nvmlDeviceGetSerial(handle)
                 if serial and isinstance(serial, bytes):
                     serial = serial.decode("utf-8", errors="replace")
                 gpu_entry["driver_version"] = pynvml.nvmlSystemGetDriverVersion()
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             try:
                 cuda_ver = pynvml.nvmlSystemGetCudaDriverVersion()
                 gpu_entry["cuda_version"] = f"{cuda_ver // 1000}.{(cuda_ver % 1000) // 10}"
-            except Exception:
+            except (pynvml.NVMLError, AttributeError):
                 pass
             result["gpu"].append(gpu_entry)
     except ImportError:
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - NVML init fails in many ways
         result["gpu_error"] = str(e)
         print(f"[tq] GPU init failed: {e}", flush=True)
 

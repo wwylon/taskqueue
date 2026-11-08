@@ -1,0 +1,11 @@
+task_id: dummy-hold
+description: Cooperative hold via tq_client.maybe_suspend (idles until until)
+command: python
+args: ["scripts/dummy_hold.py"]
+wall_clock_cap_sec: 300
+priority: 55
+enabled: false
+resources:
+  cpu_cores: 1
+  ram_gib: 0.25
+dispatch: local

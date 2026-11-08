@@ -23,7 +23,7 @@ export function tqPatchSystemAlert(key, field, checked) {
 export function tqRequestNotifPermission() {
   if (!('Notification' in window)) { showToast('Browser notifications not supported', 'err'); return; }
   Notification.requestPermission().then(p => {
-    showToast(p === 'granted' ? (i18n.t('alerts.notifGranted') || 'Notifications enabled') : (i18n.t('alerts.notifDenied') || 'Permission denied'), p === 'granted' ? 'ok' : 'err');
+    showToast(p === 'granted' ? (i18n.t('alerts.notifGranted')) : (i18n.t('alerts.notifDenied')), p === 'granted' ? 'ok' : 'err');
     loadAlerts();
   });
 }

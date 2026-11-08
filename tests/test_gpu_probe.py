@@ -290,7 +290,9 @@ def test_vram_probe_timeout_is_not_service_vram(monkeypatch) -> None:
             raise TimeoutError("timed out")
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(_ollama_yaml())
     assert code == tqerr.BLOCK_SERVICE
     assert "timed out" in reason
@@ -308,7 +310,9 @@ def test_vram_probe_timeout_does_not_call_detect_system(monkeypatch) -> None:
             raise TimeoutError("timed out")
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(_ollama_yaml())
     assert code == tqerr.BLOCK_SERVICE
     assert "timed out" in reason
@@ -322,7 +326,9 @@ def test_vram_shortfall_still_service_vram(monkeypatch) -> None:
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(),
         system_info={"gpu_vram_total_gib": 8.0, "gpus": [], "gpu_probe_stale": False},
@@ -340,7 +346,9 @@ def test_service_vram_uses_smi_free_when_fresh(monkeypatch) -> None:
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(min_vram_free_gib=4.0),
         system_info={
@@ -375,7 +383,9 @@ def test_vram_probe_skipped_when_device_has_headroom(monkeypatch) -> None:
             raise AssertionError("/api/ps should be skipped when nvidia-smi shows headroom")
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(),
         system_info={
@@ -408,7 +418,9 @@ def test_resident_ok_models_passes_when_pinned_model_loaded(monkeypatch) -> None
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
         system_info={
@@ -439,7 +451,9 @@ def test_resident_ok_models_blocks_wrong_model(monkeypatch) -> None:
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
         system_info={"gpu_vram_total_gib": 8.0, "gpus": [], "gpu_probe_stale": False},
@@ -471,7 +485,9 @@ def test_resident_ok_models_blocks_mixed_residents(monkeypatch) -> None:
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
         system_info={"gpu_vram_total_gib": 8.0, "gpus": [], "gpu_probe_stale": False},
@@ -503,7 +519,9 @@ def test_vram_probe_uses_system_info_total_not_detect_system(monkeypatch) -> Non
             return _HttpResp(body)
         return _HttpResp()
 
-    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    monkeypatch.setattr(
+        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+    )
     # Stale snapshot so we do not skip /api/ps; total still comes from system_info.
     reason, code = _check_services(
         _ollama_yaml(),

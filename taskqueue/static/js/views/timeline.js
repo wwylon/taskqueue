@@ -58,16 +58,16 @@ export function _renderTimeline(data, hours) {
   const staleEl = document.getElementById('tl-stale');
   if (staleEl) {
     staleEl.hidden = !_tlStale;
-    staleEl.textContent = i18n.t('tl.stale') || 'stale — retrying';
+    staleEl.textContent = i18n.t('tl.stale');
   }
   if (!host || !data) return;
   const bars = data.bars || [];
   _showPageEmpty('tl-empty', 'tl-scroll', bars.length === 0);
   if (bunchEl) {
     if (data.bunch_end_at && bars.length) {
-      const tpl = i18n.t('tl.drainedAt') || 'Queue drained ~{time}';
+      const tpl = i18n.t('tl.drainedAt');
       let txt = tpl.replace('{time}', _tlAt(data.bunch_end_at, data.window_start));
-      if (data.truncated) txt += ' · ' + (data.total_bars + ' ' + (i18n.t('tl.tasks') || 'tasks'));
+      if (data.truncated) txt += ' · ' + (data.total_bars + ' ' + (i18n.t('tl.tasks')));
       bunchEl.textContent = txt;
       bunchEl.hidden = false;
     } else {
@@ -94,7 +94,7 @@ export function _renderTimeline(data, hours) {
     svg += `<line class="tl-grid" x1="${x.toFixed(1)}" y1="${hdrH - 2}" x2="${x.toFixed(1)}" y2="${h - 4}"/>`;
     if (x - labelW > 36) svg += `<text class="tl-axis" x="${x.toFixed(1)}" y="14" text-anchor="middle">${escHtml(lbl)}</text>`;
   });
-  svg += `<text class="tl-axis tl-now" x="${labelW}" y="14" text-anchor="start">${escHtml((i18n.t('tl.axisNow') || 'now') + ' ' + _tlClock(new Date(startMs)))}</text>`;
+  svg += `<text class="tl-axis tl-now" x="${labelW}" y="14" text-anchor="start">${escHtml((i18n.t('tl.axisNow')) + ' ' + _tlClock(new Date(startMs)))}</text>`;
   svg += `<line class="tl-grid tl-nowline" x1="${labelW}" y1="${hdrH - 2}" x2="${labelW}" y2="${h - 4}"/>`;
   svg += `<line class="tl-grid" x1="${labelW}" y1="${hdrH - 2}" x2="${labelW + plotW}" y2="${hdrH - 2}"/>`;
   bars.forEach((b, i) => {

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>taskqueue — local resource-aware job queue</title>
+  <meta name="description" content="Local resource-aware task queue: YAML jobs, daemon, CLI, web UI, and MCP. CPU/RAM/GPU admission on your machines.">
+  <meta property="og:title" content="taskqueue">
+  <meta property="og:description" content="Local jobs · agents · workers — resource-aware YAML task queue">
+  <meta property="og:image" content="https://wwylon.github.io/taskqueue/social.jpg">
+  <meta property="og:url" content="https://wwylon.github.io/taskqueue/">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="canonical" href="https://wwylon.github.io/taskqueue/">
+  <style>
+    :root {
+      --bg: #0f1419;
+      --fg: #e8eef2;
+      --muted: #9aa8b5;
+      --teal: #2ec4b6;
+      --amber: #e9a821;
+      --card: #1a222c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .brand img { width: 48px; height: 48px; border-radius: 10px; }
+    .brand h1 {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand h1 span { color: var(--teal); }
+    .tag {
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+      font-size: 1.05rem;
+    }
+    .hero {
+      width: 100%;
+      border-radius: 12px;
+      display: block;
+      margin-bottom: 1.75rem;
+      border: 1px solid #2a3540;
+    }
+    .lead {
+      font-size: 1.15rem;
+      max-width: 38rem;
+      margin: 0 0 1.5rem;
+    }
+    .cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+    .cta a {
+      display: inline-block;
+      padding: 0.65rem 1.1rem;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .cta .primary {
+      background: var(--teal);
+      color: #0a1214;
+    }
+    .cta .secondary {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid #33404d;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 40rem;
+    }
+    .note a { color: var(--amber); }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid #2a3540;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    footer a { color: var(--teal); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">
+      <img src="icon.png" width="48" height="48" alt="">
+      <h1>task<span>queue</span></h1>
+    </div>
+    <p class="tag">local jobs · agents · workers</p>
+    <img class="hero" src="hero.jpg" width="1600" height="900" alt="YAML jobs enter a CPU/RAM/GPU admission gate, then run locally or on workers">
+    <p class="lead">
+      Run long YAML jobs on your own machines without melting them.
+      One daemon, <code>tq</code> CLI, web UI, and MCP for coding agents —
+      with CPU, RAM, and GPU admission.
+    </p>
+    <div class="cta">
+      <a class="primary" href="https://github.com/wwylon/taskqueue#install">Install from GitHub</a>
+      <a class="secondary" href="https://github.com/wwylon/taskqueue/blob/main/docs/mcp.md">Wire MCP for agents</a>
+      <a class="secondary" href="https://github.com/wwylon/taskqueue/blob/main/docs/README.md">Documentation hub</a>
+    </div>
+    <p class="note">
+      Not Celery, Kubernetes, or CI.
+      Not the 2011 AMQP project
+      <a href="https://github.com/rojkov/taskqueue">rojkov/taskqueue</a>.
+      We do not phone home —
+      see <a href="https://github.com/wwylon/taskqueue/blob/main/docs/security.md#privacy--telemetry">privacy</a>.
+    </p>
+    <footer>
+      MIT · <a href="https://github.com/wwylon/taskqueue">github.com/wwylon/taskqueue</a>
+      · Maintainer: enable Pages on branch <code>main</code>, folder <code>/site</code>,
+      then set the repo homepage to this URL. Social preview: upload
+      <code>docs/assets/social.jpg</code> in repo Settings.
+      Search Console: verify <code>wwylon.github.io/taskqueue/</code> and inspect this page.
+    </footer>
+  </main>
+</body>
+</html>

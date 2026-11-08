@@ -2,6 +2,8 @@
 
 Cheap dummy tasks for dogfooding and CI. No CUDA in the default set.
 
+**Authoring standard:** use [`tq_client`](../../clients/README.md) — see [task-script-cookbook](../../docs/agents/task-script-cookbook.md). Progress/resume/suspend/hold scripts in this tree import the client.
+
 ## Register
 
 ```powershell
@@ -26,8 +28,9 @@ uv run tq sync
 
 | task_id | Purpose |
 |---------|---------|
-| `dummy-progress` | Happy path `(N%)` |
-| `dummy-resume` | Checkpoint + `resume_args` |
+| `dummy-progress` | Happy path `(N%)` via `tq_client` |
+| `dummy-resume` | Checkpoint + `resume_args` via `tq_client` |
+| `dummy-hold` | Cooperative hold idle via `tq_client` |
 | `dummy-deps-a` / `dummy-deps-b` | `depends_on` chain |
 | `dummy-pipe-a` → `dummy-pipe-check` → `dummy-pipe-b` | Canonical produce→check→consume pipe (`group: tqdemo/pipe`). Enable all three, then `tq group retry tqdemo tqdemo/pipe` or `tq retry tqdemo/dummy-pipe-a --downstream` to re-run the bunch. |
 | `dummy-exclusive` | Exclusive gating |

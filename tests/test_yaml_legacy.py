@@ -18,7 +18,6 @@ from taskqueue.yaml_legacy import (
     suggest_unknown_key,
 )
 
-
 _KNOWN = frozenset(
     {
         "task_id",

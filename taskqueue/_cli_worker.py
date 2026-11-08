@@ -1,9 +1,11 @@
 """Worker and capacity CLI commands — extracted from cli.py."""
 
 from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
+
 from taskqueue._cli_helpers import _db
 
 
@@ -64,7 +66,7 @@ def cmd_worker_list(home: Path) -> int:
                 mt = tuple(int(x) for x in _mv.split(".")[:3])
                 if wt < mt:
                     mismatch = " !"
-            except Exception:
+            except (KeyError, ValueError, AttributeError, IndexError, TypeError):
                 pass
         if ws is not None and int(ws) < _ms:
             mismatch = " !!"
@@ -92,7 +94,7 @@ def cmd_worker_sync(home: Path, worker_id: str, *, master_url: str | None = None
         else:
             print(f"Error: {result.get('error', 'unknown')}", file=sys.stderr)
             return 1
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any network error is reported to the user
         print(f"Failed to contact master at {master_url}: {e}", file=sys.stderr)
         return 1
 
@@ -130,9 +132,10 @@ def cmd_worker_config_master(
     port: int | None = None,
 ) -> int:
     """Emit a join YAML for transferring to a worker machine."""
+    import secrets
+
     from taskqueue.db import get_config, open_db, set_config
     from taskqueue.worker_join import build_join_payload, write_join_file
-    import secrets
 
     host = (host or "").strip()
     if not host:
@@ -269,7 +272,7 @@ def cmd_worker_doctor(home: Path, *, master_url: str | None = None) -> int:
 
             conf = yaml.safe_load(conf_path.read_text(encoding="utf-8")) or {}
             url = str(conf.get("master_url") or "").rstrip("/")
-        except Exception as exc:
+        except (OSError, AttributeError, yaml.YAMLError) as exc:
             print(f"worker.yaml parse error: {exc}")
             errors += 1
     print(f"master_url: {url or '(none)'}")
@@ -280,7 +283,7 @@ def cmd_worker_doctor(home: Path, *, master_url: str | None = None) -> int:
                 req.add_header("Authorization", f"Bearer {token}")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 print(f"master reachability: OK HTTP {resp.status}")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reachability check reports any failure
             print(f"master reachability: FAIL ({exc})")
             errors += 1
     projects = load_projects(home)
@@ -303,7 +306,7 @@ def cmd_worker_doctor(home: Path, *, master_url: str | None = None) -> int:
         print(f"nvidia-smi: {'yes' if shutil.which('nvidia-smi') else 'no'}")
         print(f"git: {'yes' if shutil.which('git') else 'no'}")
         print(f"uv: {'yes' if shutil.which('uv') else 'no'}")
-    except Exception:
+    except OSError:
         pass
     print("doctor: " + ("FAIL" if errors else "OK"))
     return 1 if errors else 0
@@ -412,8 +415,9 @@ def cmd_worker_rotate_credential(
     """C1: generate a new per-worker token and rotate it on the master."""
     import hashlib
     import secrets
+
     from taskqueue._cli_helpers import _db
-    from taskqueue.db import open_db, get_config
+    from taskqueue.db import get_config, open_db
 
     worker_yaml_p = home / "worker.yaml"
     if not worker_yaml_p.is_file():
@@ -423,7 +427,7 @@ def cmd_worker_rotate_credential(
         import yaml
 
         wconf = yaml.safe_load(worker_yaml_p.read_text(encoding="utf-8")) or {}
-    except Exception as e:
+    except (OSError, yaml.YAMLError) as e:
         print(f"Failed to read worker.yaml: {e}", file=sys.stderr)
         return 1
 
@@ -462,7 +466,7 @@ def cmd_worker_rotate_credential(
             },
             token=token,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any network error is reported to the user
         print(f"Failed to contact master: {e}", file=sys.stderr)
         return 1
     if not result.get("ok"):
@@ -475,7 +479,7 @@ def cmd_worker_rotate_credential(
         _tmp_yaml = worker_yaml_p.with_name(worker_yaml_p.name + ".tmp")
         _tmp_yaml.write_text(_yaml2.dump(wconf, default_flow_style=False), encoding="utf-8")
         os.replace(_tmp_yaml, worker_yaml_p)
-    except Exception as e:
+    except (OSError, _yaml2.YAMLError) as e:
         print(f"Failed to write worker.yaml: {e}", file=sys.stderr)
         return 1
     print(f"Credential rotated successfully for worker '{worker_id}'.")

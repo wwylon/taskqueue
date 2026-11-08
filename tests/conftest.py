@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.helpers.master_worker import make_handler_env, seed_master_lease
+from tests.helpers.master_worker import make_handler_env
 
 
 @pytest.fixture

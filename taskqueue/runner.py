@@ -6,39 +6,40 @@ cwd = their project's root.
 """
 
 from __future__ import annotations
-from taskqueue.jsonutil import json_list
 
 import collections
 import json
+import logging
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any
-import logging
 
 import psutil
+
+from taskqueue.jsonutil import json_list
 
 _log = logging.getLogger(__name__)
 
 from taskqueue import config as tqconfig
+from taskqueue._db_runs import update_run_metrics, update_run_progress
 from taskqueue._db_tasks import (
     clear_control_file,
-    clear_stop_request,
     set_started_by,
     set_task_status,
     write_control_action,
 )
-from taskqueue._db_runs import finish_run, update_run_metrics, update_run_progress
 from taskqueue.log_issues import (
-    note_progress,
-    record_metric_samples,
     classify_log_line,
     empty_log_counts,
     merge_metrics_payload,
+    note_progress,
+    record_metric_samples,
 )
 from taskqueue.resources import (
     parse_json_list,
@@ -67,7 +68,7 @@ def build_process_children_map() -> dict[int, list[int]]:
                 children.setdefault(int(ppid), []).append(int(pid))
             except (psutil.NoSuchProcess, psutil.AccessDenied, TypeError, ValueError):
                 continue
-    except Exception:
+    except (psutil.Error, OSError):
         return {}
     return children
 
@@ -158,6 +159,10 @@ class ActiveRun:
         self._log_file = None
         self._log_path: Path | None = None
         self._tail_log: bool = False
+        # adopt_on_restart: start through taskqueue.run_wrapper so a restarted daemon can adopt the run.
+        self.adoptable: bool = False
+        self._exit_file: Path | None = None
+        self._tail_from_end: bool = False  # adopted: earlier output was already processed
         # Progress sanity (active CPU time)
         self.last_active_cpu_sec: float | None = None
         self.last_active_change_time: float = 0.0
@@ -176,6 +181,51 @@ class ActiveRun:
         self._gpu_hints = sidecar_name_hints(self._task_resources, self._requires_services)
         self._needs_gpu_probe = task_requires_gpu(self._task_resources) or bool(self._gpu_hints)
         self.log_counts = empty_log_counts()
+
+    @classmethod
+    def adopt(
+        cls,
+        conn,
+        task_row,
+        run_row,
+        log_dir: Path,
+        cwd: Path,
+        graceful_stop_sec: int = 30,
+        db_path: Path | None = None,
+    ) -> ActiveRun:
+        """Supervise a wrapper-started run left by a previous daemon (see taskqueue.adopt).
+
+        Tails the log from its current end, polls the pid, and takes the exit code from the
+        wrapper's exit file, so the run finalizes exactly as if this daemon had started it.
+        """
+        from datetime import datetime
+
+        from taskqueue.adopt import AdoptedProc, exit_file_for
+
+        run = cls(conn, task_row, log_dir, cwd, graceful_stop_sec=graceful_stop_sec, db_path=db_path)
+        run.run_id = int(run_row["run_id"])
+        run.adoptable = True
+        run._log_path = Path(run_row["log_path"])
+        run._exit_file = exit_file_for(run._log_path)
+        run._tail_log = True
+        run._tail_from_end = True
+        ct = run_row["pid_create_time"]
+        run._pid_create_time = float(ct) if ct is not None else None
+        run.proc = AdoptedProc(int(run_row["pid"]), run._pid_create_time, run._exit_file)  # type: ignore[assignment]
+        try:
+            started = datetime.fromisoformat(str(run_row["started_at"]).replace("Z", "+00:00"))
+            run.started_at = time.monotonic() - max(0.0, time.time() - started.timestamp())
+        except (TypeError, ValueError):
+            run.started_at = time.monotonic()
+        run.progress_pct = run_row["progress_pct"]
+        run.last_line_time = time.monotonic()
+        run._log_file = open(run._log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+        run._log_file.write(
+            f"[{time.strftime('%H:%M:%S')}] [queue] adopted by a restarted daemon (pid {run.proc.pid})\n"
+        )
+        run._thread = threading.Thread(target=run._stream_output, daemon=True, name=f"tq-adopt-{run.run_id}")
+        run._thread.start()
+        return run
 
     def _get_psutil_proc(self, pid: int) -> psutil.Process:
         """Return a cached psutil.Process for pid (creates on first access).
@@ -291,7 +341,7 @@ class ActiveRun:
             self._record_pid()
             self._notify_started()
             return None
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any error after the claim must fail the claimed run, not leak it
             return self._fail_start(f"start failed after claim: {exc}")
 
     def _resolve_argv_tail(self, use_resume: bool) -> tuple[list, str | None, str | None]:
@@ -380,7 +430,15 @@ class ActiveRun:
             "stdin": subprocess.DEVNULL,
             "env": inject_python_hide_console(env),
         }
-        if os.name == "nt":
+        if self.adoptable:
+            # adopt_on_restart: the wrapper writes the log and the exit code, and nothing kills the
+            # task when the daemon exits, so a successor daemon can adopt it (taskqueue.adopt).
+            from taskqueue.adopt import exit_file_for, wrap_argv
+
+            self._exit_file = exit_file_for(log_path)
+            self._exit_file.unlink(missing_ok=True)
+            popen_kwargs["args"] = wrap_argv(argv, log_path, self._exit_file)
+        if os.name == "nt" or self.adoptable:
             # Child writes raw lines; parent tails for progress / idle / cap.
             child_out = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
             popen_kwargs["stdout"] = child_out
@@ -388,11 +446,13 @@ class ActiveRun:
             popen_kwargs = apply_hide_console_popen_kwargs(popen_kwargs)
             _argv = popen_kwargs.pop("args")
             try:
-                self.proc, self._guard_handle = spawn_with_guard(_argv, **popen_kwargs)
+                self.proc, self._guard_handle = spawn_with_guard(
+                    _argv, kill_on_close=not self.adoptable, **popen_kwargs
+                )
             finally:
                 try:
                     child_out.close()
-                except Exception:
+                except OSError:
                     pass
             self._tail_log = True
         else:
@@ -445,7 +505,7 @@ class ActiveRun:
                 description=_opt("description"),
                 suite=_opt("suite"),
             )
-        except Exception as _exc:
+        except Exception as _exc:  # noqa: BLE001 - start notification is best-effort
             print(f"[runner] warn: notify_task_started failed: {_exc}", file=__import__("sys").stderr)
 
     def _fail_start(self, err: str) -> str:
@@ -459,8 +519,8 @@ class ActiveRun:
                 from taskqueue.reap import kill_process_tree
 
                 kill_process_tree(self.proc.pid, graceful_sec=1.0)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - orphan reap is best-effort
+                _log.debug("orphan reap after a failed start", exc_info=True)
         # F-157: one atomic finalize so we never leave run terminal / task running.
         if self.run_id:
             from taskqueue.db import finalize_run_and_task
@@ -481,7 +541,7 @@ class ActiveRun:
         if self._log_file is not None:
             try:
                 self._log_file.close()
-            except Exception:
+            except OSError:
                 pass
             self._log_file = None
         return err
@@ -529,8 +589,8 @@ class ActiveRun:
         else:
             self._stream_output_pipe()
 
-    def _handle_output_line(self, line: str, *, stamped: bool, cap) -> bool:
-        """Process one output line. Returns True if wall-clock cap triggered stop."""
+    def _handle_output_line(self, line: str, *, stamped: bool) -> None:
+        """Process one output line (the daemon tick owns the wall-clock cap, not the reader)."""
         line = line.rstrip("\n\r")
         if stamped:
             ts = time.strftime("%H:%M:%S")
@@ -561,56 +621,32 @@ class ActiveRun:
                     self.last_metrics.update(new_metrics)
                     record_metric_samples(self.metric_series, new_metrics, time.time())
                     self._flush_metrics_json()
-            except Exception:
-                pass
-        if cap and (time.monotonic() - self.started_at) > cap:
-            return self._enforce_wall_clock_cap()
-        return False
+            except Exception:  # noqa: BLE001 - the reader thread must not die on a task-printed TQ_METRIC line
+                _log.debug("TQ_METRIC line ignored", exc_info=True)
 
-    def _enforce_wall_clock_cap(self) -> bool:
-        """F-087: cooperative suspend then terminate on wall_clock_cap.
-
-        Shared by the line path and the Windows idle (no-new-line) path so
-        ``auto_retry_on_cap`` tasks get the exit-75 checkpoint window.
-        Also writes the cap-reached log line so callers don't duplicate it.
-        """
-        # F-036: set stop_reason before terminate so daemon finalize uses
-        # correct status (interrupted/tq.run.cap, not failed/tq.run.nonzero)
-        self.stop_reason = self.stop_reason or "wall_clock_cap"
-        # H2: write termination notice here so both call sites share one copy.
+    def note_cap_reached(self) -> None:
+        """Write the wall-clock-cap notice into the task log (daemon calls this once per cap stop)."""
         try:
             cap = self.task_row["wall_clock_cap_sec"] if self.task_row else None
         except (KeyError, IndexError, TypeError):
             cap = None
         try:
             self._log_file.write(
-                f"[{time.strftime('%H:%M:%S')}] [queue] wall_clock_cap_sec={cap} reached — terminating\n"
+                f"[{time.strftime('%H:%M:%S')}] [queue] wall_clock_cap_sec={cap} reached — suspending, then terminating\n"
             )
             self._log_file.flush()
-        except Exception:
+        except (OSError, ValueError, AttributeError):  # closed or never-opened log
             pass
-        # ds2 §1.4 / F-087: write the cooperative-suspend control file first.
-        if self.db_path:
-            try:
-                _home = Path(self.db_path).parent
-                write_control_action(_home, self.project, self.task_id, "suspend")
-                _grace = min(5.0, float(self.graceful_stop_sec))
-                _deadline = time.monotonic() + _grace
-                while self.proc and self.proc.poll() is None and time.monotonic() < _deadline:
-                    time.sleep(0.1)
-            except Exception:
-                pass
-        self._terminate()
-        return True
 
     def _stream_output_tail(self) -> None:
         """Windows path: child writes the log file; parent tails for progress."""
         assert self.proc is not None
-        cap = self.task_row["wall_clock_cap_sec"]
         crashed = False
         try:
             pending = ""  # partial line the child has not finished writing yet
-            with open(self._log_path, "r", encoding="utf-8", errors="replace") as rf:
+            with open(self._log_path, encoding="utf-8", errors="replace") as rf:
+                if self._tail_from_end:
+                    rf.seek(0, os.SEEK_END)
                 while True:
                     line = rf.readline()
                     if line:
@@ -619,8 +655,7 @@ class ActiveRun:
                             time.sleep(0.05)
                             continue
                         line, pending = pending + line, ""
-                        if self._handle_output_line(line, stamped=False, cap=cap):
-                            break
+                        self._handle_output_line(line, stamped=False)
                         continue
                     if self.proc.poll() is not None:
                         while True:
@@ -628,36 +663,30 @@ class ActiveRun:
                             if not line:
                                 break
                             line, pending = pending + line, ""
-                            if self._handle_output_line(line, stamped=False, cap=cap):
-                                break
+                            self._handle_output_line(line, stamped=False)
                         if pending:
-                            self._handle_output_line(pending, stamped=False, cap=cap)
-                        break
-                    if cap and (time.monotonic() - self.started_at) > cap:
-                        self._enforce_wall_clock_cap()
+                            self._handle_output_line(pending, stamped=False)
                         break
                     time.sleep(0.05)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - reader thread guard: a crash must still finalize the run
             crashed = True
             try:
                 self._log_file.write(
                     f"[{time.strftime('%H:%M:%S')}] [queue] reader thread crashed: {exc!r} -- "
                     f"terminating and finalizing run\n"
                 )
-            except Exception:
+            except (OSError, ValueError):
                 pass
 
         self._finish_stream(crashed)
 
     def _stream_output_pipe(self) -> None:
         assert self.proc and self.proc.stdout
-        cap = self.task_row["wall_clock_cap_sec"]
         crashed = False
         try:
             for line in self.proc.stdout:
-                if self._handle_output_line(line, stamped=True, cap=cap):
-                    break
-        except Exception as exc:
+                self._handle_output_line(line, stamped=True)
+        except Exception as exc:  # noqa: BLE001 - reader thread guard: a crash must still finalize the run
             # A crash here (e.g. a stdout decode error -- see the explicit
             # encoding="utf-8" added to Popen() above, added after exactly
             # this class of crash silently killed this thread while
@@ -673,7 +702,7 @@ class ActiveRun:
                     f"[{time.strftime('%H:%M:%S')}] [queue] reader thread crashed: {exc!r} -- "
                     f"terminating and finalizing run\n"
                 )
-            except Exception:
+            except (OSError, ValueError):
                 pass
 
         self._finish_stream(crashed)
@@ -693,21 +722,29 @@ class ActiveRun:
                 try:
                     self.proc.kill()
                     self.proc.wait()
-                except Exception:
+                except (OSError, subprocess.SubprocessError):
                     pass
 
         try:
             if not crashed:
                 self.proc.wait()
             self._exit_code = self.proc.returncode
-        except Exception:
+        except (OSError, subprocess.SubprocessError, AttributeError):
             self._exit_code = -1
+        if self._exit_file is not None:
+            # The wrapper's own exit status cannot carry a negative (signal) code; its file can.
+            from taskqueue.adopt import read_exit_code
+
+            recorded = read_exit_code(self._exit_file)
+            if recorded is not None:
+                self._exit_code = recorded
         if self._exit_code is None:
             self._exit_code = -1
         try:
             self._log_file.close()
-        except Exception:
+        except (OSError, AttributeError):
             pass
+        self._close_reader_db()
         self._done.set()
         from taskqueue.sched_wake import signal_run_finished
 
@@ -752,7 +789,6 @@ class ActiveRun:
         only_if_running: bool = False,
     ) -> None:
         """Called when the run is done. Writes final DB state."""
-        from taskqueue.db import set_task_error
         from taskqueue.notify import emit_task_notify
 
         code = self._exit_code if self._exit_code is not None else -1
@@ -773,13 +809,13 @@ class ActiveRun:
                     if self._log_file:
                         try:
                             self._log_file.write(f"[tq] WARNING: {_artifact_msg}\n")
-                        except Exception:
+                        except (OSError, ValueError):
                             pass
                     if _req:
                         status = "failed"
                         last_error_code = "tq.run.artifacts_missing"
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - artifact check is best-effort
+                _log.debug("artifact check failed", exc_info=True)
 
         self.update_db_progress_light(conn=self.conn)
         from taskqueue.db import finalize_run_and_task
@@ -798,30 +834,16 @@ class ActiveRun:
             stopped_by=stopped_by,
             stop_reason=self.stop_reason,
             only_if_running=only_if_running,
+            # F-221: error/stop bookkeeping in the same transaction as the status flip.
+            # A rich block_reason already set by the daemon (e.g. RAM/VRAM stop) is kept.
+            clear_task_error=(not last_error_code and status in ("completed", "suspended")),
+            clear_stop=True,
         ):
             return
-        if status == "completed":
-            try:
-                self.conn.execute(
-                    "UPDATE tasks SET cap_auto_retry_count = 0 WHERE project = ? AND task_id = ?",
-                    (self.project, self.task_id),
-                )
-                self.conn.commit()
-            except Exception:
-                pass
-        if last_error_code:
-            # Preserve a rich block_reason already set by the daemon (e.g. RAM/VRAM stop).
-            prev = self.conn.execute(
-                "SELECT block_reason FROM tasks WHERE project = ? AND task_id = ?",
-                (self.project, self.task_id),
-            ).fetchone()
-            br = prev["block_reason"] if prev else None
-            set_task_error(self.conn, self.project, self.task_id, last_error_code, block_reason=br)
-        elif status in ("completed", "suspended"):
-            set_task_error(self.conn, self.project, self.task_id, None, block_reason=None)
-        clear_stop_request(self.conn, self.project, self.task_id)
         if self.db_path:
             clear_control_file(Path(self.db_path).parent, self.project, self.task_id)
+        if self._exit_file is not None:
+            self._exit_file.unlink(missing_ok=True)
 
         home, note, stop_reason = self._finalize_notify_context(code, last_error_code)
         emit_task_notify(home, status=status, stop_reason=stop_reason, **note)
@@ -846,8 +868,8 @@ class ActiveRun:
                 "blocked",
             ):
                 emit_task_notify(home, status=f"attention:{status}", **note)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - attention notification is best-effort
+            _log.debug("attention notify failed", exc_info=True)
 
     def _finalize_notify_context(self, code: int | None, last_error_code: str | None) -> tuple[Path, dict, str | None]:
         """(home, emit_task_notify kwargs, stop_reason) for the terminal notifications."""
@@ -881,7 +903,7 @@ class ActiveRun:
                 _sr_row = self.conn.execute("SELECT stop_reason FROM runs WHERE run_id = ?", (self.run_id,)).fetchone()
                 if _sr_row:
                     stop_reason = _sr_row[0] or None
-            except Exception:
+            except sqlite3.Error:
                 pass
         note = {
             "project": self.project,
@@ -972,21 +994,21 @@ class ActiveRun:
                     try:
                         if self.proc is not None:
                             self.proc.kill()
-                    except Exception:
+                    except OSError:
                         pass
                     try:
                         if self.proc is not None:
                             self.proc.wait(timeout=2)
-                    except Exception:
+                    except (OSError, subprocess.SubprocessError):
                         pass
                 self._done.wait(timeout=5)
                 self._unblock_reader_if_stuck()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - a failed reap must still unblock the reader
                 print(f"[queue] stop reap failed pid={pid}: {exc}", flush=True)
                 try:
                     self._unblock_reader_if_stuck()
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 - best-effort after a failed reap
+                    _log.debug("unblock reader after a failed reap", exc_info=True)
 
         if resource_evict or background:
             import threading
@@ -1012,7 +1034,7 @@ class ActiveRun:
         try:
             if self.proc and self.proc.stdout:
                 self.proc.stdout.close()
-        except Exception:
+        except OSError:
             pass
         if self._done.wait(timeout=3):
             return
@@ -1022,7 +1044,7 @@ class ActiveRun:
         try:
             if self._log_file:
                 self._log_file.close()
-        except Exception:
+        except OSError:
             pass
         self._done.set()
         from taskqueue.sched_wake import signal_run_finished
@@ -1153,8 +1175,8 @@ class ActiveRun:
                 else:
                     self.gpu_util_ema = 0.3 * util_pct + 0.7 * self.gpu_util_ema
                 self._gpu_util_samples += 1
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - nvidia-smi output varies by driver
+            _log.debug("GPU utilization sample failed", exc_info=True)
 
     def update_db_progress_light(self, conn=None) -> None:
         """Flush cached peaks/progress without nvidia-smi (finalize hot path)."""
@@ -1178,15 +1200,9 @@ class ActiveRun:
             return
         self._progress_pending = False
         self._progress_flushed_at = now
-        close_conn = False
-        if conn is None:
-            if self.db_path:
-                import sqlite3
-
-                conn = sqlite3.connect(str(self.db_path), timeout=10)
-                close_conn = True
-            else:
-                conn = self.conn
+        reader_path = conn is None
+        if reader_path:
+            conn = self._reader_db()
         try:
             update_run_progress(
                 conn,
@@ -1200,9 +1216,42 @@ class ActiveRun:
             )
             self._flush_metrics_json(conn=conn, commit=False)
             conn.commit()
-        finally:
-            if close_conn and conn:
-                conn.close()
+        except Exception as exc:
+            if not reader_path:
+                raise
+            # F-217: the reader thread must never die on a DB error (a crashed reader
+            # terminates the child). Keep the sample pending; the next flush or the
+            # heartbeat (main connection) persists it.
+            self._progress_pending = True
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+            _log.warning("progress write deferred for run %s: %s", self.run_id, exc)
+
+    def _reader_db(self):
+        """Connection for writes from the output reader thread (sqlite connections are per-thread).
+
+        One per run, opened lazily on the reader thread and closed when the stream ends.
+        Without ``db_path`` (tests) the shared connection is used.
+        """
+        if not self.db_path:
+            return self.conn
+        rc = getattr(self, "_reader_conn", None)
+        if rc is None:
+            import sqlite3
+
+            rc = self._reader_conn = sqlite3.connect(str(self.db_path), timeout=10)
+        return rc
+
+    def _close_reader_db(self) -> None:
+        rc = getattr(self, "_reader_conn", None)
+        self._reader_conn = None
+        if rc is not None:
+            try:
+                rc.close()
+            except sqlite3.Error:
+                pass
 
     def _flush_metrics_json(self, conn=None, *, commit: bool = True) -> None:
         """Persist TQ_METRIC fields plus reserved log counts (heartbeat, not per line).
@@ -1226,21 +1275,12 @@ class ActiveRun:
         )
         if not payload:
             return
-        own = None
         db = conn
         try:
             if db is None:
-                if self.db_path and threading.get_ident() != self._owner_thread:
-                    import sqlite3
-
-                    own = db = sqlite3.connect(str(self.db_path), timeout=10)
-                else:
-                    db = self.conn
+                db = self._reader_db() if threading.get_ident() != self._owner_thread else self.conn
             if db is None:
                 return
             update_run_metrics(db, self.run_id, payload, commit=commit)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - metrics flush runs on the reader thread
             _log.warning("metrics flush failed for run %s: %s", self.run_id, exc)
-        finally:
-            if own is not None:
-                own.close()

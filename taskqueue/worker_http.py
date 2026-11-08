@@ -67,7 +67,7 @@ def post_json(url: str, data: dict, *, timeout: float = 30) -> dict | None:
         post_json._auth_fail_streak = 0  # type: ignore[attr-defined]
         print(f"[worker] API error (POST {url}): {e}", file=sys.stderr)
         return None
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any network error is reported; the loop continues
         print(f"[worker] API error (POST {url}): {e}", file=sys.stderr)
         return None
 
@@ -80,6 +80,6 @@ def get_json(url: str, timeout: float = 10) -> dict | None:
         req = urllib.request.Request(url, headers=_auth_headers(), method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any network error is reported; the loop continues
         print(f"[worker] API error (GET {url}): {e}", file=sys.stderr)
         return None

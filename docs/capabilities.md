@@ -5,6 +5,10 @@ the least surprising interface: `tq` for a human at a terminal, the web UI
 for interactive observation, and MCP for an AI coding agent. The machine
 readable version is [`surface_map.json`](surface_map.json).
 
+## Feature themes (YAML + scripts)
+
+When authoring a task, pick a theme in [task_standards §0](task_standards.md#0-yaml-field-reference) (Identity, Resources, Dependencies, Execution & resume, Dispatch, Schedule, Notify, Expansion). **Task scripts** go through [`tq_client`](../clients/README.md) — see [task-script-cookbook](agents/task-script-cookbook.md) and [`examples/`](../examples/).
+
 ## Submit
 
 Create work from a YAML document or submit it directly through MCP.
@@ -13,7 +17,7 @@ Create work from a YAML document or submit it directly through MCP.
   `list_projects` finds a registered project.
 - **CLI:** `tq add` / `tq submit` submit YAML, `tq clone` copies a task as a
   template, `tq validate` checks YAML, and `tq sync` imports queue files.
-- **Reference:** [Task Standards](task_standards.md), [Agent recipes](agents/recipes.md).
+- **Reference:** [Task Standards](task_standards.md), [Task script cookbook](agents/task-script-cookbook.md), [Agent recipes](agents/recipes.md).
 
 ## Admit
 
@@ -37,7 +41,8 @@ stop, retry, and task control.
   `patch_task` changes supported YAML fields; `stop_task` requests a
   cooperative stop.
 - **CLI:** `tq start`, `stop-daemon`, `restart`, `retry`, `stop`, `suspend`,
-  `patch`, `reverify`, `remove`, `group`, `suite`, and `tag`.
+  `hold`, `unhold`, `patch`, `reverify`, `remove`, `group`, `suite`, and `tag`.
+- **MCP:** `stop_task` (optional `reason`), `hold_task`, `unhold_task`.
 - **Important:** `enabled: true` does not re-queue a terminal task. Use
   `retry_task` or `tq retry`.
 
@@ -99,7 +104,7 @@ web UI, or an agent.
 Maintain homes, archives, retention, exports, imports, and shell completion.
 
 - **CLI:** `tq archive`, `prune`, `export`, `import`, `migrate`, `completion`,
-  `sleep`, and `wake`.
+  `sleep`, `wake`, `release`, and `relocate`.
 
 ## Code ownership
 

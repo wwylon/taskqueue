@@ -200,6 +200,9 @@
   .spark-key-running::before { background: #9184d9; }
   .gauge-val { font-size: 1.1429rem; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .gauge-sub { font-size: 0.7857rem; color: var(--muted); margin-bottom: 4px; }
+  .fits-now { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; margin: -8px 0 14px; font-size: 0.8571rem; color: var(--text2); }
+  .fits-now-label { font-weight: 600; color: var(--text); }
+  .fits-now-next { color: var(--muted); }
   .gauge-bar { height: 4px; background: var(--bg3); border-radius: 2px; overflow: hidden; }
   .gauge-bar-fill { height: 100%; border-radius: 2px; transition: width .4s; }
   .bar-cpu { background: var(--accent); }
@@ -1027,12 +1030,14 @@ body.tq-busy::before {
 .tq-log-body.lvl-warn .tq-log-line:not(.log-warn):not(.log-error) { display: none; }
 .tq-log-body.lvl-error .tq-log-line:not(.log-error) { display: none; }
 .tq-log-body .tq-log-line { white-space: pre-wrap; word-break: break-word; }
+.tq-log-body .tq-log-line.tq-log-flash { background: rgba(248,113,113,.22); transition: background .4s; }
 .tq-log-body.nowrap .tq-log-line { white-space: pre; word-break: normal; }
 
 /* Drawer TQ_METRIC sparklines */
 .tq-metric-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent, #60a5fa); }
 .tq-metric-key { min-width: 90px; color: var(--text2); font-family: ui-monospace, monospace; }
 .tq-metric-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.tq-metric-prev { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* Stalled vs slow (progress_health) */
 .tq-stall { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--warn, #f59e0b); font-weight: 600; }

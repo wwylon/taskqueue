@@ -48,6 +48,7 @@ def test_stop_retry_mark_processed_post_to_endpoints_and_toast_errors():
             "{ '/api/stop/': { ok: true }, '/api/retry/p/t%201': { ok: true }, '/api/mark-processed/': { ok: true } }",
             """
 g.tqStopUndoMs = 0;
+g.tqStopReasonDefault = 'owner_request';
 S.status = { running: [] }; S.queue = [{ project: 'p', task_id: 't 1', status: 'failed' }];
 let b = btn();
 await g.stopTask(b, 'p', 't 1');
@@ -69,7 +70,7 @@ r.failRetry = [toasts.pop(), b.disabled];
 """,
         )
     )
-    assert out["stop"] == [["toast.stopped", "ok"], False, ["POST", "/api/stop/p/t%201"]]
+    assert out["stop"] == [["toast.stopped", "ok"], False, ["POST", "/api/stop/p/t%201?reason=owner_request"]]
     assert out["retry"] == [["toast.retried", "ok"], "queued", False, ["POST", "/api/retry/p/t%201"]]
     assert out["mark"] == [["POST", "/api/mark-processed/p/t%201"], False]
     assert out["fail"] == [["boom", "err"], False] and out["failRetry"] == [["boom", "err"], False]
@@ -232,7 +233,7 @@ S.projectRoots = {}; S.cfg = {};
 await g._showProjectRoot('p');
 r.root = [txt.textContent, bar.style.display];
 await g._showProjectRoot('ghost');
-r.missing = txt.textContent.includes('no registered root path');
+r.missing = txt.textContent.includes('task.noRootPath');
 S.cfg = { project_frozen_p: true };
 await g._showProjectRoot('p');
 r.frozen = [txt.textContent.includes('freeze.blockedBanner'), bar.style.color];
@@ -247,7 +248,7 @@ r.syncFail = alerts.pop()[0];
 """,
         )
     )
-    assert out["root"] == ["📁 p root: D:/work/p", ""]
+    assert out["root"] == ["task.rootPath", ""]
     assert out["missing"] is True
     assert out["frozen"] == [True, "var(--warn)"] and out["hidden"] == "none"
     assert out["sync"] == [["POST", "/api/worker/sync/w%201"], True, False]
@@ -261,6 +262,7 @@ def test_stop_waits_for_undo_window_and_undo_cancels():
             """
 S.status = { running: [] }; S.queue = [];
 g.tqStopUndoMs = 5000;
+g.tqStopReasonDefault = 'owner_request';
 let b = btn();
 const p1 = g.stopTask(b, 'p', 'a');
 await g.flush();
@@ -274,11 +276,11 @@ const host = doc.getElementById('tq-toast-host');
 const undo = host.children[host.children.length - 1].children[1];
 undo.onclick({ stopPropagation() {} });            // Undo before the timer fires
 await p2;
-r.undone = [posts().filter(x => x[1].endsWith('/p/b')).length, toasts.pop(), b.disabled];
+r.undone = [posts().filter(x => String(x[1]).includes('/p/b')).length, toasts.pop(), b.disabled];
 """,
         )
     )
-    assert out["sent"] == [0, ["POST", "/api/stop/p/a"]]
+    assert out["sent"] == [0, ["POST", "/api/stop/p/a?reason=owner_request"]]
     assert out["undone"] == [0, ["toast.stopUndone", "info"], False]
 
 

@@ -58,7 +58,7 @@ export function _renderTaskStatsTable() {
     <td>${escHtml(dur(r.p95_sec))}</td>
     <td>${escHtml(String(r.count))}</td>
     <td>${escHtml(Math.round((r.success_rate || 0) * 100) + '%')}</td>
-    <td><button class="cfg-btn" data-click="${tqAct([['tqOpenDrawer', String(r.project), String(r.task_id)]])}">${escHtml(i18n.t('btn.detail') || 'Detail')}</button></td>
+    <td><button class="cfg-btn" data-click="${tqAct([['tqOpenDrawer', String(r.project), String(r.task_id)]])}">${escHtml(i18n.t('btn.detail'))}</button></td>
   </tr>`).join('');
 }
 export async function loadTaskStats() {

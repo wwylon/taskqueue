@@ -1,18 +1,17 @@
 """Shared read queries for attention and operator task lists."""
 
 from __future__ import annotations
-from taskqueue._time import parse_iso as _parse_iso
 
 import sqlite3
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-# Peers that cannot satisfy depends_on (UI paints these as dead; admission blocks).
-from taskqueue.statuses import CANCEL_TRIGGER_STATUSES, DEAD_DEP_STATUSES  # noqa: F401
-
-
+from taskqueue._time import parse_iso as _parse_iso
 from taskqueue.deprefs import resolve_dep_ref, row_dep_refs  # noqa: E402,F401
 
+# Peers that cannot satisfy depends_on (UI paints these as dead; admission blocks).
+from taskqueue.statuses import CANCEL_TRIGGER_STATUSES, DEAD_DEP_STATUSES  # noqa: F401
 
 _CHUNK = 400  # max (project, task_id) pairs per VALUES CTE — keeps SQLite under 999 bind vars
 
@@ -44,7 +43,7 @@ def find_broken_deps(
     *,
     project: str | None = None,
     collect_disabled: bool = False,
-) -> "list[dict[str, Any]] | tuple[list[dict[str, Any]], list[dict[str, Any]]]":
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Tasks whose AND/OR dependency peers are missing or in a dead terminal status.
 
     ``depends_on`` (AND): broken if *any* peer is missing/dead.
@@ -140,6 +139,15 @@ def find_broken_deps(
 
 _BROKEN_CACHE: dict[tuple[str, str], tuple[tuple, float, list[dict[str, Any]]]] = {}
 _BROKEN_CACHE_TTL_SEC = 30.0
+_BROKEN_CACHE_MAX = 64  # F-250: bound entries (many tmp DBs in tests / multi-home)
+
+
+def _broken_cache_put(key: tuple[str, str], fp: tuple, now: float, result: list[dict[str, Any]]) -> None:
+    if len(_BROKEN_CACHE) >= _BROKEN_CACHE_MAX and key not in _BROKEN_CACHE:
+        # Drop oldest by recorded monotonic time.
+        oldest = min(_BROKEN_CACHE.items(), key=lambda kv: kv[1][1])[0]
+        _BROKEN_CACHE.pop(oldest, None)
+    _BROKEN_CACHE[key] = (fp, now, result)
 
 
 def tasks_cached(conn: sqlite3.Connection, name: str, project: str | None, compute, ttl: float = 10.0):
@@ -159,7 +167,7 @@ def tasks_cached(conn: sqlite3.Connection, name: str, project: str | None, compu
     if hit is not None and hit[0] == fp and now - hit[1] < ttl:
         return hit[2]
     result = compute()
-    _BROKEN_CACHE[key] = (fp, now, result)
+    _broken_cache_put(key, fp, now, result)
     return result
 
 
@@ -184,7 +192,7 @@ def find_broken_deps_cached(conn: sqlite3.Connection, *, project: str | None = N
     if hit is not None and hit[0] == fp and now - hit[1] < _BROKEN_CACHE_TTL_SEC:
         return hit[2]
     result = find_broken_deps(conn, project=project)
-    _BROKEN_CACHE[key] = (fp, now, result)
+    _broken_cache_put(key, fp, now, result)
     return result
 
 
@@ -205,7 +213,7 @@ def cancel_dead_dependents(
     cancelled.
     """
     from taskqueue import errors as tqerr
-    from taskqueue._db_tasks import set_task_error
+    from taskqueue._db_tasks import set_task_error, transition_task
 
     rows = conn.execute(
         "SELECT project, task_id, depends_on, depends_on_any, description, suite "
@@ -242,13 +250,9 @@ def cancel_dead_dependents(
                     culprit = ", ".join(dead)
         if not culprit:
             continue
-        now = _utc_now_iso()
-        cur = conn.execute(
-            "UPDATE tasks SET status = 'cancelled', finished_at = ?, updated_at = ? "
-            "WHERE project = ? AND task_id = ? AND status = 'queued'",
-            (now, now, owner, r["task_id"]),
-        )
-        if not cur.rowcount:
+        if not transition_task(
+            conn, owner, r["task_id"], to="cancelled", from_="queued", finished=True, now=_utc_now_iso()
+        ):
             continue
         set_task_error(
             conn,
@@ -294,7 +298,7 @@ def cancel_negative_dependents(
     ``depends_on_any`` (F-115): cancel when **every** peer ended negative (mirrors dead-dep OR semantics).
     """
     from taskqueue import errors as tqerr
-    from taskqueue._db_tasks import set_task_error
+    from taskqueue._db_tasks import set_task_error, transition_task
 
     rows = conn.execute(
         "SELECT project, task_id, depends_on, depends_on_any FROM tasks "
@@ -313,8 +317,7 @@ def cancel_negative_dependents(
             ph = ",".join("(?, ?)" for _ in chunk)
             flat = [v for pair in chunk for v in pair]
             for dep in conn.execute(
-                f"SELECT project, task_id, status, last_error_code FROM tasks "
-                f"WHERE (project, task_id) IN ({ph})",
+                f"SELECT project, task_id, status, last_error_code FROM tasks WHERE (project, task_id) IN ({ph})",
                 flat,
             ):
                 peer_map[(str(dep["project"]), str(dep["task_id"]))] = (
@@ -344,13 +347,9 @@ def cancel_negative_dependents(
                     culprit = ", ".join(dead)
         if not culprit:
             continue
-        now = _utc_now_iso()
-        cur = conn.execute(
-            "UPDATE tasks SET status = 'cancelled', finished_at = ?, updated_at = ? "
-            "WHERE project = ? AND task_id = ? AND status = 'queued'",
-            (now, now, owner, r["task_id"]),
-        )
-        if cur.rowcount:
+        if transition_task(
+            conn, owner, r["task_id"], to="cancelled", from_="queued", finished=True, now=_utc_now_iso()
+        ):
             set_task_error(
                 conn,
                 owner,
@@ -385,9 +384,9 @@ def cancel_negative_dependents(
 
 
 def _utc_now_iso() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def status_counts(
@@ -477,9 +476,9 @@ def list_attention(
         params.append(since)
     sql += " ORDER BY t.updated_at DESC LIMIT ?"
     params.append(limit)
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    _now = datetime.now(timezone.utc)
+    _now = datetime.now(UTC)
     items: list[dict[str, Any]] = []
     for row in conn.execute(sql, params).fetchall():
         d = dict(row)
@@ -495,7 +494,7 @@ def list_attention(
                     elapsed_sec = round((finished - started).total_seconds(), 1)
                 else:
                     elapsed_sec = round((_now - started).total_seconds(), 1)
-        except Exception:
+        except (TypeError, ValueError):
             pass
         d["elapsed_sec"] = elapsed_sec
         items.append(d)

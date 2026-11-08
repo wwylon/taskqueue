@@ -37,9 +37,16 @@ export function onProjectChange() {
 
 export function onWorkerChange() {
   S.globalWorkerFilter = document.getElementById('worker-select').value;
-  renderQueue();
-  renderHistory();
-  renderDashboard();
+  // F-258: server-side ?worker= — reset pages and refetch.
+  S.queuePage = 0;
+  S.historyOffset = 0;
+  S.historyPage = 0;
+  if (typeof window.refresh === 'function') window.refresh();
+  else {
+    renderQueue();
+    renderHistory();
+    renderDashboard();
+  }
 }
 
 export function _populateProjectChips(projects) {
@@ -62,9 +69,9 @@ export function _populateProjectChips(projects) {
   const qbar = document.getElementById('queue-proj-bar');
   if (qbar) {
     const cur = S.selectedProject;
-    qbar.innerHTML = `<span class="filter-label">project:</span>` + mineChip +
-      `<button class="filter-chip${cur==='all'&&!S.queueActiveOnly?' active':''}" data-project="all" data-click="${tqAct([['setProject', 'all']])}">all</button>` +
-      `<button class="filter-chip${S.queueActiveOnly?' active':''}" data-queue-view="active" data-click="${tqAct([['setQueueActive']])}" title="All projects except frozen/paused" data-i18n="filter.active" data-i18n-title="filter.activeTitle">active</button>` +
+    qbar.innerHTML = `<span class="filter-label">${i18n.t('filter.labelProject')}</span>` + mineChip +
+      `<button class="filter-chip${cur==='all'&&!S.queueActiveOnly?' active':''}" data-project="all" data-click="${tqAct([['setProject', 'all']])}">${i18n.t('filter.all')}</button>` +
+      `<button class="filter-chip${S.queueActiveOnly?' active':''}" data-queue-view="active" data-click="${tqAct([['setQueueActive']])}" title="${escHtml(i18n.t('filter.activeTitle'))}" data-i18n="filter.active" data-i18n-title="filter.activeTitle">${i18n.t('filter.active')}</button>` +
       visibleProjects.map(p => {
         const froz = !!(S.cfg && S.cfg[`project_frozen_${p}`]);
         return `<button class="filter-chip${cur===p?' active':''}${froz?' chip-frozen':''}" data-project="${escHtml(p)}" data-click="${tqAct([['setProject', String(p)]])}">${froz?'❄ ':''}${escHtml(p)}</button>`;
@@ -77,9 +84,9 @@ export function _populateProjectChips(projects) {
     const histProjects = (S.mineOnly && S.operator && Array.isArray(S.myProjects))
       ? projects.filter(p => S.myProjects.includes(p))
       : projects;
-    hbar.innerHTML = `<span class="filter-label">project:</span>` + mineChip +
-      `<button class="filter-chip${cur==='all'&&!S.queueActiveOnly?' active':''}" data-project="all" data-click="${tqAct([['setProject', 'all']])}">all</button>` +
-      `<button class="filter-chip${S.queueActiveOnly?' active':''}" data-history-view="active" data-click="${tqAct([['setQueueActive']])}" title="All projects except frozen/paused" data-i18n="filter.active" data-i18n-title="filter.activeTitle">active</button>` +
+    hbar.innerHTML = `<span class="filter-label">${i18n.t('filter.labelProject')}</span>` + mineChip +
+      `<button class="filter-chip${cur==='all'&&!S.queueActiveOnly?' active':''}" data-project="all" data-click="${tqAct([['setProject', 'all']])}">${i18n.t('filter.all')}</button>` +
+      `<button class="filter-chip${S.queueActiveOnly?' active':''}" data-history-view="active" data-click="${tqAct([['setQueueActive']])}" title="${escHtml(i18n.t('filter.activeTitle'))}" data-i18n="filter.active" data-i18n-title="filter.activeTitle">${i18n.t('filter.active')}</button>` +
       histProjects.map(p => `<button class="filter-chip${cur===p?' active':''}" data-project="${escHtml(p)}" data-click="${tqAct([['setProject', String(p)]])}">${escHtml(p)}</button>`).join('');
   }
 }
@@ -98,8 +105,8 @@ export function _updateTagChips() {
     const active = S.tagFilter === tag;
     return `<button class="filter-chip${active ? ' active' : ''}" data-click="${tqAct([['toggleTagFilter', String(tag)]])}">${escHtml(tag)}</button>`;
   }).join('') + (S.allTags.length > shown.length
-    ? `<span class="filter-label">+${S.allTags.length - shown.length} more</span>` : '');
-  bar.innerHTML = `<span class="filter-label" data-click="${tqAct([['_toggleTagBar']])}" style="cursor:pointer;user-select:none">tags${expanded ? ' ▴' : ' ▾'}:</span>`
+    ? `<span class="filter-label">${i18n.t('filter.tagsMore', {n: S.allTags.length - shown.length})}</span>` : '');
+  bar.innerHTML = `<span class="filter-label" data-click="${tqAct([['_toggleTagBar']])}" style="cursor:pointer;user-select:none">${i18n.t('filter.tagsLabel', {arrow: expanded ? '▴' : '▾'})}</span>`
     + (expanded ? chips : '');
   bar.style.display = '';
 }

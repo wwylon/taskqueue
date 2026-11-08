@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 from pathlib import Path
 
 from taskqueue.db import open_db

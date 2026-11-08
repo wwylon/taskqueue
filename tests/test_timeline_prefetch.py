@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from taskqueue._db_tasks import bulk_prior_run_seconds
 from taskqueue.db import open_db
-from taskqueue.estimate import prefetch_exact_peaks, predict_task_resources
+from taskqueue.estimate import predict_task_resources, prefetch_exact_peaks
 from tests.test_operator_features import _insert_run, _mk_task
 
-NOW = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
 
 
 def test_prefetch_exact_peaks_matches_per_task(tmp_path: Path):

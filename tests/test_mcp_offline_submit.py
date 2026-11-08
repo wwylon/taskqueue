@@ -1,9 +1,8 @@
 from pathlib import Path
 
 from taskqueue import mcp_server
-from taskqueue.config import Project
+from taskqueue.config import Project, db_path
 from taskqueue.db import open_db
-from taskqueue.config import db_path
 
 
 def test_offline_submit_persists_into_queue_dir(tmp_path: Path, monkeypatch) -> None:

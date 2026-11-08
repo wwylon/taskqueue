@@ -64,7 +64,7 @@ r.err = pre.textContent;
 """)
     )
     assert out["html"] == [True, True, "hello <x>\nERROR bad"]
-    assert out["noBanner"] is True and out["err"].startswith("error loading log:")
+    assert out["noBanner"] is True and out["err"].startswith("log.loadError")
 
 
 def test_copy_log_tail_prefers_stored_content_and_alerts_when_empty():

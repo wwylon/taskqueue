@@ -5,7 +5,6 @@ Reads go straight to SQLite (WAL) like the other read paths; no writes happen he
 """
 
 from __future__ import annotations
-from taskqueue.jsonutil import json_list
 
 import sqlite3
 import time
@@ -14,6 +13,7 @@ from typing import Any
 
 # Finished: the task will not change again without an explicit retry.
 from taskqueue._db_tasks import get_task_status
+from taskqueue.jsonutil import json_list
 from taskqueue.statuses import SETTLED_STATUSES, STALLED_STATUSES, TERMINAL_STATUSES  # noqa: F401
 
 # Exit codes for ``tq wait`` (documented in docs/errors.md).
@@ -118,6 +118,8 @@ def next_actions(status: str | None, error_code: str | None = None) -> list[str]
     """Suggested follow-up tool/CLI calls for a settled task (hints, not commands)."""
     if status == "completed":
         return ["task_result"]
+    if status == "removed":
+        return []  # row gone — nothing to diagnose/retry
     if status in ("failed", "interrupted", "stopped", "unknown"):
         return ["diagnose", "log_tail", "retry_task (after fixing the cause)"]
     if status == "suspended":
@@ -125,6 +127,34 @@ def next_actions(status: str | None, error_code: str | None = None) -> list[str]
     if status == "disabled":
         return ["patch_task enabled=true (task will not run while disabled)"]
     return []
+
+
+# Synthetic wait-only status when a key was visible then deleted mid-wait
+# (tq remove / YAML sync). Not a DB status — only appears in wait results.
+REMOVED_STATUS = "removed"
+REMOVED_ERROR = "tq.wait.removed"
+
+
+def removed_snapshot(key: str) -> dict[str, Any]:
+    """Settled placeholder for a task that vanished after wait had observed it."""
+    project, task_id = split_key(key)
+    return {
+        "key": key,
+        "project": project,
+        "task_id": task_id,
+        "status": REMOVED_STATUS,
+        "finished": True,
+        "settled": True,
+        "exit_code": None,
+        "last_error_code": REMOVED_ERROR,
+        "block_reason": None,
+        "stop_reason": None,
+        "wall_sec": None,
+        "progress_pct": None,
+        "last_lines": [],
+        "next_actions": next_actions(REMOVED_STATUS, REMOVED_ERROR),
+        "eta": None,
+    }
 
 
 HINT_TIMEOUT_SEC = 3600
@@ -162,7 +192,7 @@ def print_wait_hint(keys: Iterable[str] = (), *, project: str | None = None) -> 
         print(wait_hint(keys, project=project), file=sys.stderr)
 
 
-def snapshot_one(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
+def snapshot_one(conn: sqlite3.Connection, key: str, *, eta: bool = True) -> dict[str, Any] | None:
     project, task_id = split_key(key)
     r = conn.execute(_SELECT + "WHERE t.project = ? AND t.task_id = ?", (project, task_id)).fetchone()
     if r is None:
@@ -170,6 +200,7 @@ def snapshot_one(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
     status = r["status"]
     last = r["last_log_line"]
     from taskqueue._db_tasks import run_summary
+    from taskqueue.eta import task_eta
 
     return {
         **run_summary(conn, project, task_id),
@@ -187,6 +218,7 @@ def snapshot_one(conn: sqlite3.Connection, key: str) -> dict[str, Any] | None:
         "progress_pct": r["progress_pct"],
         "last_lines": [last] if last else [],
         "next_actions": next_actions(status, r["last_error_code"]),
+        "eta": task_eta(conn, project, task_id) if eta else None,
     }
 
 
@@ -225,16 +257,23 @@ def wait_for(
     deadline = started + timeout_sec if timeout_sec and timeout_sec > 0 else None
     interval = min(1.0, poll_sec) if poll_sec > 0 else 1.0
     cap = max(poll_sec, interval)
+    # Keys observed at least once: if they later vanish (remove/sync), settle as
+    # ``removed`` instead of ``not_found`` (exit 1 vs 3 — never-existed typo).
+    seen: set[str] = set()
     conn = open_conn()
     try:
         while True:
             tasks: list[dict[str, Any]] = []
             not_found: list[str] = []
             for k in keys:
-                snap = snapshot_one(conn, k)
+                snap = snapshot_one(conn, k, eta=False)
                 if snap is None:
-                    not_found.append(k)
+                    if k in seen:
+                        tasks.append(removed_snapshot(k))
+                    else:
+                        not_found.append(k)
                 else:
+                    seen.add(k)
                     tasks.append(snap)
             settled = [t for t in tasks if t["settled"]]
             pending = [t["key"] for t in tasks if not t["settled"]]
@@ -249,6 +288,7 @@ def wait_for(
             if not done and deadline is not None and now >= deadline:
                 timed_out = True
             if done or timed_out:
+                _attach_eta(conn, tasks)
                 result = {
                     "ok": not not_found and not timed_out,
                     "done": done,
@@ -261,6 +301,9 @@ def wait_for(
                 }
                 if timed_out:
                     result["hint"] = "still running; call wait again"
+                    etas = [t["eta"]["text"] for t in tasks if not t["settled"] and (t.get("eta") or {}).get("text")]
+                    if len(etas) == 1:
+                        result["hint"] += f" ({etas[0]})"
                 return result
             if on_tick is not None:
                 on_tick({"pending": pending, "waited_sec": round(now - started, 1)})
@@ -271,6 +314,16 @@ def wait_for(
             interval = min(cap, interval * 1.5)
     finally:
         conn.close()
+
+
+def _attach_eta(conn: sqlite3.Connection, tasks: list[dict[str, Any]]) -> None:
+    """ETA for each returned task (once, not on every poll): time left while running, or how much
+    was left when a run was stopped."""
+    from taskqueue.eta import task_eta
+
+    for t in tasks:
+        if t["status"] != REMOVED_STATUS:
+            t["eta"] = task_eta(conn, t["project"], t["task_id"])
 
 
 def exit_code_for(result: dict[str, Any]) -> int:

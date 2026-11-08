@@ -156,7 +156,7 @@ export async function loadDocsPage() {
   const gNav = document.getElementById('docs-nav-guides');
   const rNav = document.getElementById('docs-nav-refs');
   if (!gNav || !rNav) return;
-  let guides = [], references = [];
+  let guides, references;
   if (_docsManifest) {
     guides = Object.entries(_docsManifest.guides || {}).map(([id, meta]) => ({
       id, title: id.replace(/-/g, ' '), capability: meta.capability,

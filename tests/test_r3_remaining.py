@@ -49,7 +49,7 @@ def test_stream_truncated_raises(tmp_path: Path) -> None:
     dest = tmp_path / "f.bin"
     try:
         stream_request_body_to_file(io.BytesIO(b"short"), 100, dest)
-        assert False, "expected OSError"
+        raise AssertionError("expected OSError")
     except OSError:
         pass
     assert not dest.exists()

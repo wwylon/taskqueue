@@ -10,8 +10,9 @@ import fnmatch
 import hashlib
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any
 
 # Always excluded even if a push glob would match.
 HARD_EXCLUDE_DIR_NAMES = frozenset(
@@ -152,7 +153,7 @@ def load_worker_sync_state(home: Path, project: str) -> dict[str, Any]:
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8")) or {}
-    except Exception:
+    except (OSError, ValueError):
         return {}
 
 
@@ -172,7 +173,7 @@ def _load_sync_meta(home: Path) -> dict[str, Any]:
         return {"generations": {}}
     try:
         raw = json.loads(path.read_text(encoding="utf-8")) or {}
-    except Exception:
+    except (OSError, ValueError):
         return {"generations": {}}
     if not isinstance(raw, dict):
         return {"generations": {}}
@@ -246,7 +247,7 @@ def pull_from_master(
 
     try:
         fp_resp = _get_json(f"{master_url}/api/sync/fingerprint/{urllib.parse.quote(project)}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any fetch error is returned in the result
         return {"ok": False, "skipped": False, "fetched": 0, "error": f"fingerprint: {e}"}
 
     patterns = list(fp_resp.get("push") or [])
@@ -278,7 +279,7 @@ def pull_from_master(
 
     try:
         man_resp = _get_json(f"{master_url}/api/sync/manifest/{urllib.parse.quote(project)}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - any fetch error is returned in the result
         return {"ok": False, "skipped": False, "fetched": 0, "error": f"manifest: {e}"}
 
     want = list(man_resp.get("files") or [])
@@ -308,10 +309,10 @@ def pull_from_master(
                 mtime_ns = int(entry.get("mtime_ns") or 0)
                 if mtime_ns > 0:
                     os.utime(dest, ns=(mtime_ns, mtime_ns))
-            except Exception:
+            except (OSError, TypeError, ValueError, AttributeError):
                 pass
             fetched += 1
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any fetch error is returned in the result
             return {
                 "ok": False,
                 "skipped": False,

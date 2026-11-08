@@ -114,7 +114,6 @@ def test_commands_requeued_when_write_fails(tmp_path: Path) -> None:
     h, _db, _ = make_handler_env(tmp_path)
     _register(h, "w1", "aaa")
     from taskqueue.web import routes_worker
-
     from taskqueue.web.handler import Handler
 
     class Fake(routes_worker.WorkerRoutes):

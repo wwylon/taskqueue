@@ -12,8 +12,6 @@ Budgets (from plan W2.2):
 from __future__ import annotations
 
 import os
-import sqlite3
-import tempfile
 import time
 from pathlib import Path
 
@@ -67,7 +65,6 @@ def test_tasks_priority_query_uses_index(tmp_path):
 def test_db_size_budget(tmp_path):
     """1000 tasks + 1000 runs should produce < 5 MB of DB."""
     from taskqueue.db import open_db
-    import json
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -210,7 +207,6 @@ def test_cost_response(tmp_path):
 
 def test_deps_response_nodes_and_edges(tmp_path):
     """_get_deps_response: nodes include all tasks, edges capture depends_on."""
-    import json as _json
     from taskqueue.db import open_db
     from taskqueue.web import _get_deps_response
 
@@ -372,9 +368,9 @@ def test_api_status_p95(tmp_path):
     if not db_path.exists():
         pytest.skip("Run loadgen --profile target first")
 
+    from taskqueue._db_tasks import count_queued_tasks, get_running_tasks
     from taskqueue.db import open_db
     from taskqueue.queries import status_counts
-    from taskqueue._db_tasks import count_queued_tasks, get_running_tasks
 
     conn = open_db(db_path, migrate=False)
     times = []
@@ -393,8 +389,8 @@ def test_api_status_p95(tmp_path):
 
 
 def test_count_queued_tasks_matches_fetch(tmp_path):
-    from taskqueue.db import open_db
     from taskqueue._db_tasks import count_queued_tasks, get_queued_tasks
+    from taskqueue.db import open_db
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"

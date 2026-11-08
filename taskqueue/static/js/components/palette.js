@@ -53,20 +53,20 @@ export function tqPaletteItems() {
     const paused = !!(S.cfg && S.cfg[`project_paused_${S.selectedProject}`]);
     items.push({
       kind: 'action',
-      label: frozen ? (i18n.t('btn.unfreeze') || 'Unfreeze project') : (i18n.t('btn.freeze') || 'Freeze project'),
+      label: frozen ? (i18n.t('btn.unfreeze')) : (i18n.t('btn.freeze')),
       hint: S.selectedProject,
       run: () => toggleProjectFreeze(),
     });
     items.push({
       kind: 'action',
-      label: paused ? (i18n.t('btn.resumeProject') || 'Resume project') : (i18n.t('btn.pauseProject') || 'Pause project'),
+      label: paused ? (i18n.t('btn.resumeProject')) : (i18n.t('btn.pauseProject')),
       hint: S.selectedProject,
       run: () => toggleProjectPause(),
     });
   }
   items.push({
     kind: 'action',
-    label: i18n.t('palette.retryFailed') || 'Retry failed (visible)',
+    label: i18n.t('palette.retryFailed'),
     hint: i18n.t('palette.action'),
     run: () => {
       if (typeof setQueueFilter === 'function' && S.queueStatusFilter !== 'failed') setQueueFilter('failed');

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from taskqueue._time import _now as _now_iso
 
-UTC = timezone.utc
+UTC = UTC
 
 # Default retention windows (days).
 DEFAULT_LOG_DAYS = 90
@@ -75,13 +76,14 @@ def prune_logs(
 
         proj_bytes = 0
         proj_files = 0
-        for f in proj_dir.rglob("*.log"):
+        for f in [*proj_dir.rglob("*.log"), *proj_dir.rglob("*.log.gz")]:
             try:
                 mtime = f.stat().st_mtime
                 size = f.stat().st_size
             except OSError:
                 continue
-            if mtime < cutoff and str(f.resolve()) not in protected:
+            plain = f.with_suffix("") if f.suffix == ".gz" else f  # a gzip-retained log is protected by its run path
+            if mtime < cutoff and str(plain.resolve()) not in protected:
                 if verbose:
                     age_days = (now_ts - mtime) / 86400
                     print(f"  {'(dry) ' if dry_run else ''}prune log {f}  ({age_days:.0f}d, {size // 1024}KB)")
@@ -275,19 +277,72 @@ def cap_finished_logs(
     return {"logs_capped": total_files, "logs_bytes_reclaimed": total_reclaimed}
 
 
+def compress_finished_logs(
+    home: Path,
+    config: dict[str, Any],
+    *,
+    dry_run: bool = True,
+    verbose: bool = False,
+    unfinished: set[str] | None = None,
+) -> dict[str, Any]:
+    """Gzip finished logs older than ``retention_log_gzip_days`` (0 = off) to ``<log>.gz``.
+
+    Keeps the mtime, so age-based deletion is unchanged; readers go through logio.readable_log.
+    Also drops decompressed cache copies nobody read for a day.
+    """
+    from taskqueue.logio import GZ_CACHE_DIR, compress_log
+
+    days = int(config.get("retention_log_gzip_days", 0) or 0)
+    now_ts = time.time()
+    for proj_dir in _log_dirs(home):
+        cache = proj_dir / GZ_CACHE_DIR
+        if not dry_run and cache.is_dir():
+            for c in cache.iterdir():
+                try:
+                    if now_ts - c.stat().st_mtime > 86400:
+                        c.unlink()
+                except OSError:
+                    pass
+    if days <= 0:
+        return {"logs_compressed": 0, "logs_bytes_compressed": 0}
+    unfinished = unfinished or set()
+    cutoff = now_ts - days * 86400
+    files = saved = 0
+    for proj_dir in _log_dirs(home):
+        for f in proj_dir.rglob("*.log"):
+            try:
+                st = f.stat()
+                resolved = str(f.resolve())
+            except OSError:
+                continue
+            if resolved in unfinished or st.st_mtime >= cutoff or st.st_size == 0:
+                continue
+            if verbose:
+                print(f"  {'(dry) ' if dry_run else ''}gzip log {f}  ({st.st_size // 1024}KB)")
+            if not dry_run:
+                try:
+                    saved += compress_log(f)
+                except OSError:
+                    continue
+            files += 1
+    return {"logs_compressed": files, "logs_bytes_compressed": saved}
+
+
 def run_maintenance(home: Path, conn, config: dict[str, Any], *, dry_run: bool = False) -> dict[str, Any]:
-    """Retention pass used by the daemon: age-delete logs, cap finished tails, runs, audit, rotate."""
+    """Retention pass used by the daemon: age-delete logs, cap finished tails, gzip, runs, audit, rotate."""
     logs = prune_logs(home, config, dry_run=dry_run, protected=_protected_logs(conn))
-    capped = cap_finished_logs(home, config, dry_run=dry_run, unfinished=_unfinished_logs(conn))
+    unfinished = _unfinished_logs(conn)
+    capped = cap_finished_logs(home, config, dry_run=dry_run, unfinished=unfinished)
+    compressed = compress_finished_logs(home, config, dry_run=dry_run, unfinished=unfinished)
     runs = prune_runs(home, conn, config, dry_run=dry_run)
     audit = prune_audit(conn, config, dry_run=dry_run)
     rotated = rotate_logs(home, dry_run=dry_run)
-    result = {**logs, **capped, **runs, **audit, "rotated": rotated}
+    result = {**logs, **capped, **compressed, **runs, **audit, "rotated": rotated}
     if not dry_run and (runs["runs_deleted"] or audit["audit_deleted"]):
         try:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             conn.execute("PRAGMA incremental_vacuum")  # no-op unless auto_vacuum=INCREMENTAL
-        except Exception:  # best effort; readers may hold the WAL open
+        except sqlite3.Error:  # best effort; readers may hold the WAL open
             pass
     return result
 
@@ -321,7 +376,9 @@ def cmd_prune(home: Path, dry_run: bool = True, verbose: bool = False) -> int:
 
     # Age-delete first (mtime-based), then cap remaining finished logs (mtime preserved).
     log_result = prune_logs(home, config, dry_run=dry_run, verbose=verbose, protected=_protected_logs(conn))
-    cap_result = cap_finished_logs(home, config, dry_run=dry_run, verbose=verbose, unfinished=_unfinished_logs(conn))
+    unfinished = _unfinished_logs(conn)
+    cap_result = cap_finished_logs(home, config, dry_run=dry_run, verbose=verbose, unfinished=unfinished)
+    gz_result = compress_finished_logs(home, config, dry_run=dry_run, verbose=verbose, unfinished=unfinished)
     run_result = prune_runs(home, conn, config, dry_run=dry_run, verbose=verbose)
     audit_result = prune_audit(conn, config, dry_run=dry_run)
     rotated = rotate_logs(home, dry_run=dry_run)
@@ -333,6 +390,9 @@ def cmd_prune(home: Path, dry_run: bool = True, verbose: bool = False) -> int:
         print(f"  {proj}: {d['files']} files  {d['bytes'] // 1024}KB  (>{d['log_days']}d)")
     cap_mb = cap_result["logs_bytes_reclaimed"] / 1_048_576
     print(f"Capped: {cap_result['logs_capped']} file(s), {cap_mb:.1f} MB reclaimed")
+    if int(config.get("retention_log_gzip_days", 0) or 0) > 0:
+        gz_mb = gz_result["logs_bytes_compressed"] / 1_048_576
+        print(f"Compressed: {gz_result['logs_compressed']} file(s), {gz_mb:.1f} MB saved")
     print(f"Runs: {run_result['runs_deleted']} record(s)")
     print(f"Audit: {audit_result['audit_deleted']} row(s)")
     if rotated:

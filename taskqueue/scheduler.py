@@ -9,42 +9,39 @@ P2: one Filter-Score-Reserve-Assign over a Node (local master or worker).
 """
 
 from __future__ import annotations
-from taskqueue.rows import row_value
-from taskqueue.jsonutil import json_list
 
 import functools
 import json
+import logging
 import sqlite3
 import sys
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from taskqueue import config as tqconfig
 from taskqueue import errors as tqerr
+from taskqueue._db_runs import get_last_run_for_task, get_last_runs_for_tasks
 from taskqueue._db_tasks import (
     count_online_workers,
-    failed_attempt_count,
     failed_attempt_counts_bulk,
-    get_queued_tasks,
-    get_running_tasks,
     get_task,
     set_task_error,
     set_task_status,
 )
-from taskqueue._db_runs import get_last_run_for_task, get_last_runs_for_tasks
+from taskqueue.backoff import backoff_left_bulk as _backoff_left_bulk
 from taskqueue.db import (
     get_all_project_limits,
+    get_config,
     get_project_limits,
-    with_gpu_usage,
-    blocked_projects,
-    is_project_frozen,
     is_project_paused,
 )
 from taskqueue.estimate import estimate_task_resources
+from taskqueue.jsonutil import json_list
 from taskqueue.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -57,12 +54,15 @@ from taskqueue.resources import (
     ResourceBudget,
     ram_used_gib,
     remote_worker_gpu_fits,
-    sort_queued_fairshare,
 )
+from taskqueue.rows import row_value
 from taskqueue.runner import ActiveRun
 
 RunKey = tuple[str, str]
 MASTER_NODE_ID = "master-local"
+
+
+_log = logging.getLogger(__name__)
 
 
 def _version_matches(actual: str, constraint: str) -> bool:
@@ -100,7 +100,7 @@ def _version_matches(actual: str, constraint: str) -> bool:
             return actual_t < req_t
         if op == "!=":
             return actual_t != req_t
-    except Exception:
+    except (AttributeError, IndexError, TypeError, ValueError):
         pass
     return True
 
@@ -115,7 +115,7 @@ _estimate_lock = threading.Lock()
 
 
 from taskqueue._time import _now, _ts  # noqa: E402
-from taskqueue.netutil import is_loopback_host
+from taskqueue.netutil import ProbeBlocked, check_probe_url, probe_get
 from taskqueue.rows import row_get
 
 
@@ -224,7 +224,7 @@ def _is_probe_timeout(exc: BaseException) -> bool:
 
         if isinstance(exc, socket.timeout):
             return True
-    except Exception:
+    except ImportError:
         pass
     reason = getattr(exc, "reason", None)
     if reason is not None and reason is not exc and _is_probe_timeout(reason):
@@ -285,7 +285,7 @@ def _warm_vram_admit_gib(
         return est_vram_gib
     try:
         services = json_list(requires_services_json)
-    except Exception:
+    except (TypeError, ValueError):
         return est_vram_gib
     for svc in services or []:
         ok_list = svc.get("resident_ok_models")
@@ -300,7 +300,7 @@ def _ollama_ps_url_from_services(services_json: str) -> str | None:
 
     try:
         services = json_list(services_json)
-    except Exception:
+    except (TypeError, ValueError):
         return None
     for svc in services or []:
         if not svc.get("resident_ok_models"):
@@ -311,45 +311,75 @@ def _ollama_ps_url_from_services(services_json: str) -> str | None:
         try:
             _p = _uparse.urlparse(url)
             return f"{_p.scheme}://{_p.netloc}/api/ps"
-        except Exception:
+        except ValueError:
             continue
     return None
 
 
 _OLLAMA_PS_TTL_SEC = 3.0
 _OLLAMA_PS_FAIL_TTL_SEC = 30.0  # F-205: do not re-block the admit thread on a dead endpoint
-_ollama_ps_cache: dict[str, tuple[float, list[dict[str, Any]] | None]] = {}
+_ollama_ps_cache: dict[tuple[str, bool], tuple[float, list[dict[str, Any]] | None]] = {}
 _ollama_ps_lock = __import__("threading").Lock()
 
 
-def _fetch_ollama_ps_models(ps_url: str, *, timeout: float = 1.5) -> list[dict[str, Any]] | None:
+def _fetch_ollama_ps_models(
+    ps_url: str, *, allow_remote: bool = False, timeout: float = 1.5, background: bool = False
+) -> list[dict[str, Any]] | None:
     """Fetch Ollama /api/ps models list; None on failure.
 
     Results (including failures) are cached so back-to-back scheduler ticks do
     not each block on a slow or dead endpoint. Failures use a longer TTL.
+    F-229: fetched under the same SSRF policy as health probes.
+    F-232: ``background=True`` (daemon admit) never blocks — an expired entry is
+    returned stale while it refreshes; with none, None (no warm-model credit) until
+    the first fetch lands.
     """
-    import time as _time
-    import urllib.request
-
-    now = _time.monotonic()
+    key = (ps_url, bool(allow_remote))
+    now = time.monotonic()
     with _ollama_ps_lock:
-        hit = _ollama_ps_cache.get(ps_url)
+        hit = _ollama_ps_cache.get(key)
         if hit is not None:
             ttl = _OLLAMA_PS_FAIL_TTL_SEC if hit[1] is None else _OLLAMA_PS_TTL_SEC
             if now - hit[0] < ttl:
                 return None if hit[1] is None else list(hit[1])
+    if background:
+        with _ollama_ps_lock:
+            start = key not in _ollama_ps_inflight
+            _ollama_ps_inflight.add(key)
+        if start:
+
+            def _run() -> None:
+                try:
+                    _ollama_ps_refresh(key, ps_url, allow_remote, timeout)
+                finally:
+                    with _ollama_ps_lock:
+                        _ollama_ps_inflight.discard(key)
+
+            threading.Thread(target=_run, name="tq-ollama-ps", daemon=True).start()
+        return None if hit is None or hit[1] is None else list(hit[1])
+    models = _ollama_ps_refresh(key, ps_url, allow_remote, timeout)
+    return None if models is None else list(models)
+
+
+_ollama_ps_inflight: set[tuple[str, bool]] = set()
+
+
+def _ollama_ps_refresh(
+    key: tuple[str, bool], ps_url: str, allow_remote: bool, timeout: float
+) -> list[dict[str, Any]] | None:
+    from taskqueue.netutil import probe_get
+
+    models: list[dict[str, Any]] | None
     try:
-        req = urllib.request.Request(ps_url, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            ps = json.loads(resp.read())
-        models: list[dict[str, Any]] | None = list(ps.get("models") or [])
-    except Exception:
+        status, body = probe_get(ps_url, allow_remote=allow_remote, timeout=timeout)
+        models = list(json.loads(body).get("models") or []) if status < 400 else None
+    except Exception:  # noqa: BLE001 - any probe failure means no model list
         models = None
     with _ollama_ps_lock:
         if len(_ollama_ps_cache) > 32:
             _ollama_ps_cache.clear()
-        _ollama_ps_cache[ps_url] = (now, models)
-    return None if models is None else list(models)
+        _ollama_ps_cache[key] = (time.monotonic(), models)
+    return models
 
 
 def _check_services(
@@ -367,50 +397,30 @@ def _check_services(
     tq.block.service_vram — that code means we *measured* insufficient free VRAM.
     """
     import urllib.parse as _uparse
-    import urllib.request
 
     try:
         services = json_list(services_json)
-    except Exception:
+    except (TypeError, ValueError):
         return None, ""
     for svc in services or []:
         url = svc.get("health_url", "")
         if not url:
             continue
-        # F-012: restrict health_url to loopback unless notify_allow_remote is set
-        if not allow_remote:
-            try:
-                _host = _uparse.urlparse(url).hostname or ""
-                _h = _host.lower()
-                _is_local = is_loopback_host(_h)
-                if not _is_local:
-                    return (
-                        f"service '{svc.get('name', url)}' health_url blocked (non-loopback SSRF risk); set notify_allow_remote=1 to allow",
-                        tqerr.BLOCK_SERVICE,
-                    )
-            except Exception:
-                return f"service '{svc.get('name', url)}' has unparseable health_url", tqerr.BLOCK_SERVICE
         timeout = float(svc.get("timeout_sec", 5))
         name = svc.get("name", url)
+        # F-012 / F-229: loopback-only unless notify_allow_remote; every redirect hop is
+        # checked before it is followed (the old check ran after urllib had followed it).
+        why = check_probe_url(url, allow_remote=allow_remote)
+        if why:
+            return f"service '{name}' health_url blocked: {why}", tqerr.BLOCK_SERVICE
         try:
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                # Check the final URL after any redirects.
-                if not allow_remote:
-                    try:
-                        _final_host = (_uparse.urlparse(resp.url).hostname or "").lower()
-                        _is_local = is_loopback_host(_final_host)
-                        if not _is_local:
-                            return (
-                                f"service '{name}' redirect to non-loopback host {_final_host!r} blocked",
-                                tqerr.BLOCK_SERVICE,
-                            )
-                    except Exception:
-                        pass
-                if resp.status >= 400:
-                    return f"service '{name}' returned HTTP {resp.status}", tqerr.BLOCK_SERVICE
-        except Exception as exc:
+            status, _body = probe_get(url, allow_remote=allow_remote, timeout=timeout)
+        except ProbeBlocked as exc:
+            return f"service '{name}' {exc.reason}", tqerr.BLOCK_SERVICE
+        except Exception as exc:  # noqa: BLE001 - any probe failure reports the service as unreachable
             return f"service '{name}' unreachable: {exc}", tqerr.BLOCK_SERVICE
+        if status >= 400:
+            return f"service '{name}' returned HTTP {status}", tqerr.BLOCK_SERVICE
 
         # S1: optional VRAM headroom check (catches Ollama keep_alive residue)
         min_vram = svc.get("min_vram_free_gib")
@@ -426,14 +436,16 @@ def _check_services(
             try:
                 _p = _uparse.urlparse(url)
                 vram_probe_url = f"{_p.scheme}://{_p.netloc}/api/ps"
-            except Exception:
+            except ValueError:
                 vram_probe_url = None
         if not vram_probe_url:
             continue
         try:
-            _req2 = urllib.request.Request(vram_probe_url, method="GET")
-            with urllib.request.urlopen(_req2, timeout=timeout) as _r2:
-                ps = json.loads(_r2.read())
+            # F-229: a custom vram_probe_url gets the same SSRF policy as health_url.
+            _st2, _body2 = probe_get(vram_probe_url, allow_remote=allow_remote, timeout=timeout)
+            if _st2 >= 400:
+                return f"service '{name}' VRAM probe returned HTTP {_st2}", tqerr.BLOCK_SERVICE
+            ps = json.loads(_body2)
             ps_models = list(ps.get("models") or [])
             resident_ok = svc.get("resident_ok_models")
             if resident_ok and _resident_only_ok_models(ps_models, resident_ok):
@@ -467,7 +479,9 @@ def _check_services(
                     f"({in_use_label}: {in_use_gib:.1f} GiB)",
                     tqerr.BLOCK_SERVICE_VRAM,
                 )
-        except Exception as exc:
+        except ProbeBlocked as exc:
+            return f"service '{name}' VRAM probe blocked: {exc.reason}", tqerr.BLOCK_SERVICE
+        except Exception as exc:  # noqa: BLE001 - any probe failure reports the service as unreachable
             if _is_probe_timeout(exc):
                 return (
                     f"service '{name}' VRAM probe timed out (retrying)",
@@ -491,15 +505,10 @@ def clear_service_probe_cache() -> None:
     """Test helper: drop the process-local service-probe cache."""
     with _svc_probe_lock:
         _svc_probe_cache.clear()
+        _svc_inflight.clear()
 
 
-def check_services_cached(
-    services_json: str,
-    *,
-    allow_remote: bool = False,
-    system_info: dict[str, Any] | None = None,
-) -> tuple[str | None, str]:
-    """``_check_services`` with a ~30s TTL. GPU VRAM state is part of the cache key."""
+def _svc_cache_key(services_json: str, allow_remote: bool, system_info: dict[str, Any] | None) -> tuple:
     # ds2 §7.1: include a hash of per-GPU free VRAM so that a task unblocked after
     # VRAM frees is not served a stale "blocked" result from a cache hit.
     # F-098: include the node hostname so a worker-claim call (system_info=None or a
@@ -515,25 +524,94 @@ def check_services_cached(
                 for i, g in enumerate((system_info or {}).get("gpus", []))
             )
         )
-    key = (services_json or "[]", bool(allow_remote), _node_id, _gpu_key)
+    return (services_json or "[]", bool(allow_remote), _node_id, _gpu_key)
+
+
+def _svc_cache_put(key: tuple, result: tuple[str | None, str]) -> None:
     now = time.monotonic()
     with _svc_probe_lock:
-        hit = _svc_probe_cache.get(key)
-        if hit is not None and (now - hit[0]) < _SVC_PROBE_TTL_SEC:
-            # H4: move to end so recently-used entries survive eviction longest.
-            _svc_probe_cache.move_to_end(key)
-            return hit[1]
         # Evict expired entries first; if still over cap, evict LRU (front).
-        if len(_svc_probe_cache) >= _SVC_PROBE_CACHE_MAX:
+        if key not in _svc_probe_cache and len(_svc_probe_cache) >= _SVC_PROBE_CACHE_MAX:
             expired = [k for k, (ts, _) in _svc_probe_cache.items() if (now - ts) >= _SVC_PROBE_TTL_SEC]
             for k in expired:
                 del _svc_probe_cache[k]
             while len(_svc_probe_cache) >= _SVC_PROBE_CACHE_MAX:
                 _svc_probe_cache.popitem(last=False)  # pop LRU (front)
-    result = _check_services(services_json, allow_remote=allow_remote, system_info=system_info)
-    with _svc_probe_lock:
-        _svc_probe_cache[key] = (time.monotonic(), result)
+        _svc_probe_cache[key] = (now, result)
         _svc_probe_cache.move_to_end(key)
+
+
+# F-232: background probes for the daemon admit path (one in flight per cache key).
+_svc_inflight: set[tuple] = set()
+SERVICE_PROBE_PENDING = "service probe pending (first health check running)"
+
+
+def _probe_in_background(
+    key: tuple, services_json: str, allow_remote: bool, system_info: dict[str, Any] | None
+) -> None:
+    with _svc_probe_lock:
+        if key in _svc_inflight:
+            return
+        _svc_inflight.add(key)
+
+    def _run() -> None:
+        try:
+            result = _check_services(services_json, allow_remote=allow_remote, system_info=system_info)
+        except Exception as exc:  # noqa: BLE001 - a probe crash blocks the task, not the tick
+            result = (f"service probe failed: {exc}", tqerr.BLOCK_SERVICE)
+        _svc_cache_put(key, result)
+        with _svc_probe_lock:
+            _svc_inflight.discard(key)
+        from taskqueue.sched_wake import wake_scheduler
+
+        wake_scheduler()  # re-run admission now instead of at the next tick
+
+    threading.Thread(target=_run, name="tq-svc-probe", daemon=True).start()
+
+
+@functools.lru_cache(maxsize=1024)
+def _has_probes(services_json: str | None) -> bool:
+    """True when any requires_services entry has a health_url (only those are probed)."""
+    if not services_json or "health_url" not in services_json:
+        return False
+    try:
+        return any(isinstance(s, dict) and s.get("health_url") for s in json_list(services_json) or [])
+    except (TypeError, ValueError):
+        return False
+
+
+def check_services_cached(
+    services_json: str,
+    *,
+    allow_remote: bool = False,
+    system_info: dict[str, Any] | None = None,
+    background: bool = False,
+) -> tuple[str | None, str]:
+    """``_check_services`` with a ~30s TTL. GPU VRAM state is part of the cache key.
+
+    ``background=True`` (daemon admit, F-232): never probe on the caller's thread. A
+    fresh entry is returned as usual; an expired one is returned stale while a refresh
+    runs in the background; with no entry the task waits on ``SERVICE_PROBE_PENDING``
+    until the first probe lands (which wakes the scheduler).
+    """
+    if not _has_probes(services_json):
+        # Nothing to probe (the column defaults to "[]"): healthy, without a cache slot
+        # or — in background mode — a spurious "pending" wait.
+        return None, ""
+    key = _svc_cache_key(services_json, allow_remote, system_info)
+    now = time.monotonic()
+    with _svc_probe_lock:
+        hit = _svc_probe_cache.get(key)
+        if hit is not None:
+            # H4: move to end so recently-used entries survive eviction longest.
+            _svc_probe_cache.move_to_end(key)
+            if (now - hit[0]) < _SVC_PROBE_TTL_SEC:
+                return hit[1]
+    if background:
+        _probe_in_background(key, services_json, allow_remote, system_info)
+        return hit[1] if hit is not None else (SERVICE_PROBE_PENDING, tqerr.BLOCK_SERVICE)
+    result = _check_services(services_json, allow_remote=allow_remote, system_info=system_info)
+    _svc_cache_put(key, result)
     return result
 
 
@@ -619,6 +697,7 @@ class FilterContext:
     force: bool = False
     skip_node_capacity: bool = False
     running_locks: set[str] = field(default_factory=set)
+    backoff_left_sec: float = 0.0  # retry_backoff_sec still to wait (taskqueue.backoff)
 
 
 def build_filter_context(
@@ -636,6 +715,7 @@ def build_filter_context(
     skip_node_capacity: bool = False,
     running_locks: set[str] | None = None,
     min_reserved_others: int = 0,
+    backoff_left_sec: float = 0.0,
 ) -> FilterContext:
     """Construct a FilterContext from occupancy + config dicts.
 
@@ -668,6 +748,7 @@ def build_filter_context(
         skip_node_capacity=skip_node_capacity,
         running_locks=running_locks or set(),
         min_reserved_others=min_reserved_others,
+        backoff_left_sec=backoff_left_sec,
     )
 
 
@@ -742,7 +823,7 @@ def parse_worker_load(raw: Any) -> dict[str, Any]:
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
-        except Exception:
+        except (TypeError, ValueError):
             return {}
     if not isinstance(raw, dict):
         return {}
@@ -842,7 +923,7 @@ def node_from_worker(
 def node_matches_requires(node: Node, requires_str: str) -> bool:
     try:
         req = json.loads(requires_str or "{}")
-    except Exception:
+    except (TypeError, ValueError):
         return True
     if not req:
         return True
@@ -944,7 +1025,7 @@ def filter_requires(row: Any, node: Node) -> FilterResult:
     # Build a human-readable mismatch summary.
     try:
         req = json.loads(requires_str)
-    except Exception:
+    except (TypeError, ValueError):
         req = {}
     parts: list[str] = []
     if "os" in req and req["os"] not in ("any", ""):
@@ -1313,6 +1394,11 @@ def filter_task(
         att = filter_max_attempts(row, attempt_count)
         if not att.ok:
             return att
+    if ctx.backoff_left_sec > 0 and not ctx.force:
+        return FilterResult.reject(
+            f"retry backoff: {int(ctx.backoff_left_sec) + 1}s left after failed runs (tq retry starts it now)",
+            tqerr.BLOCK_BACKOFF,
+        )
     for step in (
         filter_exclusive(row, ctx),
         filter_global_limits(ctx, cpu=cpu, ram=ram),
@@ -1495,6 +1581,13 @@ def _shared_estimate_cache(conn: sqlite3.Connection) -> dict:
                 }
             else:
                 _estimate_cross_tick = {}
+            # F-250: hard cap so long-uptime daemons do not retain every historical key.
+            _ESTIMATE_CACHE_MAX = 4096
+            if len(_estimate_cross_tick) > _ESTIMATE_CACHE_MAX:
+                # Drop arbitrary overflow (dict insertion order ≈ LRU-ish for CPython 3.7+).
+                overflow = len(_estimate_cross_tick) - _ESTIMATE_CACHE_MAX
+                for drop_key in list(_estimate_cross_tick.keys())[:overflow]:
+                    _estimate_cross_tick.pop(drop_key, None)
             _estimate_gen = _cur_gen
         return _estimate_cross_tick
 
@@ -1629,11 +1722,16 @@ def _stop_excess(conn, home: Path, candidates: list, excess: int, describe, warn
         if stopped >= excess:
             break
         proj, tid = cand["project"], cand["task_id"]
+        # F-224: a victim already asked to stop counts toward the excess; re-asking it
+        # every tick while it drains only rewrote its control file and logged again.
+        if _row_get(cand, "stop_requested", 0):
+            stopped += 1
+            continue
         try:
             request_stop_with_control(conn, home, proj, tid)
             print(f"[queue] {_ts()} info: {describe(proj, tid, excess - stopped)}", file=sys.stderr)
             stopped += 1
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - one stop failure must not stop the others
             print(f"[queue] {_ts()} warn: {warn_tag} {proj}/{tid}: {exc}", file=sys.stderr)
     return stopped
 
@@ -1696,6 +1794,7 @@ def _start_local_run(conn, home: Path, project, row, key, use_resume: bool, grac
         graceful_stop_sec=graceful_stop,
         db_path=tqconfig.db_path(home),
     )
+    run.adoptable = bool(int(get_config(conn).get("adopt_on_restart", 0) or 0))
     err = run.start(use_resume=use_resume)
     if not err:
         return run
@@ -1720,7 +1819,7 @@ def _record_admission(
                 (ram, gpu, run.run_id),
             )
             conn.commit()
-    except Exception as _est_exc:
+    except sqlite3.Error as _est_exc:
         # F-129: admission still proceeds; surface estimate persistence failures.
         print(
             f"[queue] {_ts()} warn: could not store estimates for run={run.run_id}: {_est_exc}",
@@ -1737,35 +1836,64 @@ def _record_admission(
     )
 
 
-def _local_admit_queued(conn, *args, **kwargs) -> None:
+def _local_admit_queued(
+    conn: sqlite3.Connection,
+    home: Path,
+    projects: dict,
+    active_runs: dict,
+    system_info: dict,
+    cfg: dict,
+    graceful_stop: float,
+    shutdown: bool,
+    reservation_state: dict | None = None,
+    *,
+    host_cpu_blocked: bool = False,
+    host_cpu_reason: str = "",
+    admit_frozen: bool = False,
+    admit_frozen_reason: str = "",
+) -> None:
     """Admit queued local tasks; batched block reasons are flushed even if the body raises."""
     pending: list[tuple[str, str, str, str]] = []
     exhausted: list[tuple[str, str]] = []
     try:
-        _local_admit_queued_body(conn, *args, _pending_blocks=pending, _exhausted=exhausted, **kwargs)
+        _local_admit_queued_body(
+            conn,
+            home,
+            projects,
+            active_runs,
+            system_info,
+            cfg,
+            graceful_stop,
+            shutdown,
+            reservation_state,
+            host_cpu_blocked=host_cpu_blocked,
+            host_cpu_reason=host_cpu_reason,
+            admit_frozen=admit_frozen,
+            admit_frozen_reason=admit_frozen_reason,
+            _pending_blocks=pending,
+            _exhausted=exhausted,
+        )
     finally:
         try:
             _mark_attempts_exhausted(conn, exhausted)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - admission bookkeeping is best-effort
+            _log.debug("marking attempts exhausted failed", exc_info=True)
         try:
             _flush_pending_blocks(conn, pending)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - admission bookkeeping is best-effort
+            _log.debug("flushing pending block reasons failed", exc_info=True)
 
 
 def _mark_attempts_exhausted(conn, keys: list[tuple[str, str]]) -> None:
     """F-030: queued tasks past max_attempts become failed — one transaction for the whole tick."""
     if not keys:
         return
-    from taskqueue._time import _now
+
+    from taskqueue._db_tasks import transition_task
 
     now = _now()
-    conn.executemany(
-        "UPDATE tasks SET status = 'failed', updated_at = ?, finished_at = ? "
-        "WHERE project = ? AND task_id = ? AND status = 'queued'",
-        [(now, now, p, t) for p, t in keys],
-    )
+    for p, t in keys:
+        transition_task(conn, p, t, to="failed", from_="queued", finished=True, now=now)
     conn.commit()
 
 
@@ -1787,7 +1915,7 @@ class _OccupancyState:
     n_unknown_running: int = 0
 
     @classmethod
-    def from_snapshot(cls, occ: dict[str, Any]) -> "_OccupancyState":
+    def from_snapshot(cls, occ: dict[str, Any]) -> _OccupancyState:
         return cls(
             n_running=int(occ["n_running"]),
             has_exclusive=bool(occ["has_exclusive"]),
@@ -1931,7 +2059,7 @@ def _seed_budget_from_running(
             occ.add_ram(row["project"], ram_delta)
         try:
             elapsed = float(run.elapsed_sec())
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             elapsed = 0.0
         if est["unknown"]:
             # G5: once an unknown task passes settle_window its measured
@@ -1956,6 +2084,18 @@ def _seed_budget_from_running(
         budget.reserve(float(res_r.get("cpu_cores", 1)), unsettled_vram, unsettled_ram)
 
 
+def _resettle_budget(budget: Any, live: float, *, admitted_ram: float) -> None:
+    """Re-seed the host RAM reading after an ``admit_settle_sec`` soak (F-225).
+
+    Overwriting ``ram_reserved`` with the live reading dropped the P6 hold, the unsettled
+    reservations of other runs and the just-admitted task's estimate. Keep them, and add
+    only host growth the just-admitted task (already reserved at its estimate) cannot explain.
+    """
+    growth = live - float(budget.ram_live)
+    budget.ram_reserved += max(0.0, growth - float(admitted_ram))
+    budget.ram_live = live
+
+
 def _local_admit_queued_body(
     conn: sqlite3.Connection,
     home: Path,
@@ -1977,28 +2117,19 @@ def _local_admit_queued_body(
     """Schedule new local tasks if resources allow (one resource budget across all projects)."""
     if _exhausted is None:
         _exhausted = []
-    # Wave B3: candidate window (same default as worker claim) before fairshare sort.
+    # Wave B3 / F-214: shared candidate fetch+fairshare (same helper as worker claim).
     _cand_window = int(cfg.get("admit_candidate_window", 256))
     # Fetch a bit more than the window so fairshare can re-order among a larger set,
     # then trim after sort. When window is 0, load all.
     _fetch_limit = None if _cand_window <= 0 else max(_cand_window * 2, _cand_window)
-    # First fetch is bounded by the admission window.  Build dependency state
-    # only for those candidates and their peers, rather than scanning all tasks.
-    _initial_queued = get_queued_tasks(
+    from taskqueue.admit_context import load_fairshare_candidates
+
+    queued, _occ_raw, _usage_by_proj, _status_map, running_tasks_snapshot = load_fairshare_candidates(
         conn,
         limit=_fetch_limit,
-        skip_projects=set(blocked_projects(conn)),
-    )
-    _status_map = build_task_status_map(conn, _initial_queued)
-    queued = (
-        get_queued_tasks(
-            conn,
-            limit=_fetch_limit,
-            status_map=_status_map,
-            skip_projects=set(blocked_projects(conn)),
-        )
-        if _initial_queued and _fetch_limit is not None and len(_initial_queued) >= _fetch_limit
-        else _initial_queued
+        # F-233: ``stopped`` (pressure / preempt / evict) is auto-restartable locally; the
+        # shared helper defaults to the remote-claim set (queued only).
+        statuses=("queued", "stopped"),
     )
     if not queued:
         return
@@ -2006,22 +2137,12 @@ def _local_admit_queued_body(
         reservation_state = {}
     # block_reason is updated in-place by _note_block (which skips unchanged values)
     # and cleared by claim on start. No bulk NULL here — that races with UI polls.
-    # W4.5: call get_running_tasks once per tick instead of twice.
-    running_tasks_snapshot = get_running_tasks(conn)
 
     def _dep_lookup(p: str, t: str, _m: dict = _status_map) -> str | None:
         return _m.get((p, t))
 
     # Wave B5: batch block_reason writes.
-
-    # Wave B2: reuse occupancy helper (was duplicated inline).
-    _occ_raw = occupancy_from_running_rows(running_tasks_snapshot)
     occ = _OccupancyState.from_snapshot(_occ_raw)
-    gpu_running_by_proj: dict[str, int] = dict(_occ_raw["gpu_running_by_proj"])
-    usage_rows = conn.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
-    usage_by_proj: dict[str, float] = {r["project"]: float(r["gpu_seconds"]) for r in usage_rows}
-    fairshare_weight = float(cfg.get("fairshare_weight", 1e-6))
-    queued = sort_queued_fairshare(queued, gpu_running_by_proj, usage_by_proj, fairshare_weight)
     # T-205: per-project minimum slots (needs all queued rows, not just the window).
     _all_limits = get_all_project_limits(conn)
     _queued_by_proj: dict[str, int] = {}
@@ -2050,13 +2171,17 @@ def _local_admit_queued_body(
     _res_max_ticks = int(cfg.get("reservation_max_ticks", 60))
     _est_cache = _shared_estimate_cache(conn)
     _svc_cache: dict[str, tuple[str | None, str]] = {}
+    # F-232: probes run off the tick (config escape hatch: service_probe_background=0).
+    _svc_background = bool(int(cfg.get("service_probe_background", 1)))
     _vram_ps_models: list[dict[str, Any]] | None = None
     for _qrow in queued:
         if "requires_services" not in _qrow.keys():
             continue
         _ps_url = _ollama_ps_url_from_services(_qrow["requires_services"] or "[]")
         if _ps_url:
-            _vram_ps_models = _fetch_ollama_ps_models(_ps_url)
+            _vram_ps_models = _fetch_ollama_ps_models(
+                _ps_url, allow_remote=bool(cfg.get("notify_allow_remote")), background=_svc_background
+            )
             break
     _admitted_this_tick = 0
     # G5: per-project measured footprint from settled unknown running tasks.
@@ -2149,6 +2274,8 @@ def _local_admit_queued_body(
         if "retry_attempt_baseline" in r.keys() and "max_attempts" in r.keys() and int(r["max_attempts"] or 0) > 0
     }
     _attempt_counts = failed_attempt_counts_bulk(conn, _attempt_keys, baselines=_attempt_bases)
+    # F-247: prefetch retry backoff for the whole window (was 2 SQL round-trips per row).
+    _backoff_by_key = _backoff_left_bulk(conn, queued)
     for row in queued:
         if shutdown:
             break
@@ -2208,6 +2335,7 @@ def _local_admit_queued_body(
                     _svc_raw,
                     allow_remote=bool(cfg.get("notify_allow_remote")),
                     system_info=system_info,
+                    background=_svc_background,
                 )
             _svc_block, _svc_code = _svc_cache[_svc_raw]
         else:
@@ -2302,6 +2430,7 @@ def _local_admit_queued_body(
                 occ.n_running_by_proj,
                 proj_key,
             ),
+            backoff_left_sec=_backoff_by_key.get(key, 0.0),
         )
         fr = filter_task(row, local_node, ctx, cpu=cpu, ram=ram, gpu=gpu)
         if not fr.ok:
@@ -2360,18 +2489,8 @@ def _local_admit_queued_body(
                 flush=True,
             )
 
-        # Mutex also enforced in filter_task via FilterContext.running_locks;
-        # keep this early check for the local-only path's incremental lock set.
+        # Locks are enforced by filter_task (filter_mutex reads the live occ.running_locks set).
         task_locks = set(res.get("locks") or [])
-        if task_locks & occ.running_locks:
-            held = sorted(task_locks & occ.running_locks)
-            _nb(
-                row["project"],
-                row["task_id"],
-                tqerr.BLOCK_MUTEX,
-                f"lock(s) held by another running task: {', '.join(held)}",
-            )
-            continue
 
         if max_conc > 0 and occ.n_running >= max_conc and not force:
             _nb(
@@ -2390,6 +2509,22 @@ def _local_admit_queued_body(
 
         active_runs[key] = run
         budget.reserve(cpu, gpu, ram)
+        # F-241: host GPU lock file for local pytest / sibling processes.
+        try:
+            from taskqueue.gpu_lock import acquire as _gpu_lock_acquire
+            from taskqueue.resources import task_requires_gpu as _task_requires_gpu
+
+            if _task_requires_gpu(row["resources"]) and run.proc is not None:
+                _gpu_lock_acquire(
+                    home,
+                    project=row["project"],
+                    task_id=row["task_id"],
+                    run_id=int(run.run_id or 0),
+                    pid=int(run.proc.pid),
+                    started=float(run.started_at or 0.0) or None,
+                )
+        except Exception:  # noqa: BLE001 - lock file is advisory
+            _log.debug("gpu.lock acquire failed", exc_info=True)
         # F-083 / §6.9: clear sticky P6 hold once the held task (or any path) admits it.
         if reservation_state.get("key") == key:
             reservation_state.clear()
@@ -2418,8 +2553,6 @@ def _local_admit_queued_body(
             # re-seed the host reading before considering the next candidate.
             time.sleep(_settle_sec)
             try:
-                live = ram_used_gib()
-                budget.ram_live = live
-                budget.ram_reserved = live
+                _resettle_budget(budget, ram_used_gib(), admitted_ram=ram)
             except RuntimeError:
                 break

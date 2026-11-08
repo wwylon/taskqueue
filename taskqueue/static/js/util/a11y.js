@@ -1,3 +1,4 @@
+// @ts-check
 // Accessibility attributes derived from state the UI already tracks in CSS classes, so no render path needs to change.
 
 /** `.modal-bg > .modal` without a role becomes a labelled modal dialog. */

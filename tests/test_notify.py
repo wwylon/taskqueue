@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from taskqueue._db_tasks import upsert_task
 from taskqueue.config import Project
 from taskqueue.db import SCHEMA_VERSION, get_config, open_db, parse_task_yaml
-from taskqueue._db_tasks import upsert_task
 from taskqueue.mcp_server import TOOLS, _call_tool
 from taskqueue.models import STATUS_COMPLETED, STATUS_FAILED
 from taskqueue.notify import (

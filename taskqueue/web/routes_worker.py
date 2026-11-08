@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+import threading as _threading
+from typing import Any
+
+from taskqueue.rows import row_get
+
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
-    Path,
     SCHEMA_VERSION,
     UTC,
+    Path,
     _wheel_sha_cache,
     datetime,
     holds_master_lease,
@@ -14,16 +20,15 @@ from .deps import (
     sqlite3,
     time,
 )
-from typing import Any
-from taskqueue.rows import row_get
-
-import threading as _threading
 
 # L1 cache of last accepted log-chunk seq (DB ``runs.last_log_seq`` is source of truth).
 # F-146: key by DB so two homes cannot collide. F-150: cache alone is not durable.
-_LOG_SEQ: "dict[tuple[str, int], int]" = {}
+_LOG_SEQ: dict[tuple[str, int], int] = {}
 _LOG_SEQ_LOCK = _threading.Lock()
 _LOG_SEQ_MAX = 4096
+
+
+_log = logging.getLogger(__name__)
 
 
 def _log_seq_cache_get(db_key: str, run_id: int) -> int:
@@ -101,7 +106,7 @@ class WorkerRoutes:
 
     def _check_protocol(self, data: dict[str, Any] | None = None) -> str | None:
         """Return error string if client protocol is out of supported range; None if ok."""
-        from taskqueue.config import MIN_SUPPORTED_PROTOCOL, MAX_SUPPORTED_PROTOCOL
+        from taskqueue.config import MAX_SUPPORTED_PROTOCOL, MIN_SUPPORTED_PROTOCOL
 
         client_proto = None
         if data is not None and data.get("protocol") is not None:
@@ -128,9 +133,10 @@ class WorkerRoutes:
     def _serve_worker_version(self) -> None:
         """W7.5: Return master version info + upgrade URL if wheel available."""
         import hashlib
+
         from taskqueue import __version__ as _mv
-        from taskqueue.db import SCHEMA_VERSION
         from taskqueue.config import PROTOCOL_VERSION
+        from taskqueue.db import SCHEMA_VERSION
 
         wheel_path = Path(self._db_path).parent / "worker.whl"
         upgrade_url: str | None = None
@@ -432,14 +438,14 @@ class WorkerRoutes:
                     drain_reason = f"worker version {w_version} major behind master {_master_version}"
                 elif wv < mv:
                     pass  # patch/minor behind — warn only (logged below)
-            except Exception:
+            except (ValueError, IndexError, AttributeError):
                 pass
         if w_schema is not None:
             try:
                 if int(w_schema) < SCHEMA_VERSION:
                     drain_and_stop = True
                     drain_reason = drain_reason or f"worker schema {w_schema} behind master {SCHEMA_VERSION}"
-            except Exception:
+            except (TypeError, ValueError):
                 pass
 
         wdb = self._open_write_conn()  # W5.4
@@ -655,8 +661,9 @@ class WorkerRoutes:
         if session_id_mismatch(stored_session, provided):
             self._json({"task": None, "error": "session_id mismatch"})
             return
-        from taskqueue.config import WORK_LONGPOLL_MAX_SEC
         import time as _time
+
+        from taskqueue.config import WORK_LONGPOLL_MAX_SEC
 
         wait_sec = 0.0
         try:
@@ -753,12 +760,13 @@ class WorkerRoutes:
             return
 
         import base64
-        from taskqueue.db import get_run_owned
+
         from taskqueue._db_runs import lease_expiry_iso
+        from taskqueue.db import get_run_owned
 
         try:
             chunk = base64.b64decode(chunk_b64).decode("utf-8", errors="replace")
-        except Exception as e:
+        except (TypeError, ValueError) as e:
             self._json({"ok": False, "error": f"Invalid base64: {e}"})
             return
 
@@ -793,8 +801,8 @@ class WorkerRoutes:
         lines = [ln for ln in chunk.splitlines() if ln.strip()]
         last_line = (lines[-1] if lines else (run["last_log_line"] or ""))[:2000]
 
+        from taskqueue.log_issues import count_log_issues
         from taskqueue.runner import _parse_pct
-        from taskqueue.log_issues import apply_log_lines_to_metrics_json, count_log_issues
 
         pct = None
         for ln in reversed(chunk.splitlines()):
@@ -883,7 +891,7 @@ class WorkerRoutes:
         except Exception:
             try:
                 wdb.rollback()
-            except Exception:
+            except sqlite3.Error:
                 pass
             raise
         finally:
@@ -906,7 +914,7 @@ class WorkerRoutes:
                 if bool(row["stop_requested"]) or row["status"] != "running":
                     resp["stop_run_ids"] = [int(run_id)]
                     resp["stop_requested"] = True
-        except Exception:
+        except (sqlite3.Error, TypeError, ValueError):
             pass
         self._json(resp)
 
@@ -993,6 +1001,9 @@ class WorkerRoutes:
                     err_code = tqerr.RUN_NEGATIVE
                 else:
                     err_code = tqerr.RUN_NONZERO
+            from taskqueue.stop_reasons import TQ_STOP_REASONS
+
+            _sys_stopped_by = "tq" if stop_reason in TQ_STOP_REASONS else None
             updated = finalize_run_and_task(
                 wdb,
                 int(run_id),
@@ -1004,40 +1015,13 @@ class WorkerRoutes:
                 peak_ram_gib=float(peak_ram or 0.0),
                 peak_vram_gib=float(peak_vram or 0.0),
                 stop_reason=stop_reason,
-                stopped_by=(
-                    "tq"
-                    if stop_reason
-                    in (
-                        "deps_invalidated",
-                        "wall_clock_cap",
-                        "ram_hard",
-                        "vram_hard",
-                        "frozen",
-                        "frozen_restart",
-                        "evicted",
-                    )
-                    else None
-                ),
+                stopped_by=_sys_stopped_by,
                 only_if_running=True,
                 clear_task_error=(err_code is None and status == "completed"),
             )
             if not updated:
                 self._json({"ok": False, "error": "run not running (already finalized or reclaimed)"})
                 return
-            _sys_stopped_by = (
-                "tq"
-                if stop_reason
-                in (
-                    "deps_invalidated",
-                    "wall_clock_cap",
-                    "ram_hard",
-                    "vram_hard",
-                    "frozen",
-                    "frozen_restart",
-                    "evicted",
-                )
-                else None
-            )
             if err_code == tqerr.STOP_DEPS:
                 from taskqueue.db import set_task_error
 
@@ -1080,8 +1064,8 @@ class WorkerRoutes:
                 from taskqueue.finalize_hooks import apply_finalize_wake_hooks
 
                 apply_finalize_wake_hooks(wdb, proj, tid, status, run_teardown=True)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - hooks must not block finalize
+                _log.debug("finalize wake hooks failed", exc_info=True)
             try:
                 from taskqueue.system_alerts import on_run_terminal
 
@@ -1096,8 +1080,8 @@ class WorkerRoutes:
                     stopped_by=_sys_stopped_by,
                     stop_reason=stop_reason,
                 )
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - alert hook must not block finalize
+                _log.debug("run-terminal alert failed", exc_info=True)
         finally:
             wdb.close()
         if notify_payload:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from taskqueue.config import Project
-from taskqueue.provision import overlay_path, packages_dir
+from taskqueue.provision import overlay_path
 from tests.helpers.master_worker import http_request, make_handler_env
 
 

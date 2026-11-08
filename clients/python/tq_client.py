@@ -45,6 +45,59 @@ def progress(pct: float, msg: str = "") -> None:
     print(line, flush=True)
 
 
+def env_info(*, print_it: bool = False) -> dict[str, str | None]:
+    """Return runner-injected ``TQ_*`` identity vars (and optionally print them)."""
+    keys = ("TQ_HOME", "TQ_PROJECT", "TQ_TASK_ID", "TQ_CONTROL_FILE", "TQ_OPERATOR", "TQ_DRY_RUN")
+    info = {k: os.environ.get(k) for k in keys}
+    if print_it:
+        for k, v in info.items():
+            print(f"{k}={v}", flush=True)
+    return info
+
+
+def require_gpu(*, exit_code: int = 2) -> None:
+    """Fail fast when no usable GPU is present (YAML ``--require-gpu`` convention).
+
+    Tries ``torch.cuda.is_available()``, then ``nvidia-smi -L``. On failure prints a
+    clear message and raises ``SystemExit(exit_code)``.
+    """
+    try:
+        import torch  # type: ignore[import-untyped]
+
+        if bool(torch.cuda.is_available()):
+            return
+        print("require_gpu: torch.cuda.is_available() is False", flush=True)
+        raise SystemExit(exit_code)
+    except SystemExit:
+        raise
+    except Exception:
+        pass
+    import shutil
+    import subprocess
+
+    smi = shutil.which("nvidia-smi")
+    if smi:
+        try:
+            r = subprocess.run(
+                [smi, "-L"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if r.returncode == 0 and (r.stdout or "").strip():
+                return
+            print(
+                f"require_gpu: nvidia-smi -L failed (rc={r.returncode}): {(r.stderr or r.stdout or '').strip()}",
+                flush=True,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print(f"require_gpu: nvidia-smi error: {exc}", flush=True)
+    else:
+        print("require_gpu: neither torch.cuda nor nvidia-smi available", flush=True)
+    raise SystemExit(exit_code)
+
+
 def metric(**fields: Any) -> None:
     """Emit structured metrics the daemon merges into ``runs.metrics_json`` (last value per key wins).
 
@@ -59,8 +112,8 @@ def control_file() -> Path | None:
     return Path(raw) if raw else None
 
 
-def poll_control() -> str | None:
-    """Return control action (`suspend`, …) or None if idle/missing."""
+def get_control() -> dict[str, Any] | None:
+    """Return the full control-file payload, or None if idle/missing."""
     path = control_file()
     if path is None or not path.is_file():
         return None
@@ -68,16 +121,71 @@ def poll_control() -> str | None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    if isinstance(data, dict):
-        action = data.get("action")
-        return str(action) if action else None
-    return None
+    return data if isinstance(data, dict) else None
+
+
+def poll_control() -> str | None:
+    """Return control action (`suspend`, `hold`, …) or None if idle/missing."""
+    data = get_control()
+    if not data:
+        return None
+    action = data.get("action")
+    return str(action) if action else None
 
 
 def request_suspend_exit() -> None:
     """Exit with EXIT_SUSPENDED after optional message."""
     print(f"cooperative suspend requested; exiting {EXIT_SUSPENDED}", flush=True)
     raise SystemExit(EXIT_SUSPENDED)
+
+
+def hold_until() -> float | None:
+    """Unix epoch until which a hold is active, or None if not holding."""
+    data = get_control()
+    if not data or data.get("action") != "hold":
+        return None
+    until = data.get("until")
+    try:
+        return float(until) if until is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def maybe_hold(*, sleep_sec: float = 1.0, clock: Callable[[], float] = time.time) -> bool:
+    """If control asks for hold and ``until`` is in the future, sleep and return True.
+
+    Suspend always wins: if action is ``suspend``, exit 75 instead.
+    Returns False when not holding (caller should do useful work).
+    """
+    data = get_control()
+    if not data:
+        return False
+    action = data.get("action")
+    if action == "suspend":
+        request_suspend_exit()
+    if action != "hold":
+        return False
+    until = hold_until()
+    if until is None or clock() >= until:
+        return False
+    print(f"cooperative hold until {until:.0f}; idling", flush=True)
+    while True:
+        data = get_control()
+        if not data:
+            return True
+        action = data.get("action")
+        if action == "suspend":
+            request_suspend_exit()
+        if action != "hold":
+            return True
+        try:
+            u = float(data.get("until"))
+        except (TypeError, ValueError):
+            return True
+        now = clock()
+        if now >= u:
+            return True
+        time.sleep(min(sleep_sec, max(0.05, u - now)))
 
 
 def save_checkpoint(path: str | Path, payload: dict) -> None:
@@ -145,9 +253,10 @@ class CheckpointCadence:
 
 
 def maybe_suspend() -> None:
-    """If control file asks for suspend, exit 75."""
+    """If control file asks for suspend, exit 75. Hold is handled by ``maybe_hold``."""
     if poll_control() == "suspend":
         request_suspend_exit()
+    maybe_hold()
 
 
 def progress_loop(

@@ -2,6 +2,7 @@
   "version": 1,
   "topics": {
     "block-project": {"path": "help/block-project.md"},
+    "cooperative-control": {"path": "help/cooperative-control.md"},
     "force-run": {"path": "help/force-run.md"},
     "groups": {"path": "help/groups.md"},
     "dependencies": {"path": "help/dependencies.md"},
@@ -42,6 +43,12 @@
       "audience": "agent",
       "capability": "wait_notify",
       "ui_pages": []
+    },
+    "task-script-cookbook": {
+      "path": "agents/task-script-cookbook.md",
+      "audience": "agent",
+      "capability": "submit",
+      "ui_pages": []
     }
   },
   "references": {
@@ -53,5 +60,5 @@
     "mcp": {"path": "mcp.md", "capability": "wait_notify"},
     "security": {"path": "security.md", "capability": "auth"}
   },
-  "general_topic_ids": ["block-project", "force-run", "groups", "dependencies", "tq-metric", "prod-vs-dev", "queue-hygiene"]
+  "general_topic_ids": ["block-project", "cooperative-control", "force-run", "groups", "dependencies", "tq-metric", "prod-vs-dev", "queue-hygiene"]
 }

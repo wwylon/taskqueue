@@ -61,7 +61,7 @@ def _daemon_running(home: Path) -> int | None:
             if not psutil.pid_exists(pid):
                 return None
         return pid
-    except Exception:
+    except (ValueError, OSError, psutil.Error):
         pass
     return None
 
@@ -168,6 +168,7 @@ def _check_ownership_or_print(row, key: str, *, force: bool) -> str | None:
     Returns an error string if the caller should abort (return 1), else None.
     """
     import os
+
     from taskqueue.db import check_ownership
 
     operator = os.environ.get("TQ_OPERATOR")
@@ -237,7 +238,7 @@ def offline_sqlite_write_blocked(home: Path) -> str | None:
             row = db.execute("SELECT holder, expires_at FROM master_lease WHERE singleton=1").fetchone()
         finally:
             db.close()
-    except Exception:
+    except Exception:  # noqa: BLE001 - lease lookup in the CLI is advisory
         return None
     if row is None:
         return None
@@ -254,7 +255,12 @@ def offline_sqlite_write_blocked(home: Path) -> str | None:
 
 
 def master_mutation(
-    home: Path, path: str, *, force: bool = False, params: dict | None = None
+    home: Path,
+    path: str,
+    *,
+    force: bool = False,
+    params: dict | None = None,
+    body: dict | None = None,
 ) -> tuple[dict | None, str]:
     """POST a write to the master when a daemon runs, so the CLI never writes SQLite under it.
 
@@ -272,7 +278,9 @@ def master_mutation(
     if force:
         q["force"] = "1"
     q.update({k: str(v) for k, v in (params or {}).items() if v is not None})
-    resp = via_master(home, "POST", path + (("?" + urlencode(q)) if q else ""))
+    resp = via_master(
+        home, "POST", path + (("?" + urlencode(q)) if q else ""), body=body
+    )
     if resp is not None:
         if resp.get("unreachable"):
             print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)

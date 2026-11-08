@@ -36,9 +36,8 @@ def test_safe_extract_rejects_traversal(tmp_path: Path) -> None:
         tar.addfile(info, io.BytesIO(data))
     dest = tmp_path / "out"
     dest.mkdir()
-    with tarfile.open(archive, "r:gz") as tar:
-        with pytest.raises(ValueError, match="unsafe"):
-            safe_extract(tar, dest)
+    with tarfile.open(archive, "r:gz") as tar, pytest.raises(ValueError, match="unsafe"):
+        safe_extract(tar, dest)
 
 
 def test_safe_member_allows_normal(tmp_path: Path) -> None:
@@ -74,7 +73,8 @@ def test_import_clears_stale_wal_at_destination(tmp_path: Path) -> None:
     of the freshly-imported queue.db would replay stale WAL frames against
     it, corrupting or reverting the import."""
     from datetime import UTC, datetime
-    from taskqueue.db import open_db, get_task
+
+    from taskqueue.db import get_task, open_db
 
     # Source home: has a real task in it, exported.
     src_home = tmp_path / "src"

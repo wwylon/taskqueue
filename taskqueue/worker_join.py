@@ -10,7 +10,6 @@ from typing import Any
 
 from taskqueue.config import PROTOCOL_VERSION, load_projects, registry_path
 
-
 JOIN_SCHEMA_VERSION = 1
 
 
@@ -30,7 +29,7 @@ def build_join_payload(
     projects_out: dict[str, dict[str, Any]] = {}
     try:
         projects = load_projects(home)
-    except Exception:
+    except Exception:  # noqa: BLE001 - a bad projects.yaml means no projects
         projects = {}
     for name, proj in projects.items():
         if not proj.git_url:
@@ -61,7 +60,7 @@ def _project_remote_raw(home: Path, name: str) -> bool:
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         cfg = (raw.get("projects") or {}).get(name) or {}
         return bool(cfg.get("remote"))
-    except Exception:
+    except (OSError, AttributeError, yaml.YAMLError):
         return False
 
 

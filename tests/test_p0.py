@@ -5,12 +5,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 import yaml
 
-from taskqueue.config import Project
-from taskqueue.daemon import clock_jump_threshold, is_clock_jump, requeue_orphaned_running
-from taskqueue.scheduler import should_schedule_locally
+from taskqueue._db_runs import force_task, insert_run
 from taskqueue._db_tasks import (
     claim_task_running,
     enable_task,
@@ -19,9 +16,11 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
-from taskqueue._db_runs import force_task, insert_run
+from taskqueue.config import Project
+from taskqueue.daemon import clock_jump_threshold, is_clock_jump, requeue_orphaned_running
 from taskqueue.db import open_db, parse_task_yaml
 from taskqueue.models import STATUS_DISABLED, STATUS_QUEUED, STATUS_RUNNING
+from taskqueue.scheduler import should_schedule_locally
 
 
 def _project(name: str, root: Path) -> Project:

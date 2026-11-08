@@ -71,7 +71,7 @@ function _syncNotifProjectOptions(events) {
     if (p) projs.add(String(p));
   });
   const cur = _notifProjectFilter;
-  const opts = ['<option value="">' + escHtml(i18n.t('notif.allProjects') || 'all projects') + '</option>'];
+  const opts = ['<option value="">' + escHtml(i18n.t('notif.allProjects')) + '</option>'];
   [...projs].sort().forEach(p => {
     opts.push(`<option value="${escHtml(p)}"${p === cur ? ' selected' : ''}>${escHtml(p)}</option>`);
   });
@@ -103,7 +103,7 @@ export function tqAlertDetailHtml(ev) {
   const tail = (d.log_tail || []).length
     ? `<pre style="margin:6px 0 0;padding:6px 8px;background:var(--bg3);border-radius:4px;white-space:pre-wrap;font-size:11px">${escHtml(d.log_tail.join('\n'))}</pre>` : '';
   const open = (d.project && d.task_id)
-    ? `<div style="margin-top:6px"><button type="button" class="cfg-btn" data-click="${tqAct([['tqOpenDrawer', String(d.project), String(d.task_id)]])}" data-click-stop>${escHtml(i18n.t('btn.detail') || 'Detail')}</button></div>` : '';
+    ? `<div style="margin-top:6px"><button type="button" class="cfg-btn" data-click="${tqAct([['tqOpenDrawer', String(d.project), String(d.task_id)]])}" data-click-stop>${escHtml(i18n.t('btn.detail'))}</button></div>` : '';
   return `<div style="font-size:12px;line-height:1.5">${rows.join('')}${tail}${open}</div>`;
 }
 export function tqToggleAlertDetail(el) {

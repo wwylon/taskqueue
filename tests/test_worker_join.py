@@ -6,14 +6,14 @@ from pathlib import Path
 
 import yaml
 
+from taskqueue._cli_worker import cmd_worker_config_master
 from taskqueue.config import load_projects, project_config_path
-from taskqueue.db import open_db, set_config, get_config
+from taskqueue.db import get_config, open_db, set_config
 from taskqueue.worker_join import (
     build_join_payload,
     load_join_file,
     write_join_file,
 )
-from taskqueue._cli_worker import cmd_worker_config_master
 
 
 def _home_with_project(tmp_path: Path, *, remote: bool = False) -> Path:
@@ -69,7 +69,7 @@ def test_load_join_file_rejects_missing_token(tmp_path: Path) -> None:
     path.write_text("master_url: http://1.2.3.4:8765\n", encoding="utf-8")
     try:
         load_join_file(path)
-        assert False, "expected ValueError"
+        raise AssertionError("expected ValueError")
     except ValueError as e:
         assert "auth_token" in str(e)
 

@@ -6,19 +6,23 @@
 """
 
 from __future__ import annotations
-from taskqueue.jsonutil import json_list
 
 import json
+import logging
 import sqlite3
 import subprocess
 import threading
 from typing import Any
 
+from taskqueue.jsonutil import json_list
+
+_log = logging.getLogger(__name__)
+
 
 def _run_teardown_async(td_cmd: list[str], td_timeout: float, td_best_effort: bool) -> None:
     try:
         subprocess.run(td_cmd, timeout=td_timeout, check=not td_best_effort)
-    except Exception as te:
+    except (OSError, subprocess.SubprocessError) as te:
         if not td_best_effort:
             print(f"[runner] teardown failed: {te}", flush=True)
             return
@@ -72,8 +76,8 @@ def apply_finalize_wake_hooks(
         hook_ids = json_list(hook_ids_raw)
         for tid in hook_ids:
             _retry_and_stamp_spawned(conn, project, str(tid), parent_ref)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - hooks must not block finalize
+        _log.debug("on_success/on_failure hooks failed", exc_info=True)
 
     # rearm_on = upstream_success (AND or OR peers)
     if status == "completed":
@@ -90,7 +94,7 @@ def apply_finalize_wake_hooks(
                     try:
                         raw = rrow[col] if col in rrow.keys() else "[]"
                         deps = json_list(raw)
-                    except Exception:
+                    except (TypeError, ValueError, KeyError):
                         continue
                     for d in deps:
                         d = str(d)
@@ -102,8 +106,8 @@ def apply_finalize_wake_hooks(
                             dep_ids.append(d)
                 if task_id in dep_ids:
                     _retry_and_stamp_spawned(conn, project, rrow["task_id"], parent_ref)
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 - dependent wake-up must not block finalize
+            _log.debug("dependent wake-up failed", exc_info=True)
 
     if not run_teardown:
         return
@@ -137,5 +141,5 @@ def apply_finalize_wake_hooks(
                     ).start()
                 else:
                     _run_teardown_async(td_cmd, td_timeout, td_best_effort)
-    except Exception:
-        pass
+    except Exception:  # noqa: BLE001 - teardown must not block finalize
+        _log.debug("teardown failed to start", exc_info=True)

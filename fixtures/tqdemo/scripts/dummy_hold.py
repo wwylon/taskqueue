@@ -1,21 +1,21 @@
-"""Short hold for exclusive / deps / cap fixtures."""
+"""Idle under cooperative hold; progress continues after until expires."""
 from __future__ import annotations
 
-import argparse
+import sys
 import time
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT / "clients" / "python"))
+
+from tq_client import maybe_suspend, progress  # noqa: E402
 
 
 def main() -> int:
-    p = argparse.ArgumentParser()
-    p.add_argument("--seconds", type=float, default=2.0)
-    p.add_argument("--label", default="hold")
-    args = p.parse_args()
-    steps = max(1, int(args.seconds / 0.25))
-    for i in range(steps + 1):
-        pct = 100.0 * i / steps
-        print(f"{args.label} ({pct:.1f}%)", flush=True)
-        if i < steps:
-            time.sleep(args.seconds / steps)
+    for i in range(0, 101, 10):
+        maybe_suspend()  # honors hold (idles) and suspend (exit 75)
+        progress(float(i), f"dummy-hold step {i}")
+        time.sleep(0.25)
     return 0
 
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import math
 import sqlite3
 from typing import Any
+
 from taskqueue.rows import row_get
 
 # How many recent runs feed a prediction, unless config overrides.

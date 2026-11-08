@@ -8,6 +8,8 @@ guide_anchors:
   web-ui: tq-metric
 ---
 
+**Prefer** `tq.metric(...)` from [`tq_client`](../../clients/README.md) — see [task-script-cookbook.md](../agents/task-script-cookbook.md).
+
 The **Metrics (TQ_METRIC)** block in the task drawer (Details → Info) is **not** a fixed list of daemon fields. It shows numeric keys your **task script** printed on stdout.
 
 ## How it works

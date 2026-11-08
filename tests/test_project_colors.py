@@ -1,5 +1,5 @@
-from taskqueue.project_colors import assign_project_colors, delta_e, ensure_project_colors, hash_color, pick_color
 from taskqueue.db import get_config, open_db
+from taskqueue.project_colors import assign_project_colors, delta_e, ensure_project_colors, hash_color, pick_color
 
 
 def test_deterministic_and_distinct():

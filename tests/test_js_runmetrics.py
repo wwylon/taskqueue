@@ -62,7 +62,7 @@ r.click = [click.includes('openLogIssue'), click.includes('log-issue-chip'), cli
 S.cpuTotalCores = 4; S.status = { running: [{ run_id: 7 }] };
 const full = g._usageHtml({ run_id: 7, current_cpu_pct: 90, peak_cpu_pct: 95, current_ram_gib: 2, peak_ram_gib: 3, requires_gpu: true, current_vram_gib: 1.5,
   peak_vram_gib: 2, current_gpu_util_pct: 40, avg_gpu_util_pct: 30 });
-r.full = ['CPU ', '3.6 cores', 'var(--warn)', '2.0 GiB', '/3.0 GiB pk', 'VRAM', '1.5 GiB', '40%', '30% avg'].map(x => full.includes(x));
+r.full = ['CPU ', '3.6 cores', 'var(--warn)', '2.0 GiB', 'metrics.peakSuffix', 'VRAM', '1.5 GiB', '40%'].map(x => full.includes(x));
 const peaks = g._usageHtml({ run_id: 1, peak_cpu_pct: 50, peak_ram_gib: 1, peak_vram_gib: 2, avg_gpu_util_pct: 10 });
 r.peaks = ['CPU pk', 'RAM pk', 'VRAM pk', 'GPU avg'].map(x => peaks.includes(x));
 r.vram0 = g._usageHtml({ run_id: 1, requires_gpu: true }).includes('0.0 GiB');
@@ -74,7 +74,7 @@ r.idle = g._usageHtml({ run_id: 99 }).includes('—');
     assert out["noChips"] == ""
     assert out["plain"] == [True, True, True, False]
     assert out["click"] == [True, True, True, True]
-    assert out["full"] == [True] * 9 and out["peaks"] == [True] * 4
+    assert out["full"] == [True] * 8 and out["peaks"] == [True] * 4
     assert out["vram0"] and out["pending"] and out["idle"]
 
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -212,24 +212,24 @@ def _history_setup(extra: str = "") -> str:
 
 
 def test_history_view_sorts_filters_and_escapes():
+    # F-258: status/worker/sort are applied server-side; renderHistory paints S.history order.
     out = _run(
         _history_setup(r"""
     m.renderHistory();
     const byRun = els['history-tbody'].innerHTML;
-    S.historySort = { field: 'run_id', dir: 1 };
-    m.renderHistory();
-    const asc = els['history-tbody'].innerHTML;
-    S.historyStatusFilter = 'failed';
-    m.renderHistory();
-    const failedOnly = els['history-tbody'].innerHTML;
-    S.historyStatusFilter = 'all'; S.globalWorkerFilter = 'master';
-    m.renderHistory();
-    const masterOnly = els['history-tbody'].innerHTML;
     const desktopCards = els['history-mobile-cards'].innerHTML;
     globalThis.matchMedia = () => ({ matches: true }); globalThis.window.matchMedia = globalThis.matchMedia;
     m.renderHistory();
     const mobileRows = els['history-tbody'].innerHTML;
-    console.log(JSON.stringify({ byRun, asc, failedOnly, masterOnly, cards: els['history-mobile-cards'].innerHTML, desktopCards, mobileRows,
+    const cards = els['history-mobile-cards'].innerHTML;
+    globalThis.matchMedia = () => ({ matches: false }); globalThis.window.matchMedia = globalThis.matchMedia;
+    S.history = [rows[1]]; // server would send only failed
+    m.renderHistory();
+    const failedOnly = els['history-tbody'].innerHTML;
+    S.history = [rows[0]]; // server would send only master (empty worker_id)
+    m.renderHistory();
+    const masterOnly = els['history-tbody'].innerHTML;
+    console.log(JSON.stringify({ byRun, failedOnly, masterOnly, cards, desktopCards, mobileRows,
       prev: S.prevHistoryStr.length > 10, sortCalls,
       anom: m._anomalyBadge(rows[1]), noAnom: m._anomalyBadge(rows[0]) }));""")
     )
@@ -237,12 +237,12 @@ def test_history_view_sorts_filters_and_escapes():
     def ids(h):
         return [int(x) for x in __import__("re").findall(r'<td class="mob-hide mono">#(\d+)</td>', h)]
 
-    assert ids(out["byRun"]) == [3, 2, 1] and ids(out["asc"]) == [1, 2, 3]
+    assert ids(out["byRun"]) == [1, 3, 2]
     assert ids(out["failedOnly"]) == [3] and ids(out["masterOnly"]) == [1]
     assert re.search(r'<span class="proj-tag"[^>]*>b/</span>&lt;t3&gt;', out["byRun"])
-    assert "requeue-failed" in out["byRun"] and "requeue-interrupted" in out["byRun"]
+    assert "btn.retry" in out["byRun"] and "btn.restart" in out["byRun"]
     # F-110: renderHistory must not set prevHistoryStr (refresh.js owns identity).
-    assert "1m05s" in out["byRun"] and out["cards"].count('class="run-card"') == 1 and not out["prev"]
+    assert "1m05s" in out["byRun"] and out["cards"].count('class="run-card"') == 3 and not out["prev"]
     assert out["desktopCards"] == "" and out["mobileRows"] == ""  # only the visible layout is built
     assert "anomaly-badge" in out["anom"] and out["noAnom"] == ""
 
@@ -366,6 +366,7 @@ def test_queue_view_search_sort_and_pure_helpers():
 
 
 def test_queue_view_render_empty_state_filters_and_flash():
+    # F-258: worker/status filters are server-side; empty state is S.queue === [].
     out = _run(
         _QUEUE_STUBS
         + rf"""
@@ -373,15 +374,10 @@ def test_queue_view_render_empty_state_filters_and_flash():
                       'queue-pagination']) els[id] = mkEl();
     const m = await import({_imp("views/queue.js")});
     const {{ S }} = await import({_imp("core/state.js")});
-    S.queue = [{{ project: 'a', task_id: 't1', status: 'completed', finished_at: '' }},
-               {{ project: 'a', task_id: 't2', status: 'failed', last_worker_id: 'w1', finished_at: '' }}];
-    S.queueTotal = 2; S.status = {{ running: [] }}; S.globalWorkerFilter = 'w9';
+    S.queue = []; S.queueTotal = 0; S.status = {{ running: [] }};
     m.renderQueue();
     const empty = {{ head: els['queue-all-tasks-heading'].textContent, emptyShown: els['queue-empty'].hidden === false,
       rows: S.queueExportRows.length, sort: sortCalls[0] }};
-    S.globalWorkerFilter = 'w1';
-    try {{ m.renderQueue(); }} catch (e) {{ /* row builders need many app.js globals; the filter ran before them */ }}
-    const w1 = S.queueExportRows.map(t => t.task_id);
     // flash: sets key, auto-clears, reapply marks a freshly rendered row
     const row = mkEl(); els['qrow-1-a-t2'] = row;
     m._flashQueueRow('a', 't2');
@@ -390,11 +386,10 @@ def test_queue_view_render_empty_state_filters_and_flash():
     m._reapplyQueueFlash();
     const reapplied = row.classList.has('qrow-flash');
     clearTimeout(S.queueFlashTimer);
-    console.log(JSON.stringify({{ empty, w1, flashed, reapplied, cols: m.QUEUE_COLS }}));"""
+    console.log(JSON.stringify({{ empty, flashed, reapplied, cols: m.QUEUE_COLS }}));"""
     )
-    assert out["empty"]["head"] == "All tasks (0 of 2)" and out["empty"]["emptyShown"] and out["empty"]["rows"] == 0
+    assert out["empty"]["head"] == "queue.allTasksEmpty" and out["empty"]["emptyShown"] and out["empty"]["rows"] == 0
     assert out["empty"]["sort"] == ["q", "status", 1]
-    assert out["w1"] == ["t2"]
     assert out["flashed"] == {"key": True, "cls": True, "timer": True} and out["reapplied"] and out["cols"] == 9
 
 

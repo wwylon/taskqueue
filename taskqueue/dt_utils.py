@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from taskqueue.db import parse_iso
 
@@ -10,14 +10,14 @@ from taskqueue.db import parse_iso
 def now_utc(now: datetime | None = None) -> datetime:
     """Current UTC time, or ``now`` coerced to aware UTC (naive is assumed UTC)."""
     if now is None:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
     if now.tzinfo is None:
-        return now.replace(tzinfo=timezone.utc)
+        return now.replace(tzinfo=UTC)
     return now
 
 
 def iso_utc(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat()
+    return dt.astimezone(UTC).isoformat()
 
 
 def parse_utc(value: str | None) -> datetime | None:
@@ -26,10 +26,10 @@ def parse_utc(value: str | None) -> datetime | None:
         return None
     try:
         dt = parse_iso(str(value))
-    except Exception:
+    except (TypeError, ValueError):
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 

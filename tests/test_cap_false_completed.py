@@ -8,10 +8,10 @@ from pathlib import Path
 
 import yaml
 
+from taskqueue._db_tasks import get_task, upsert_task
 from taskqueue.config import Project
 from taskqueue.daemon import _collect_finished_runs
 from taskqueue.db import open_db, parse_task_yaml
-from taskqueue._db_tasks import get_task, upsert_task
 from taskqueue.runner import ActiveRun
 
 
@@ -71,22 +71,34 @@ def test_clean_exit0_still_completed(tmp_path: Path) -> None:
     assert _status(db, tmp_path, 0, None) == "completed"
 
 
-def test_enforce_cap_accepts_sqlite_row(tmp_path: Path) -> None:
+def test_cap_note_accepts_sqlite_row(tmp_path: Path) -> None:
     db = _db_with_task(tmp_path)
     row = get_task(db, "p", "t1")
     assert not hasattr(row, "get")  # sqlite3.Row has no .get
     run = object.__new__(ActiveRun)
     run.task_row = row
-    run.stop_reason = None
-    run.proc = None
-    run.db_path = None
-    run.graceful_stop_sec = 1
     run._log_file = open(tmp_path / "log.txt", "w", encoding="utf-8")
-    run._terminate = lambda: None
-    assert run._enforce_wall_clock_cap() is True
+    run.note_cap_reached()
     run._log_file.close()
-    assert run.stop_reason == "wall_clock_cap"
     assert "wall_clock_cap_sec=5" in (tmp_path / "log.txt").read_text(encoding="utf-8")
+
+
+def test_reader_keeps_draining_past_cap(tmp_path: Path) -> None:
+    """The daemon alone owns the cap: past it the reader must not stall or kill the
+    child (a stalled pipe reader froze chatty tasks inside their suspend window)."""
+    import time
+
+    db = _db_with_task(tmp_path)
+    run = ActiveRun(conn=db, task_row=get_task(db, "p", "t1"), log_dir=tmp_path / "logs", cwd=tmp_path)
+    run.started_at = time.monotonic() - 100  # cap is 5 s
+    run._log_file = open(tmp_path / "log.txt", "w", encoding="utf-8")
+    run._terminate = lambda: (_ for _ in ()).throw(AssertionError("reader terminated the child"))
+    t0 = time.monotonic()
+    for i in range(3):
+        run._handle_output_line(f"line {i}\n", stamped=True)
+    run._log_file.close()
+    assert time.monotonic() - t0 < 1.0
+    assert run.last_log_line == "line 2" and run.stop_reason is None
 
 
 def test_pressure_victim_exit75_stays_stopped(tmp_path: Path) -> None:

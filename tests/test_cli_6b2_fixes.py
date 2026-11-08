@@ -41,8 +41,8 @@ def test_config_set_masks_auth_token(tmp_path: Path, capsys) -> None:
 
 def test_config_set_preserves_spaces_in_value(tmp_path) -> None:
     from taskqueue._cli_admin import cmd_config_set
-    from taskqueue.db import get_config, open_db
     from taskqueue.config import db_path
+    from taskqueue.db import get_config, open_db
 
     assert cmd_config_set(tmp_path, ["retention_projects=a b"]) == 0
     conn = open_db(db_path(tmp_path))

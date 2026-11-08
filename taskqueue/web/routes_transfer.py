@@ -1,7 +1,12 @@
 """Handler mixin (extracted from make_handler)."""
 
 from __future__ import annotations
+
+import logging
+
+from taskqueue.auth import finalize_token_matches
 from taskqueue.jsonutil import json_list
+from taskqueue.rows import row_get
 
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
@@ -12,8 +17,8 @@ from .deps import (
     stream_request_body_to_file,
     unquote,
 )
-from taskqueue.auth import finalize_token_matches
-from taskqueue.rows import row_get
+
+_log = logging.getLogger(__name__)
 
 
 def _upstream_host_allowed(host: str | None) -> bool:
@@ -104,28 +109,25 @@ class TransferRoutes:
         self._serve_file(f, "application/gzip")
 
     def _serve_bundle(self, project: str, bundle_hash: str) -> None:
-        from taskqueue.config import state_home
 
         self._serve_gzip_artifact(
             project,
             bundle_hash,
-            lambda p, h: state_home() / "bundles" / p / f"{h}.tar.gz",
+            lambda p, h: self._home / "bundles" / p / f"{h}.tar.gz",
         )
 
     def _serve_package_overlay(self, project: str, patch_hash: str) -> None:
         """R-009: serve dirty-tree overlay tar for a git_patch package."""
-        from taskqueue.config import state_home
         from taskqueue.provision import overlay_path
 
         self._serve_gzip_artifact(
             project,
             patch_hash,
-            lambda p, h: overlay_path(state_home(), p, h),
+            lambda p, h: overlay_path(self._home, p, h),
         )
 
     def _serve_sync_fingerprint(self, project_name: str) -> None:
         """Allowlisted tree fingerprint for lazy master→worker sync."""
-        from taskqueue.config import state_home
         from taskqueue.project_sync import compute_fingerprint, get_sync_generation
 
         project = self._projects_ref().get(project_name)
@@ -138,7 +140,7 @@ class TransferRoutes:
                 {
                     "project": project_name,
                     "fingerprint": "",
-                    "generation": get_sync_generation(state_home(), project_name),
+                    "generation": get_sync_generation(self._home, project_name),
                     "file_count": 0,
                     "push": [],
                     "remote": bool(getattr(project, "remote", False)),
@@ -151,7 +153,7 @@ class TransferRoutes:
             {
                 "project": project_name,
                 "fingerprint": fp,
-                "generation": get_sync_generation(state_home(), project_name),
+                "generation": get_sync_generation(self._home, project_name),
                 "file_count": len(manifest),
                 "push": patterns,
                 "remote": bool(getattr(project, "remote", False)),
@@ -159,7 +161,6 @@ class TransferRoutes:
         )
 
     def _serve_sync_manifest(self, project_name: str) -> None:
-        from taskqueue.config import state_home
         from taskqueue.project_sync import (
             build_manifest,
             fingerprint_from_manifest,
@@ -180,7 +181,7 @@ class TransferRoutes:
                 "project": project_name,
                 "files": manifest,
                 "fingerprint": fingerprint_from_manifest(manifest),
-                "generation": get_sync_generation(state_home(), project_name),
+                "generation": get_sync_generation(self._home, project_name),
             }
         )
 
@@ -232,7 +233,7 @@ class TransferRoutes:
                         files.append(
                             {"path": str(rel_p).replace("\\", "/"), "size": stat.st_size, "mtime": stat.st_mtime}
                         )
-                    except Exception:
+                    except OSError:
                         pass
                 if truncated:
                     break
@@ -330,8 +331,8 @@ class TransferRoutes:
             (run["project"], run["task_id"]),
         ).fetchone()
         try:
-            specs = json_list((task["transfer"] if task else None))
-        except Exception:
+            specs = json_list(task["transfer"] if task else None)
+        except (TypeError, ValueError):
             specs = []
         if not isinstance(specs, list):
             specs = []
@@ -410,7 +411,6 @@ class TransferRoutes:
 
     def _serve_cas_blob(self, sha256: str) -> None:
         """D1: serve a CAS blob by content hash (requires valid run token)."""
-        from taskqueue.config import state_home
         from taskqueue.data.manifest import cas_blob_path
 
         if not re.fullmatch(r"[0-9a-f]{64}", sha256):
@@ -425,7 +425,7 @@ class TransferRoutes:
         if self._authorize_active_run(run_id_raw) is None:
             return
 
-        blob = cas_blob_path(state_home() / "cas", sha256)
+        blob = cas_blob_path(self._home / "cas", sha256)
         if not blob.is_file():
             self._send_error_json(404, f"blob not found: {sha256}")
             return
@@ -433,9 +433,9 @@ class TransferRoutes:
 
     def _receive_cas_blob(self, run_id_str: str, rel_path: str) -> None:
         """D1: receive an output blob from worker and store in CAS."""
-        from taskqueue.config import state_home
-        from taskqueue.data.manifest import cas_blob_path, _sha256_file
         import tempfile
+
+        from taskqueue.data.manifest import _sha256_file, cas_blob_path
 
         try:
             run_id = int(run_id_str)
@@ -474,7 +474,7 @@ class TransferRoutes:
             self._send_error_json(413, "blob too large")
             return
 
-        cas_root = state_home() / "cas"
+        cas_root = self._home / "cas"
         cas_root.mkdir(parents=True, exist_ok=True)
 
         remaining = length
@@ -503,7 +503,7 @@ class TransferRoutes:
                 tmp_path.replace(dest)
             else:
                 tmp_path.unlink(missing_ok=True)
-        except Exception as e:
+        except OSError as e:
             tmp_path.unlink(missing_ok=True)
             self._send_error_json(500, f"store failed: {e}")
             return
@@ -549,7 +549,6 @@ class TransferRoutes:
     def _serve_data_manifest_for_run(self, run_id_str: str) -> None:
         """D1: return the data.inputs content-addressed manifest for a run's task."""
         from taskqueue.data.manifest import build_manifest, store_blob
-        from taskqueue.config import state_home
 
         try:
             run_id = int(run_id_str)
@@ -575,7 +574,7 @@ class TransferRoutes:
         if task:
             try:
                 data_block = json.loads(task["data"] or "null")
-            except Exception:
+            except (TypeError, ValueError):
                 pass
 
         manifests = []
@@ -598,20 +597,20 @@ class TransferRoutes:
                             max_bytes = int(float(s[:-3]) * 1024**2)
                         else:
                             max_bytes = int(s)
-                    except Exception:
+                    except ValueError:
                         pass
                 try:
                     manifest = build_manifest(path_pat, project.root, max_bytes=max_bytes)
 
                     # Store blobs in CAS so workers can download them
-                    cas_root = state_home() / "cas"
+                    cas_root = self._home / "cas"
                     for entry in manifest:
                         file_path = project.root / entry["path"]
                         if file_path.is_file():
                             try:
                                 store_blob(cas_root, file_path)
-                            except Exception:
-                                pass
+                            except Exception:  # noqa: BLE001 - CAS store is best-effort
+                                _log.debug("CAS store of a declared input failed", exc_info=True)
 
                     manifests.append(
                         {
@@ -620,7 +619,7 @@ class TransferRoutes:
                             "files": manifest,
                         }
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - a manifest error is reported per input
                     manifests.append({"mount": inp.get("mount", ""), "error": str(e)})
 
         self._json({"run_id": run_id, "manifests": manifests})
@@ -630,7 +629,6 @@ class TransferRoutes:
     def _serve_sqlite_snapshot(self, run_id_str: str, db_rel_path: str) -> None:
         """D2: create and serve a VACUUM INTO snapshot of a SQLite file."""
         from taskqueue.data.manifest import sqlite_snapshot, store_blob
-        from taskqueue.config import state_home
 
         try:
             run_id = int(run_id_str)
@@ -662,7 +660,7 @@ class TransferRoutes:
         if task:
             try:
                 data_block = json.loads(task["data"] or "null")
-            except Exception:
+            except (TypeError, ValueError):
                 data_block = None
         if not _snapshot_path_allowed(norm, data_block if isinstance(data_block, dict) else None):
             self._send_error_json(403, "snapshot path not allowlisted (use data/ or data.inputs)")
@@ -674,7 +672,7 @@ class TransferRoutes:
             return
 
         # Create snapshot
-        snaps_dir = state_home() / "snapshots"
+        snaps_dir = self._home / "snapshots"
         snaps_dir.mkdir(parents=True, exist_ok=True)
         import uuid as _uuid
 
@@ -685,16 +683,16 @@ class TransferRoutes:
         try:
             try:
                 sqlite_snapshot(db_path, snap_path)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - any snapshot error becomes a 500
                 self._send_error_json(500, f"snapshot failed: {e}")
                 return
 
             # Store in CAS
-            cas_root = state_home() / "cas"
+            cas_root = self._home / "cas"
             try:
                 store_blob(cas_root, snap_path)
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - CAS store is best-effort
+                _log.debug("CAS store of the snapshot failed", exc_info=True)
 
             self._serve_file(snap_path, "application/octet-stream")
         finally:
@@ -707,8 +705,9 @@ class TransferRoutes:
 
     def _proxy_service_request(self, service_name: str, sub_path: str) -> None:
         """D3: HTTP-proxy broker — verify token and forward to upstream."""
-        from taskqueue.data.service_broker import verify_service_token
         import urllib.request as _ureq
+
+        from taskqueue.data.service_broker import verify_service_token
 
         # Get token and run_id from headers
         token = self.headers.get("X-TQ-Service-Token") or self.headers.get("Authorization", "").replace("Bearer ", "")
@@ -754,7 +753,7 @@ class TransferRoutes:
                         if isinstance(svc, dict) and svc.get("name") == service_name:
                             upstream = svc.get("upstream")
                             break
-            except Exception:
+            except (TypeError, ValueError, AttributeError):
                 pass
 
         if not upstream:
@@ -825,7 +824,7 @@ class TransferRoutes:
             self.send_header("Content-Length", str(len(resp_body)))
             self.end_headers()
             self.wfile.write(resp_body)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any upstream error becomes a 502
             self._send_error_json(502, f"upstream error: {e}")
 
     def _handle_data_upload(self, project_name: str) -> None:
@@ -842,7 +841,7 @@ class TransferRoutes:
         try:
             target_file = project.resolve(rel_path).resolve()
             root_resolved = project.root.resolve()
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             self._send_error_json(403, "Invalid file path")
             return
         try:

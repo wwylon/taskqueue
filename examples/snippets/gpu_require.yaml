@@ -1,0 +1,10 @@
+# Script should call tq.require_gpu() when --require-gpu is present.
+task_id: gpu_job
+command: python
+args: [scripts/train.py, --require-gpu]
+resume_args: [scripts/train.py, --require-gpu, --resume]
+resources:
+  cpu_cores: 4
+  ram_gib: 16.0
+  gpu_vram_gib: 5.4
+execution_semantics: checkpointable

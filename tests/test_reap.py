@@ -9,11 +9,11 @@ from pathlib import Path
 import psutil
 import yaml
 
+from taskqueue._db_runs import insert_run, set_run_pid
+from taskqueue._db_tasks import get_task, set_task_status, upsert_task
 from taskqueue.config import Project
 from taskqueue.daemon import requeue_orphaned_running
 from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
-from taskqueue._db_tasks import get_task, set_task_status, upsert_task
-from taskqueue._db_runs import insert_run, set_run_pid
 from taskqueue.models import STATUS_QUEUED, STATUS_RUNNING
 from taskqueue.reap import kill_process_tree
 

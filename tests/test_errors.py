@@ -8,9 +8,9 @@ from pathlib import Path
 import yaml
 
 from taskqueue import errors as tqerr
+from taskqueue._db_tasks import clear_task_error, get_task, set_task_error, upsert_task
 from taskqueue.config import Project
 from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
-from taskqueue._db_tasks import clear_task_error, get_task, set_task_error, upsert_task
 
 
 def _project(name: str, root: Path) -> Project:

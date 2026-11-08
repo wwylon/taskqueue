@@ -1,3 +1,4 @@
+// @ts-check
 // Navigation helpers: tab switching, header-count -> queue jumps, page size, restart-status labels and the
 // log <pre> scroll-state capture used around re-renders. Other helpers (tqSyncHeaderMark, _syncUrl, setQueueFilter, ...)
 // are app.js / other-module globals resolved at call time.

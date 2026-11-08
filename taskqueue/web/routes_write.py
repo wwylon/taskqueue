@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+import sqlite3
+from typing import Any
+
+from taskqueue._db_tasks import get_task_status
+from taskqueue.dt_utils import iso_utc
+from taskqueue.fsutil import atomic_write_text
+
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
-    Path,
-    UTC,
     _PROJECT_LIMIT_FIELDS,
+    UTC,
+    Path,
     create_alert,
     create_token,
     datetime,
@@ -15,7 +23,6 @@ from .deps import (
     get_config,
     get_task,
     json,
-    os,
     pause_task,
     request_stop_with_control,
     retry_skip_reason,
@@ -24,19 +31,13 @@ from .deps import (
     set_config,
     set_project_limit,
     set_task_priority,
-    time,
     update_alert,
     update_system_alert,
     validate_config,
     write_audit,
 )
-import uuid
 
-from taskqueue.fsutil import atomic_write_text
-from typing import Any
-
-from taskqueue._db_tasks import get_task_status
-from taskqueue.dt_utils import iso_utc
+_log = logging.getLogger(__name__)
 
 
 class BulkOpError(Exception):
@@ -131,7 +132,7 @@ class WriteRoutes:
                 v = float(val)
                 if v < 0:
                     raise ValueError("negative")
-            except Exception:
+            except (TypeError, ValueError):
                 errors.append(f"Invalid value for {field!r}: {val!r}")
         _mn, _mx = data.get("min_tasks"), data.get("max_tasks")
         if not errors and _mn is not None and _mx is not None and 0 < float(_mx) < float(_mn):
@@ -149,7 +150,7 @@ class WriteRoutes:
         except Exception:
             try:
                 wdb.rollback()
-            except Exception:
+            except sqlite3.Error:
                 pass
             raise
         finally:
@@ -203,6 +204,71 @@ class WriteRoutes:
         conn.commit()
         self._audit("remove_project", project, project, f"{n_tasks} tasks, {n_runs} runs")
         self._json({"ok": True, "tasks": n_tasks, "runs": n_runs})
+
+    def _post_release_project(self, project: str) -> None:
+        """POST /api/project/release/<project> — drop queue-dir watch so the folder can move (F-240)."""
+        if not project:
+            self._send_error_json(400, "missing project")
+            return
+        from taskqueue.project_relocate import count_running
+
+        running = count_running(self._rconn(), project)
+        if running:
+            self._json(
+                {"ok": False, "error": f"{running} task(s) running in {project}; stop them first"},
+                status=409,
+            )
+            return
+        fn = getattr(self, "_release_project", None) or getattr(self._ctx, "release_project", None)
+        if fn is None:
+            self._json(
+                {"ok": False, "error": "release requires a running daemon with file watches"},
+                status=503,
+            )
+            return
+        result = fn(project)
+        if not result.get("ok"):
+            self._json(result, status=404 if "not" in str(result.get("error", "")).lower() else 400)
+            return
+        self._audit("release", project, project)
+        self._json(result)
+
+    def _post_relocate_project(self, project: str) -> None:
+        """POST /api/project/relocate/<project> body ``{new_root}`` — rewrite root + yaml_source (F-240)."""
+        if not project:
+            self._send_error_json(400, "missing project")
+            return
+        data = self._read_json() or {}
+        new_root = str(data.get("new_root") or "").strip()
+        if not new_root:
+            self._send_error_json(400, "body must include new_root")
+            return
+        from taskqueue.project_relocate import count_running
+
+        running = count_running(self._rconn(), project)
+        if running:
+            self._json(
+                {"ok": False, "error": f"{running} task(s) running in {project}; stop them first"},
+                status=409,
+            )
+            return
+        fn = getattr(self, "_relocate_project", None) or getattr(self._ctx, "relocate_project", None)
+        if fn is None:
+            self._json(
+                {"ok": False, "error": "relocate requires a running daemon"},
+                status=503,
+            )
+            return
+        result = fn(project, new_root)
+        status = 200
+        if not result.get("ok"):
+            err = str(result.get("error") or "")
+            status = 409 if "running" in err else 400
+            if "not" in err.lower() and "found" in err.lower():
+                status = 404
+        else:
+            self._audit("relocate", project, project, new_root)
+        self._json(result, status=status)
 
     def _post_priority(self, path: str, qs: dict) -> None:
         rest = path[len("/api/priority/") :]
@@ -267,28 +333,94 @@ class WriteRoutes:
             )
             if run_row:
                 set_run_stop_reason(self._wconn(), run_row["run_id"], reason)
-        self._json(self._stop_one(proj, task_id))
+        from taskqueue.eta import task_eta
+
+        # Tasks are mostly stopped for being too slow: report how much was left at this moment.
+        eta = task_eta(self._rconn(), proj, task_id)
+        out = self._stop_one(proj, task_id)
+        if eta and "remaining_sec" in eta:
+            out["eta"] = eta
+        self._json(out)
 
     def _stop_one(self, proj: str, task_id: str) -> dict[str, Any]:
         conn = self._wconn()
         # Short-circuit: queued tasks have no running process — mark interrupted
         # immediately instead of waiting for daemon pickup. The status guard is in the
         # UPDATE itself so a task the daemon claimed a moment ago is not overwritten.
+        from taskqueue._db_tasks import transition_task
         from taskqueue._time import _now
 
-        now = _now()
-        cur = conn.execute(
-            "UPDATE tasks SET status = 'interrupted', updated_at = ?, finished_at = ? "
-            "WHERE project = ? AND task_id = ? AND status = 'queued'",
-            (now, now, proj, task_id),
-        )
+        changed = transition_task(conn, proj, task_id, to="interrupted", from_="queued", finished=True, now=_now())
         conn.commit()
-        if (cur.rowcount or 0) > 0:
+        if changed:
             self._audit("stop", proj, task_id)
             return {"ok": True, "final_status": "interrupted"}
         request_stop_with_control(conn, Path(self._db_path).parent, proj, task_id, requested_by=self._requester())
         self._audit("stop", proj, task_id)
         return {"ok": True}
+
+    def _post_hold(self, path: str, qs: dict) -> None:
+        """POST /api/hold/<project>/<task_id>?duration_sec=&reason= — cooperative in-process idle."""
+        from taskqueue.db import write_control_action
+
+        proj, task_id = self._split2(path[len("/api/hold/") :])
+        row = get_task(self._rconn(), proj, task_id)
+        if row is None:
+            self._json({"ok": False, "error": f"task not found: {proj}/{task_id}"}, status=404)
+            return
+        if row["status"] != "running":
+            self._json({"ok": False, "error": f"task is not running (status={row['status']})"}, status=409)
+            return
+        own_err = self._ownership_gate(proj, task_id, qs)
+        if own_err:
+            self._json({"ok": False, "error": own_err}, status=403)
+            return
+        try:
+            duration_sec = float((qs.get("duration_sec") or ["600"])[0] or 600)
+        except (TypeError, ValueError):
+            duration_sec = 600.0
+        if duration_sec <= 0:
+            self._json({"ok": False, "error": "duration_sec must be > 0"}, status=400)
+            return
+        reason = ((qs.get("reason") or [""])[0] or "").strip()[:200] or None
+        home = Path(self._db_path).parent
+        path_ctrl = write_control_action(
+            home,
+            proj,
+            task_id,
+            "hold",
+            requested_by=self._requester(),
+            duration_sec=duration_sec,
+            reason=reason,
+        )
+        import json as _json
+        import time as _time
+
+        until = _time.time() + duration_sec
+        try:
+            data = _json.loads(path_ctrl.read_text(encoding="utf-8"))
+            until = float(data.get("until") or until)
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+        self._audit("hold", proj, task_id)
+        self._json({"ok": True, "until": until, "duration_sec": duration_sec, "reason": reason})
+
+    def _post_unhold(self, path: str, qs: dict) -> None:
+        """POST /api/unhold/<project>/<task_id> — clear cooperative hold."""
+        from taskqueue.db import clear_control_file
+
+        proj, task_id = self._split2(path[len("/api/unhold/") :])
+        row = get_task(self._rconn(), proj, task_id)
+        if row is None:
+            self._json({"ok": False, "error": f"task not found: {proj}/{task_id}"}, status=404)
+            return
+        own_err = self._ownership_gate(proj, task_id, qs)
+        if own_err:
+            self._json({"ok": False, "error": own_err}, status=403)
+            return
+        clear_control_file(Path(self._db_path).parent, proj, task_id)
+        self._audit("unhold", proj, task_id)
+        self._json({"ok": True})
 
     def _post_sse_ticket(self) -> None:
         """POST /api/sse-ticket — mint a short-lived ticket for EventSource URLs (see sse_ticket)."""
@@ -424,7 +556,7 @@ class WriteRoutes:
                     item["ok"] = bool(ok)
                     if err:
                         item["error"] = err
-            except Exception as exc:  # one bad task must not abort the rest
+            except Exception as exc:  # noqa: BLE001 - one bad task must not abort the rest; one bad task must not abort the rest
                 item.update(ok=False, error=str(exc))
             results.append(item)
         failed = sum(1 for r in results if not r.get("ok"))
@@ -476,8 +608,8 @@ class WriteRoutes:
             try:
                 request_stop_with_control(conn, Path(self._db_path).parent, row["project"], row["task_id"])
                 stopped += 1
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - one stop failure must not stop the others
+                _log.debug("bulk stop of one task failed", exc_info=True)
         self._audit("group-stop", project or "", grp_name, f"n={stopped}")
         return {"ok": True, "stopped": stopped}
 
@@ -571,10 +703,14 @@ class WriteRoutes:
             return
         extra = data
         conn = self._wconn()
+        # F-252: ownership gate (parity with stop/hold/remove).
+        own_err = self._ownership_gate(project, task_id, self._query())
+        if own_err:
+            self._json({"ok": False, "error": own_err}, status=403)
+            return
         if extra.get("enable_downstream"):
-            from taskqueue.db import collect_downstream_task_ids
+            from taskqueue.db import collect_downstream_task_ids, get_config, parse_task_yaml, upsert_task
             from taskqueue.yaml_patch import patch_task_yaml
-            from taskqueue.db import get_config, parse_task_yaml, upsert_task
 
             ids = [task_id] + collect_downstream_task_ids(conn, project, task_id)
             proj = self._projects_ref().get(project)
@@ -595,7 +731,7 @@ class WriteRoutes:
                             parse_task_yaml(path, proj, allow_remote_notify=allow_remote),
                         )
                         enabled.append(tid)
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - an enable failure skips that task
                         continue
             extra = {**extra, "_enabled": enabled}
         if extra.get("downstream") or extra.get("enable_downstream"):
@@ -765,6 +901,11 @@ class WriteRoutes:
             return
         # strip wrapper keys if the whole body was sent
         updates = {k: v for k, v in updates.items() if k != "updates"}
+        # F-252: ownership gate
+        own_err = self._ownership_gate(project, task_id, self._query())
+        if own_err:
+            self._json({"ok": False, "error": own_err}, status=403)
+            return
         row = get_task(self._wconn(), project, task_id)
         if row is None or not row["yaml_source"]:
             self._json({"ok": False, "error": "task not found or has no yaml_source"}, status=404)
@@ -802,7 +943,11 @@ class WriteRoutes:
         Body (all optional): ``{"projects": ["name", ...], "force": bool}``. Uses the daemon's
         mtime-cached ``_sync_project`` (unchanged files are not re-parsed, one commit per project);
         ``force`` re-parses everything.
+
+        F-242: reload ``projects.yaml`` into the live registry first so a newly added
+        project is syncable without waiting for the 60s ``_resync`` tick.
         """
+        from taskqueue.config import load_projects, registry_path
         from taskqueue.yaml_sync import _sync_project
 
         data = self._read_json()
@@ -813,6 +958,26 @@ class WriteRoutes:
             self._json({"ok": False, "error": "projects must be a list of names"}, status=400)
             return
         known = self._projects_ref()
+        # Reload when projects.yaml exists so newly registered projects sync immediately.
+        # Skip when absent (unit tests inject an in-memory registry without a file).
+        home = Path(self._db_path).parent
+        if registry_path(home).is_file():
+            try:
+                fresh = load_projects(home)
+                known.clear()
+                known.update(fresh)
+            except Exception as exc:  # noqa: BLE001 - keep previous registry on bad yaml
+                if wanted:
+                    unknown = [n for n in wanted if n not in known]
+                    if unknown:
+                        self._json(
+                            {
+                                "ok": False,
+                                "error": f"projects.yaml reload failed ({exc}); unknown: {', '.join(unknown)}",
+                            },
+                            status=500,
+                        )
+                        return
         unknown = [n for n in (wanted or []) if n not in known]
         if unknown:
             self._json({"ok": False, "error": f"Unknown project(s): {', '.join(unknown)}"}, status=404)
@@ -827,7 +992,7 @@ class WriteRoutes:
                 continue
             if not project.queue_dir.is_dir():
                 continue
-            stats = _sync_project(conn, project, force=force) or {}
+            stats = _sync_project(conn, project, force=force)
             up = int(stats.get("upserted", 0))
             deleted = int(stats.get("deleted", 0))
             per[project.name] = {"upserted": up, "deleted": deleted}
@@ -898,8 +1063,8 @@ class WriteRoutes:
         self._json({"ok": True, **result})
 
     def _cli_add(self) -> None:
-        """P6: POST /api/cli/add — upsert YAML text for a registered project."""
-        from taskqueue.db import get_config, parse_task_yaml_many, stamp_provenance, upsert_task
+        """P6: POST /api/cli/add — upsert YAML text for a registered project (F-251 shared submit)."""
+        from taskqueue.submit import SubmitError, submit_yaml_to_queue
 
         data = self._read_json()
         if data is None:
@@ -909,48 +1074,32 @@ class WriteRoutes:
         if not project_name or not isinstance(yaml_text, str) or not yaml_text.strip():
             self._json({"ok": False, "error": "project and yaml_text required"}, status=400)
             return
-        if len(yaml_text.encode("utf-8")) > 1024 * 1024:
-            self._json({"ok": False, "error": "YAML too large (max 1 MiB)"}, status=413)
-            return
         proj = self._projects_ref().get(project_name)
         if proj is None:
             self._json({"ok": False, "error": f"Unknown project '{project_name}'"}, status=404)
             return
-        explicit_name = str(data.get("filename") or "").strip()
-        if explicit_name:
-            fname = Path(explicit_name).name
-            if not fname.endswith(".yaml") and not fname.endswith(".yml"):
-                fname = fname + ".yaml"
-            if ".." in fname or "/" in fname or "\\" in fname:
-                self._json({"ok": False, "error": "invalid filename"}, status=400)
-                return
-        else:
-            # Never reuse a fixed default: successive submissions would overwrite each other.
-            fname = f"submitted_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.yaml"
-        dest = proj.queue_dir / fname
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        allow_remote = bool(get_config(self._wconn()).get("notify_allow_remote"))
-        # Validate from a scratch file first so invalid YAML never lands in the queue dir.
-        tmp = dest.with_name(f".{fname}.{uuid.uuid4().hex[:8]}.tmp")
-        try:
-            tmp.write_text(yaml_text, encoding="utf-8")
-            parse_task_yaml_many(tmp, proj, allow_remote_notify=allow_remote)
-            os.replace(tmp, dest)
-            tasks = parse_task_yaml_many(dest, proj, allow_remote_notify=allow_remote)
-        except Exception as exc:
-            tmp.unlink(missing_ok=True)
-            self._json({"ok": False, "error": str(exc)}, status=400)
-            return
-        ids = []
-        for task in tasks:
-            upsert_task(self._wconn(), task)
-            ids.append(task.task_id)
         via = (self.headers.get("X-TQ-Via") or "").strip().lower() or "api"
         operator = (self.headers.get("X-TQ-Operator") or "").strip()
         client = (self.headers.get("X-TQ-Client") or self.headers.get("User-Agent") or "").strip()
-        stamp_provenance(self._wconn(), project_name, ids, via, operator, client)
-        self._audit("task_add", project_name, ",".join(ids)[:500], f"via={via} file={fname}")
-        self._json({"ok": True, "task_ids": ids, "path": str(dest)})
+        try:
+            result = submit_yaml_to_queue(
+                self._wconn(),
+                proj,
+                yaml_text,
+                filename=str(data.get("filename") or "") or None,
+                client_key=data.get("client_key"),
+                via=via,
+                operator=operator or None,
+                client=client or None,
+            )
+        except SubmitError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=exc.status)
+            return
+        ids = result.get("task_ids") or []
+        if not result.get("deduplicated"):
+            fname = Path(str(result.get("path") or "")).name
+            self._audit("task_add", project_name, ",".join(ids)[:500], f"via={via} file={fname}")
+        self._json(result)
 
     def _retry_dead_notify(self, dead_id: int) -> None:
         """POST /api/notify/dead/<id>/retry — replay one dead-lettered webhook."""
@@ -961,12 +1110,27 @@ class WriteRoutes:
         res = retry_dead_letter(conn, dead_id, allow_remote=bool(get_config(conn).get("notify_allow_remote")))
         self._json(res, status=int(res.pop("status", 200)))
 
-    def _validate_yaml(self) -> None:
-        """POST /api/validate — dry-run parse of YAML text; nothing is written to the queue."""
+    def _parse_yaml_text(self, proj, yaml_text: str, filename: str = "validate.yaml") -> tuple[list | None, str]:
+        """Full task parse of *yaml_text* as if it were ``<queue_dir>/<filename>`` (tasks, "") or (None, error).
+
+        Parsed in a temp dir so the queue watcher never sees a half-written file; *filename* keeps
+        stem-derived defaults (task_id) the same as for the real file.
+        """
         import tempfile
 
         from taskqueue.db import get_config, parse_task_yaml_many
 
+        allow_remote = bool(get_config(self._wconn()).get("notify_allow_remote"))
+        with tempfile.TemporaryDirectory(prefix="tq_validate_") as td:
+            tmp = Path(td) / filename
+            tmp.write_text(yaml_text, encoding="utf-8")
+            try:
+                return parse_task_yaml_many(tmp, proj, allow_remote_notify=allow_remote), ""
+            except Exception as exc:  # noqa: BLE001 - any validation error is returned to the caller
+                return None, str(exc)
+
+    def _validate_yaml(self) -> None:
+        """POST /api/validate — dry-run parse of YAML text; nothing is written to the queue."""
         data = self._read_json()
         if data is None:
             return
@@ -982,15 +1146,10 @@ class WriteRoutes:
         if proj is None:
             self._json({"ok": False, "error": f"Unknown project '{project_name}'"}, status=404)
             return
-        allow_remote = bool(get_config(self._wconn()).get("notify_allow_remote"))
-        with tempfile.TemporaryDirectory(prefix="tq_validate_") as td:
-            tmp = Path(td) / "validate.yaml"
-            tmp.write_text(yaml_text, encoding="utf-8")
-            try:
-                tasks = parse_task_yaml_many(tmp, proj, allow_remote_notify=allow_remote)
-            except Exception as exc:
-                self._json({"ok": False, "valid": False, "error": str(exc)})
-                return
+        tasks, error = self._parse_yaml_text(proj, yaml_text)
+        if tasks is None:
+            self._json({"ok": False, "valid": False, "error": error})
+            return
         self._json({"ok": True, "valid": True, "task_ids": [t.task_id for t in tasks]})
 
     def _task_set_priority(self, project: str, task_id: str) -> None:
@@ -1045,6 +1204,17 @@ class WriteRoutes:
             self._json({"ok": False, "error": "Task not found or no yaml_source"}, status=404)
             return
         yaml_path = Path(task["yaml_source"])
+        # F-238: the full task parse (command, resources, deps, ...), not only "is it a mapping" — a
+        # saved file the sync then rejects leaves the task stuck on invalid_yaml.
+        proj = self._projects_ref().get(project)
+        if proj is not None:
+            tasks, error = self._parse_yaml_text(proj, body_text, yaml_path.name)
+            if tasks is None:
+                self._json({"ok": False, "error": f"Invalid task YAML: {error}"}, status=400)
+                return
+            task_ids = [t.task_id for t in tasks]
+        else:
+            task_ids = []
         # W3.5: mtime check — refuse to clobber a file changed on disk since the GET
         if_mtime_raw = self.headers.get("X-If-Mtime-Ns")
         if if_mtime_raw and yaml_path.is_file():
@@ -1064,7 +1234,7 @@ class WriteRoutes:
         except OSError as exc:
             self._json({"ok": False, "error": str(exc)}, status=500)
             return
-        self._json({"ok": True})
+        self._json({"ok": True, "task_ids": task_ids})
 
     def _requester(self) -> str:
         """Who is asking, for logs: operator (if set) and client, e.g. `alice via cli (tq-cli/0.5)`."""

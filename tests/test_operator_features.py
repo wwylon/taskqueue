@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http.client import parse_headers
 from pathlib import Path
 
@@ -103,7 +103,7 @@ def _mk_task(
     enabled: int = 1,
     enqueued_at: str | None = None,
 ):
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc).isoformat()
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC).isoformat()
     db.execute(
         "INSERT INTO tasks (project, task_id, command, status, priority, enqueued_at, updated_at, "
         "enabled, depends_on, schedule) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -125,7 +125,7 @@ def _mk_task(
 
 def test_task_stats_percentiles(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    base = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    base = datetime(2026, 9, 1, tzinfo=UTC)
     for i, seconds in enumerate((10, 20, 30, 40)):
         start = base + timedelta(hours=i)
         _insert_run(
@@ -149,7 +149,7 @@ def test_task_stats_percentiles(tmp_path: Path):
 
 def test_task_stats_null_when_no_completed(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    base = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    base = datetime(2026, 9, 1, tzinfo=UTC)
     _insert_run(
         db,
         "proj",
@@ -170,7 +170,7 @@ def test_task_stats_null_when_no_completed(tmp_path: Path):
 
 def test_duration_cascade_own_history(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    base = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    base = datetime(2026, 9, 1, tzinfo=UTC)
     for sec in (100, 200, 300):
         _insert_run(db, "proj", "job_a", base.isoformat(), (base + timedelta(seconds=sec)).isoformat())
     _insert_run(db, "proj", "other", base.isoformat(), (base + timedelta(seconds=50)).isoformat())
@@ -182,7 +182,7 @@ def test_duration_cascade_own_history(tmp_path: Path):
 
 def test_duration_cascade_similar_then_global(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    base = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    base = datetime(2026, 9, 1, tzinfo=UTC)
     _insert_run(db, "proj", "belote_seed0", base.isoformat(), (base + timedelta(seconds=400)).isoformat())
     _insert_run(db, "proj", "belote_seed1", base.isoformat(), (base + timedelta(seconds=600)).isoformat())
     _insert_run(db, "other", "unrelated", base.isoformat(), (base + timedelta(seconds=50)).isoformat())
@@ -199,7 +199,7 @@ def test_duration_cascade_similar_then_global(tmp_path: Path):
 
 def test_timeline_serial_under_max_tasks(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     base = now - timedelta(days=1)
     for tid, sec in (("a", 100), ("b", 100)):
         _insert_run(db, "proj", tid, base.isoformat(), (base + timedelta(seconds=sec)).isoformat())
@@ -218,7 +218,7 @@ def test_timeline_serial_under_max_tasks(tmp_path: Path):
 
 def test_timeline_parallel_when_max_tasks_two(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     base = now - timedelta(days=1)
     for tid in ("a", "b"):
         _insert_run(db, "proj", tid, base.isoformat(), (base + timedelta(seconds=100)).isoformat())
@@ -234,7 +234,7 @@ def test_timeline_parallel_when_max_tasks_two(tmp_path: Path):
 
 def test_timeline_depends_on_delays_child(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     base = now - timedelta(days=1)
     for tid, sec in (("parent", 120), ("child", 60)):
         _insert_run(db, "proj", tid, base.isoformat(), (base + timedelta(seconds=sec)).isoformat())
@@ -248,7 +248,7 @@ def test_timeline_depends_on_delays_child(tmp_path: Path):
 
 def test_timeline_cron_arrival(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     base = now - timedelta(days=1)
     _insert_run(db, "proj", "nightly", base.isoformat(), (base + timedelta(seconds=30)).isoformat())
     _mk_task(
@@ -266,14 +266,14 @@ def test_timeline_cron_arrival(tmp_path: Path):
 
 
 def test_next_cron_fire_within_48h():
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     nxt = next_cron_fire("0 0 * * *", now)
-    assert nxt == datetime(2026, 9, 21, 0, 0, tzinfo=timezone.utc)
+    assert nxt == datetime(2026, 9, 21, 0, 0, tzinfo=UTC)
 
 
 def test_alert_cooldown_skips_second_fire(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
-    now = datetime(2026, 9, 20, 12, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
     _insert_run(
         db,
         "proj",

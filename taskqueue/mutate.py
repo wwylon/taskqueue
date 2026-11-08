@@ -25,11 +25,11 @@ def mutate(
     Returns ``(response, mode)`` where mode is ``master`` | ``offline`` |
     ``unreachable``. On ``unreachable`` the caller must not write SQLite.
     """
+    import os
     from urllib.parse import urlencode
 
     from taskqueue._cli_helpers import offline_sqlite_write_blocked
     from taskqueue.master_client import via_master
-    import os
 
     q: dict[str, str] = {}
     if os.environ.get("TQ_OPERATOR"):

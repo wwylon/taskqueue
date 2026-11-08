@@ -50,7 +50,7 @@ def test_stop_daemon_and_restart_refuse_while_tasks_run(tmp_path: Path, monkeypa
     from taskqueue import _cli_admin
 
     monkeypatch.setattr(_cli_admin, "_daemon_running", lambda home: 4242)
-    monkeypatch.setattr(_cli_admin, "_running_runs", lambda home: ["p/a", "p/b"])
+    monkeypatch.setattr(_cli_admin, "_running_runs", lambda home, **_: ["p/a", "p/b"])
     monkeypatch.setattr(_cli_admin.os, "kill", lambda *a: pytest.fail("must not signal"))
     assert _cli_admin.cmd_stop_daemon(tmp_path) == 1
     assert _cli_admin.cmd_restart(tmp_path) == 1
@@ -60,11 +60,12 @@ def test_stop_daemon_and_restart_refuse_while_tasks_run(tmp_path: Path, monkeypa
 
 def test_stop_daemon_force_signals(tmp_path: Path, monkeypatch) -> None:
     import sys
+
     from taskqueue import _cli_admin
 
     sent: list[int] = []
     monkeypatch.setattr(_cli_admin, "_daemon_running", lambda home: 4242)
-    monkeypatch.setattr(_cli_admin, "_running_runs", lambda home: ["p/a"])
+    monkeypatch.setattr(_cli_admin, "_running_runs", lambda home, **_: ["p/a"])
     monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(_cli_admin.os, "kill", lambda pid, sig: sent.append(pid))
     assert _cli_admin.cmd_stop_daemon(tmp_path, force=True) == 0

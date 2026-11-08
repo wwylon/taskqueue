@@ -143,6 +143,60 @@ def test_not_found_and_disabled(home: Path) -> None:
     assert res["done"] and not res["tasks"][0]["finished"]  # settled but not finished
 
 
+def test_removed_mid_wait_settles_as_removed(home: Path) -> None:
+    """Task visible then deleted → status removed / exit 1, not not_found / exit 3."""
+    from taskqueue.db import remove_task
+    from taskqueue.waiting import REMOVED_ERROR, REMOVED_STATUS
+
+    db = tqconfig.db_path(home)
+    c = open_db(db)
+    _mk(c, "p", "a", "queued")
+    c.close()
+    ticks = {"n": 0}
+
+    def fake_sleep(_d: float) -> None:
+        ticks["n"] += 1
+        if ticks["n"] == 1:
+            conn = open_db(db)
+            assert remove_task(conn, "p", "a") is None
+            conn.close()
+
+    res = wait_for(_opener(home), ["p/a"], sleep=fake_sleep, timeout_sec=1000)
+    assert res["done"] and not res["timed_out"] and res["not_found"] == []
+    t = res["tasks"][0]
+    assert t["status"] == REMOVED_STATUS and t["settled"] and t["finished"]
+    assert t["last_error_code"] == REMOVED_ERROR
+    assert exit_code_for(res) == 1
+    assert ticks["n"] == 1
+
+
+def test_removed_among_pending_does_not_abort_all(home: Path) -> None:
+    from taskqueue.db import remove_task
+
+    db = tqconfig.db_path(home)
+    c = open_db(db)
+    _mk(c, "p", "gone", "queued")
+    _mk(c, "p", "keep", "running")
+    c.close()
+    ticks = {"n": 0}
+
+    def fake_sleep(_d: float) -> None:
+        ticks["n"] += 1
+        if ticks["n"] == 1:
+            conn = open_db(db)
+            assert remove_task(conn, "p", "gone") is None
+            conn.close()
+        elif ticks["n"] == 2:
+            _set(db, "p", "keep", "completed")
+
+    res = wait_for(_opener(home), ["p/gone", "p/keep"], sleep=fake_sleep, timeout_sec=1000)
+    assert res["done"] and res["not_found"] == []
+    by = {t["key"]: t for t in res["tasks"]}
+    assert by["p/gone"]["status"] == "removed"
+    assert by["p/keep"]["status"] == "completed"
+    assert exit_code_for(res) == 1
+
+
 def test_selectors_only_pick_unsettled(home: Path) -> None:
     c = open_db(tqconfig.db_path(home))
     _mk(c, "p", "old", "completed", suite="s1")

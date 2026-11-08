@@ -4,9 +4,9 @@ import tarfile
 
 import pytest
 
-from tests.helpers.master_worker import seed_queued_task
 from taskqueue.safetar import safe_extract
 from taskqueue.web.routes_transfer import _upstream_host_allowed
+from tests.helpers.master_worker import seed_queued_task
 
 
 def _tar(n_files=1, size=10):

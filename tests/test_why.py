@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.why import explain_task, format_explanation
+from taskqueue.why import explain_task, format_explanation, format_need_free
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
 
 SYSTEM = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
@@ -30,6 +30,8 @@ def test_free_task_should_start_and_unknown_task_404(tmp_path: Path, monkeypatch
     seed_queued_task(db, project="p", task_id="free", dispatch="local")
     info = explain_task(db, "p", "free", system=SYSTEM)
     assert info["plan"]["verdict"] == "start" and "should start" in info["reasons"][0]
+    assert info["plan"]["need"]["cpu_cores"] > 0 and info["plan"]["free"]["cpu_cores"] > 0
+    assert "needs CPU" in format_explanation(info) and "free)" in format_explanation(info)
     status, body = http_request(H, "GET", "/api/tasks/p/nope/why")
     assert status == 404 and body["ok"] is False
 
@@ -42,3 +44,10 @@ def test_disabled_and_running(tmp_path: Path) -> None:
     db.commit()
     assert any("disabled" in r for r in explain_task(db, "p", "off", system=SYSTEM)["reasons"])
     assert explain_task(db, "p", "run", system=SYSTEM)["reasons"] == ["it is running"]
+
+
+def test_format_need_free_skips_unused_resources() -> None:
+    need = {"cpu_cores": 2, "ram_gib": 20, "gpu_vram_gib": 0}
+    free = {"cpu_cores": 7, "ram_gib": 10.5, "gpu_vram_gib": 0}
+    assert format_need_free(need, free) == "needs CPU 2 cores (7 free) · RAM 20 GiB (10.5 free)"
+    assert format_need_free({"cpu_cores": 0}, {}) == "needs no declared resources"

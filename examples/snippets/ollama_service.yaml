@@ -1,0 +1,10 @@
+task_id: ollama_eval
+command: python
+args: [scripts/eval.py]
+requires_services:
+  - ollama
+resources:
+  cpu_cores: 2
+  ram_gib: 8.0
+  gpu_vram_gib: 5.4
+  locks: [ollama]
