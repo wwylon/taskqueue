@@ -1,14 +1,16 @@
-# taskqueue
+# tqdaemon
 
 [English](README.md) | [Polski](README.pl.md) | [中文](README.zh.md) | [العربية](README.ar.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub stars](https://img.shields.io/github/stars/wwylon/taskqueue?style=social)](https://github.com/wwylon/taskqueue)
+[![CI](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml/badge.svg)](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tqdaemon)](https://pypi.org/project/tqdaemon/)
+[![Latest tag](https://img.shields.io/github/v/tag/wwylon/tqdaemon?label=version)](https://github.com/wwylon/tqdaemon/tags)
 
-![taskqueue — lokalne zadaniaania, agenci, workery](docs/assets/hero.jpg)
+![tqdaemon — lokalne zadania, agenci, workery](https://raw.githubusercontent.com/wwylon/tqdaemon/main/docs/assets/demo.gif)
 
-**taskqueue** uruchamia długie zadaniaania na Twoich komputerach, nie przeciążając
+**tqdaemon** uruchamia długie zadania na Twoich komputerach, nie przeciążając
 ich. Opisujesz job w YAML. Lokalny **daemon** startuje pracę tylko gdy jest
 wystarczająco CPU, RAM i pamięci GPU. Postęp śledzisz w **UI**, CLI **`tq`**
 lub przez agenta AI (**MCP**).
@@ -25,7 +27,7 @@ To nie Celery, Kubernetes ani CI. To też nie stary projekt AMQP/Debian
 
 ## Najlepszy start: poproś agenta
 
-Powiedz agentowi (Cursor, Claude Code, …), żeby używał **taskqueue** do długich
+Powiedz agentowi (Cursor, Claude Code, …), żeby używał **tqdaemon** do długich
 jobów: MCP (`tq mcp`), YAML i `wait_for_task` zamiast blokować czat.
 Setup: **[docs/mcp.md](docs/mcp.md)**.
 
@@ -34,8 +36,8 @@ Setup: **[docs/mcp.md](docs/mcp.md)**.
 **Wymagania:** Python **3.12+**, [Git](https://git-scm.com/), [`uv`](https://docs.astral.sh/uv/).
 
 ```powershell
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 uv run tq doctor
 uv run tq start

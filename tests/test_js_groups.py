@@ -94,7 +94,7 @@ console.log('RESULT:' + JSON.stringify(r));
 """
     )
     assert out["pending"] is True and out["asked"] is True
-    assert 'group "g 1" of project p1' in out["msg"]
+    assert "groups.stopAllInProject" in out["msg"]
     assert out["url"] == "/api/groups/g%201/stop?project=p1" and out["method"] == "POST"
     assert out["alerts"] and out["released"] is True and out["cancelReleased"] is True
 
@@ -129,7 +129,7 @@ console.log('RESULT:' + JSON.stringify(r));
 """
     )
     assert len(out["beforeConfirm"]) == 1 and "dry_run=1" in out["beforeConfirm"][0]
-    assert "7 task(s)" in out["msg"] and "3 COMPLETED" in out["msg"]
+    assert "groups.restartConfirm" in out["msg"]
     q = out["all"][1]
     assert "confirm=7" in q and "completed=1" in q and "project=p1" in q and "dry_run" not in q
     assert out["plain"] == ["/api/groups/g1/retry"]

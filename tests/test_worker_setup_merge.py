@@ -5,7 +5,7 @@ import json
 
 import yaml
 
-from taskqueue import worker
+from tqdaemon import worker
 
 
 class _Resp(io.BytesIO):

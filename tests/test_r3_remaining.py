@@ -6,8 +6,8 @@ import io
 import time
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.web import (
+from tqdaemon.db import open_db
+from tqdaemon.web import (
     BoundedThreadingHTTPServer,
     stream_request_body_to_file,
 )
@@ -15,7 +15,7 @@ from taskqueue.web import (
 
 def test_master_status_labels_utc_correctly(tmp_path: Path, capsys) -> None:
     """F-072: expires_at is unix epoch — format with gmtime, not localtime."""
-    from taskqueue._cli_admin import cmd_master_status
+    from tqdaemon._cli_admin import cmd_master_status
 
     db = open_db(tmp_path / "queue.db")
     expires = 1_700_000_000  # fixed epoch
@@ -109,8 +109,8 @@ def test_bounded_http_server_drops_connections_past_inflight_cap() -> None:
 
 
 def test_longpoll_budget_degrades_to_short_poll_when_slots_exhausted() -> None:
-    from taskqueue.web.handler import Handler
-    from taskqueue.web.routes_worker import LONGPOLL_SLOTS
+    from tqdaemon.web.handler import Handler
+    from tqdaemon.web.routes_worker import LONGPOLL_SLOTS
 
     taken = 0
     while LONGPOLL_SLOTS.acquire(blocking=False):

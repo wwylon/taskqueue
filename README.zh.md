@@ -1,14 +1,16 @@
-# taskqueue
+# tqdaemon
 
 [English](README.md) | [Polski](README.pl.md) | [中文](README.zh.md) | [العربية](README.ar.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub stars](https://img.shields.io/github/stars/wwylon/taskqueue?style=social)](https://github.com/wwylon/taskqueue)
+[![CI](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml/badge.svg)](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tqdaemon)](https://pypi.org/project/tqdaemon/)
+[![Latest tag](https://img.shields.io/github/v/tag/wwylon/tqdaemon?label=version)](https://github.com/wwylon/tqdaemon/tags)
 
-![taskqueue — 本地任务、代理、worker](docs/assets/hero.jpg)
+![tqdaemon — 本地任务、代理、worker](https://raw.githubusercontent.com/wwylon/tqdaemon/main/docs/assets/demo.gif)
 
-**taskqueue** 在你自己的机器上跑长任务，并按资源限流，避免把机器打满。
+**tqdaemon** 在你自己的机器上跑长任务，并按资源限流，避免把机器打满。
 用 YAML 描述任务；本地 **daemon** 仅在 CPU / RAM / GPU 显存足够时启动作业。
 可通过 **网页 UI**、**`tq` CLI** 或 **AI 编程代理（MCP）** 查看进度。
 
@@ -24,7 +26,7 @@
 
 ## 最佳起点：让代理接入
 
-让 Cursor / Claude Code 等代理用 **taskqueue** 跑长任务：配置 MCP（`tq mcp`），
+让 Cursor / Claude Code 等代理用 **tqdaemon** 跑长任务：配置 MCP（`tq mcp`），
 提交 YAML，用 `wait_for_task`，而不是卡住对话。说明：**[docs/mcp.md](docs/mcp.md)**。
 
 ## 安装
@@ -32,8 +34,8 @@
 **需要：** Python **3.12+**、[Git](https://git-scm.com/)、[`uv`](https://docs.astral.sh/uv/)。
 
 ```powershell
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 uv run tq doctor
 uv run tq start

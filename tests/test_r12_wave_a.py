@@ -6,20 +6,20 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.placement import (
+from tests.test_web_routes import _make_handler, _make_request
+from tqdaemon.placement import (
     clear_remote_reservation,
     get_remote_reservation,
     refresh_remote_reservation,
 )
-from taskqueue.queries import count_tasks, list_tasks
-from taskqueue.resources import ResourceBudget
-from taskqueue.scheduler import Node, node_from_worker, parse_worker_load
-from taskqueue.worker_api import _svc_key
-from tests.test_web_routes import _make_handler, _make_request
+from tqdaemon.queries import count_tasks, list_tasks
+from tqdaemon.resources import ResourceBudget
+from tqdaemon.scheduler import Node, node_from_worker, parse_worker_load
+from tqdaemon.worker_api import _svc_key
 
 
 def test_f137_cpu_budget_is_max_of_ema_and_declared(monkeypatch) -> None:
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 8.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 8.0)
     system = {
         "cpu_total_cores": 8,
         "ram_total_gib": 64.0,
@@ -119,13 +119,13 @@ def test_f138_svc_cache_miss_probes(monkeypatch) -> None:
         probed.append(sv)
         return ("service down", "tq.block.service")
 
-    monkeypatch.setattr("taskqueue.scheduler.check_services_cached", fake_cached)
+    monkeypatch.setattr("tqdaemon.scheduler.check_services_cached", fake_cached)
     # Simulate the miss path used in _ctx_for_row.
     _svc_cache: dict = {}
     svc_raw = '[{"name":"ollama"}]'
     sk = _svc_key(svc_raw)
     assert sk not in _svc_cache
-    from taskqueue.scheduler import check_services_cached
+    from tqdaemon.scheduler import check_services_cached
 
     svc_block, svc_code = check_services_cached(svc_raw, allow_remote=True)
     _svc_cache[sk] = svc_block

@@ -21,7 +21,7 @@ def test_manifest_and_service_worker_served(tmp_path):
 def test_service_worker_skips_api_and_index_links_manifest():
     from pathlib import Path
 
-    static = Path(__file__).resolve().parent.parent / "taskqueue" / "static"
+    static = Path(__file__).resolve().parent.parent / "tqdaemon" / "static"
     sw = (static / "sw.js").read_text(encoding="utf-8")
     # allow-list: only the shell is cached, never /api/, /metrics, /docs, ...
     assert "startsWith('/static/')" in sw and "startsWith('/api/')" not in sw
@@ -31,7 +31,7 @@ def test_service_worker_skips_api_and_index_links_manifest():
 def test_js_modules_served_and_in_offline_shell(tmp_path):
     from pathlib import Path
 
-    static = Path(__file__).resolve().parent.parent / "taskqueue" / "static"
+    static = Path(__file__).resolve().parent.parent / "tqdaemon" / "static"
     sw = (static / "sw.js").read_text(encoding="utf-8")
     modules = sorted(p.relative_to(static).as_posix() for p in (static / "js").rglob("*.js"))
     assert modules
@@ -47,16 +47,16 @@ def test_js_modules_served_and_in_offline_shell(tmp_path):
 def test_index_loads_module_entry_without_classic_app_js():
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "index.html").read_text(encoding="utf-8")
+    html = (Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "index.html").read_text(encoding="utf-8")
     assert 'type="module" src="/static/js/main.js"' in html
     assert 'defer src="/static/app.js"' not in html
     assert "tqBootApp" in (
-        Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js" / "main.js"
+        Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js" / "main.js"
     ).read_text(encoding="utf-8")
 
 
 def test_sw_shell_no_longer_precaches_the_empty_app_js_shim():
     from pathlib import Path
 
-    sw = (Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "sw.js").read_text(encoding="utf-8")
+    sw = (Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "sw.js").read_text(encoding="utf-8")
     assert "'/static/app.js'" not in sw

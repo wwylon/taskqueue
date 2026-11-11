@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue._db_tasks import request_stop_with_control
-from taskqueue.db import open_db
-from taskqueue.mcp_server import TOOLS, _call_tool
-from taskqueue.queries import list_attention, list_operator_tasks
+from tqdaemon._db_tasks import request_stop_with_control
+from tqdaemon.db import open_db
+from tqdaemon.mcp_server import TOOLS, _call_tool
+from tqdaemon.queries import list_attention, list_operator_tasks
 
 
 def _seed(conn, project: str, task_id: str, *, status: str, started_by: str | None = None) -> None:

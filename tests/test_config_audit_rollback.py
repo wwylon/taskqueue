@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-from taskqueue.db import get_config
-from taskqueue.operator_features import list_audit
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon.db import get_config
+from tqdaemon.operator_features import list_audit
 
 
 def test_config_change_records_diff_and_rolls_back(tmp_path):

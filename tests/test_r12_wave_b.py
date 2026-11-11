@@ -6,11 +6,11 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue._db_runs import reclaim_expired_leases
-from taskqueue.db import open_db
-from taskqueue.web.sse import clear_status_snapshot_cache
 from tests.helpers.master_worker import http_request, make_handler_env
 from tests.test_web_routes import _make_handler, _make_request
+from tqdaemon._db_runs import reclaim_expired_leases
+from tqdaemon.db import open_db
+from tqdaemon.web.sse import clear_status_snapshot_cache
 
 
 def test_f144_lease_reclaim_clears_block_reason(tmp_path: Path) -> None:

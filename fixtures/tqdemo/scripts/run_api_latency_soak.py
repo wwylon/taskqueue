@@ -1,4 +1,4 @@
-"""Run scripts/api_latency_soak.py from the taskqueue repo root (tqdemo cwd-safe)."""
+"""Run scripts/api_latency_soak.py from the tqdaemon repo root (tqdemo cwd-safe)."""
 
 from __future__ import annotations
 

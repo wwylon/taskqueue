@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue import cli
-from taskqueue._cli_task import cmd_retry
-from taskqueue.db import open_db
+from tqdaemon import cli
+from tqdaemon._cli_task import cmd_retry
+from tqdaemon.db import open_db
 
 
 def test_dangling_set_flag_is_an_error(tmp_path: Path, capsys) -> None:

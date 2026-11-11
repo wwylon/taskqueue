@@ -9,14 +9,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue.config import Project
-from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
-from taskqueue.queries import cancel_negative_dependents
-from taskqueue.web.responses import _STATUS_RANK, _history_row_dict, _task_dict
-from taskqueue.yaml_sync import clear_yaml_mtime_cache
 from tests.helpers.master_worker import http_request, make_handler_env
 from tests.test_queue import _project, _yaml
+from tqdaemon import errors as tqerr
+from tqdaemon.config import Project
+from tqdaemon.db import get_task, open_db, parse_task_yaml, upsert_task
+from tqdaemon.queries import cancel_negative_dependents
+from tqdaemon.web.responses import _STATUS_RANK, _history_row_dict, _task_dict
+from tqdaemon.yaml_sync import clear_yaml_mtime_cache
 
 
 def test_f114_cancelled_in_status_rank() -> None:
@@ -138,7 +138,7 @@ def test_f117_task_dict_strip_secrets() -> None:
 
 
 def test_f117_yaml_get_denied_for_read_scope() -> None:
-    from taskqueue.operator_features import scope_allows
+    from tqdaemon.operator_features import scope_allows
 
     assert scope_allows("read", "GET", "/api/tasks/p/t/yaml") is False
     assert scope_allows("write", "GET", "/api/tasks/p/t/yaml") is False
@@ -187,8 +187,8 @@ def test_f116_f117_http_task_apis_strip_secrets(tmp_path: Path) -> None:
 
 
 def test_f118_offline_sync_deletes_removed_yaml(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue._cli_project import cmd_sync
-    from taskqueue.yaml_sync import clear_yaml_mtime_cache
+    from tqdaemon._cli_project import cmd_sync
+    from tqdaemon.yaml_sync import clear_yaml_mtime_cache
 
     clear_yaml_mtime_cache()
     home = tmp_path / "home"
@@ -209,15 +209,15 @@ def test_f118_offline_sync_deletes_removed_yaml(tmp_path: Path, monkeypatch, cap
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
-    monkeypatch.setattr("taskqueue._cli_project._daemon_running", lambda h: None)
-    monkeypatch.setattr("taskqueue._cli_project._db", lambda h: home / "queue.db")
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon._cli_project._daemon_running", lambda h: None)
+    monkeypatch.setattr("tqdaemon._cli_project._db", lambda h: home / "queue.db")
     monkeypatch.setattr(
-        "taskqueue.config.load_projects",
+        "tqdaemon.config.load_projects",
         lambda h: {"proj": Project(name="proj", root=root, queue_dir=qdir)},
     )
-    monkeypatch.setattr("taskqueue._cli_helpers.warn_enabled_terminal_summary", lambda db: None)
-    monkeypatch.setattr("taskqueue._cli_project.print_wait_hint", lambda: None)
+    monkeypatch.setattr("tqdaemon._cli_helpers.warn_enabled_terminal_summary", lambda db: None)
+    monkeypatch.setattr("tqdaemon._cli_project.print_wait_hint", lambda: None)
 
     assert cmd_sync(home) == 2
     db = open_db(home / "queue.db", migrate=False)
@@ -236,7 +236,7 @@ def test_f118_offline_sync_deletes_removed_yaml(tmp_path: Path, monkeypatch, cap
 
 
 def test_f113_dashboard_history_keeps_anomalies(tmp_path: Path) -> None:
-    from taskqueue.web.responses import _get_history_response
+    from tqdaemon.web.responses import _get_history_response
 
     HandlerClass, db, _ = make_handler_env(tmp_path, projects={})
     db.execute(
@@ -263,7 +263,7 @@ def test_f110_f111_dom_id_and_history_identity() -> None:
     """Node: domIdPart round-trip; History must not clobber prevHistoryStr."""
     import subprocess
 
-    root = Path(__file__).resolve().parents[1] / "taskqueue" / "static" / "js"
+    root = Path(__file__).resolve().parents[1] / "tqdaemon" / "static" / "js"
     script = f"""
     const {{ domIdPart }} = await import({json.dumps((root / "util/format.js").as_uri())});
     const raw = 'a&b"c';

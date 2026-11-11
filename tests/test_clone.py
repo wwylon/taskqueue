@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue.clone import clone_task_yaml, parse_set_args
-from taskqueue.config import load_projects
-from taskqueue.db import open_db, parse_task_yaml, upsert_task
+from tqdaemon.clone import clone_task_yaml, parse_set_args
+from tqdaemon.config import load_projects
+from tqdaemon.db import open_db, parse_task_yaml, upsert_task
 
 
 def _setup(tmp_path: Path):

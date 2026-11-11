@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-JS = Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js"
+JS = Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js"
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 
@@ -433,7 +433,7 @@ def test_dashboard_view_stats_cache_history_toggle_and_workers_table():
     assert out["closed"] == {"disp": "none", "left": 0}
     assert "workers.noWorkers" in out["none"]
     t = out["table"]
-    assert "w&lt;1&gt;" in t and "2/8" in t and "1.5/16.0 GB" in t and "1 run / 1 queued" in t and "workerSync" in t
+    assert "w&lt;1&gt;" in t and "2/8" in t and "1.5/16.0 GB" in t and "dash.runQueued" in t and "workerSync" in t
 
 
 def test_history_search_all_logs_renders_matches():

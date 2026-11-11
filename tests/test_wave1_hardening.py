@@ -4,9 +4,9 @@ import tarfile
 
 import pytest
 
-from taskqueue.safetar import safe_extract
-from taskqueue.web.routes_transfer import _upstream_host_allowed
 from tests.helpers.master_worker import seed_queued_task
+from tqdaemon.safetar import safe_extract
+from tqdaemon.web.routes_transfer import _upstream_host_allowed
 
 
 def _tar(n_files=1, size=10):
@@ -43,7 +43,7 @@ def test_upstream_host_blocks_metadata_and_allows_loopback():
 
 
 def test_version_matches_exact_and_compound():
-    from taskqueue.scheduler import _version_matches as vm
+    from tqdaemon.scheduler import _version_matches as vm
 
     assert vm("3.12.1", "==3.12.1")
     assert not vm("3.12.2", "==3.12.1")
@@ -56,8 +56,8 @@ def test_version_matches_exact_and_compound():
 def test_fractional_cpu_cores_rounds_up(tmp_path):
     import yaml
 
-    from taskqueue.config import Project
-    from taskqueue.db import parse_task_yaml
+    from tqdaemon.config import Project
+    from tqdaemon.db import parse_task_yaml
 
     y = tmp_path / "t.yaml"
     y.write_text(yaml.dump({"task_id": "a", "command": "x", "resources": {"cpu_cores": 0.5}}), encoding="utf-8")
@@ -66,7 +66,7 @@ def test_fractional_cpu_cores_rounds_up(tmp_path):
 
 
 def test_blocked_projects_ignores_wildcard_lookalike_keys(tmp_path):
-    from taskqueue.db import blocked_projects, open_db
+    from tqdaemon.db import blocked_projects, open_db
 
     db = open_db(tmp_path / "q.db")
     db.execute("INSERT OR REPLACE INTO config (key, value) VALUES ('project_frozenx', '1')")
@@ -77,7 +77,7 @@ def test_blocked_projects_ignores_wildcard_lookalike_keys(tmp_path):
 def test_service_probe_cache_ignores_gpu_drift_without_vram_requirement(monkeypatch):
     import json
 
-    from taskqueue import scheduler as sch
+    from tqdaemon import scheduler as sch
 
     calls = []
     monkeypatch.setattr(sch, "_check_services", lambda *a, **k: calls.append(1) or (None, ""))
@@ -91,7 +91,7 @@ def test_service_probe_cache_ignores_gpu_drift_without_vram_requirement(monkeypa
 
 
 def test_shared_gpu_probe_runs_once_per_ttl():
-    from taskqueue.resources import shared_gpu_probe
+    from tqdaemon.resources import shared_gpu_probe
 
     n = []
     for _ in range(3):
@@ -101,7 +101,7 @@ def test_shared_gpu_probe_runs_once_per_ttl():
 
 
 def test_redact_config_masks_notify_url_secrets():
-    from taskqueue.web.responses import _redact_config
+    from tqdaemon.web.responses import _redact_config
 
     out = _redact_config(
         {"auth_token": "t", "notify_url": "https://user:pw@hooks.example.com/services/T0/B0/SECRET?key=abc"}
@@ -114,7 +114,7 @@ def test_redact_config_masks_notify_url_secrets():
 
 
 def test_requires_paths_migration_failure_is_logged_not_swallowed(tmp_path, capsys, monkeypatch):
-    import taskqueue.migrations as mig
+    import tqdaemon.migrations as mig
 
     real = mig.json_list
 
@@ -122,7 +122,7 @@ def test_requires_paths_migration_failure_is_logged_not_swallowed(tmp_path, caps
         raise RuntimeError("bad json")
 
     monkeypatch.setattr(mig, "json_list", boom)
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     conn = open_db(tmp_path / "q.db")
     seed_queued_task(conn, project="p", task_id="t", dispatch="local")
@@ -138,7 +138,7 @@ def test_requires_paths_migration_failure_is_logged_not_swallowed(tmp_path, caps
 
 
 def test_patch_refuses_matrix_variant_ids_but_patches_the_base_task(tmp_path):
-    from taskqueue.yaml_patch import patch_task_yaml
+    from tqdaemon.yaml_patch import patch_task_yaml
 
     f = tmp_path / "m.yaml"
     f.write_text("task_id: sweep\ncommand: x\nmatrix:\n  seed: [1, 2]\npriority: 5\n", encoding="utf-8")
@@ -152,7 +152,7 @@ def test_patch_refuses_matrix_variant_ids_but_patches_the_base_task(tmp_path):
 def test_open_db_skips_migration_probes_when_schema_current(tmp_path):
     import sqlite3
 
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     open_db(tmp_path / "q.db").close()
     seen: list[str] = []
@@ -172,7 +172,7 @@ def test_open_db_skips_migration_probes_when_schema_current(tmp_path):
 
 
 def test_finalize_token_matches_is_constant_time_and_rejects_empty():
-    from taskqueue.auth import finalize_token_matches
+    from tqdaemon.auth import finalize_token_matches
 
     assert finalize_token_matches("abc", "abc")
     assert not finalize_token_matches("abc", "abd")

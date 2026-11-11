@@ -1,12 +1,12 @@
 # MCP server (`tq mcp`)
 
 `tq mcp` runs a minimal stdio JSON-RPC 2.0 MCP server (no extra dependency —
-implemented directly in `taskqueue/mcp_server.py`). It exposes observation
+implemented directly in `tqdaemon/mcp_server.py`). It exposes observation
 tools and guarded task mutations so an agent can submit, wait, diagnose, and
 retry work without scraping the web UI or shelling out to `tq`.
 
-It talks to the **same home** the CLI would use (`TASKQUEUE_HOME` env var,
-default `~/.taskqueue`). **Mutations** (`enqueue_task` / `retry_task` / `patch_task` /
+It talks to the **same home** the CLI would use (`TQDAEMON_HOME` env var,
+default `~/.tqdaemon`). **Mutations** (`enqueue_task` / `retry_task` / `patch_task` /
 `stop_task`) go through the daemon HTTP API when it is reachable (same as `tq`);
 reads still use SQLite. Set `TQ_MASTER` to aim at a remote master.
 
@@ -14,9 +14,9 @@ reads still use SQLite. Set `TQ_MASTER` to aim at a remote master.
 
 ### Prerequisites
 
-- `tq` on `PATH` (from an editable install / `uv sync` of the taskqueue checkout).
+- `tq` on `PATH` (from an editable install / `uv sync` of the tqdaemon checkout).
 - The daemon does **not** need to be running for most read tools (they open
-  `{TASKQUEUE_HOME}/queue.db`). Running counts and capacity still reflect that
+  `{TQDAEMON_HOME}/queue.db`). Running counts and capacity still reflect that
   home’s DB / live processes when the daemon is up.
 
 ### Cursor (global)
@@ -27,11 +27,11 @@ uses the top-level key `mcpServers`:
 ```json
 {
   "mcpServers": {
-    "taskqueue": {
+    "tqdaemon": {
       "command": "tq",
       "args": ["mcp"],
       "env": {
-        "TASKQUEUE_HOME": "C:\\Users\\YOU\\.taskqueue",
+        "TQDAEMON_HOME": "C:\\Users\\YOU\\.tqdaemon",
         "TQ_OPERATOR": "YOU"
       }
     }
@@ -40,31 +40,31 @@ uses the top-level key `mcpServers`:
 ```
 
 Reload MCP servers / restart Cursor after saving. Prefer this user-level file
-for taskqueue. Workspace `.vscode/mcp.json` in some checkouts uses a different
+for tqdaemon. Workspace `.vscode/mcp.json` in some checkouts uses a different
 schema (`"servers"`) and may already host other tools (e.g. repowise) — add
-taskqueue there only if you want a project-scoped override.
+tqdaemon there only if you want a project-scoped override.
 
 ### Claude Code
 
 Register from a shell (user scope, available in every project):
 
 ```bash
-claude mcp add taskqueue --scope user \
-  -e TASKQUEUE_HOME="$HOME/.taskqueue" -e TQ_OPERATOR=YOU -- tq mcp
+claude mcp add tqdaemon --scope user \
+  -e TQDAEMON_HOME="$HOME/.tqdaemon" -e TQ_OPERATOR=YOU -- tq mcp
 ```
 
 Or commit a project-scoped `.mcp.json` at the repo root (same `mcpServers` shape;
 `claude mcp add --scope project` writes it). Then run `/mcp` in the session and
-confirm `taskqueue` is connected; tools appear as `mcp__taskqueue__*`.
+confirm `tqdaemon` is connected; tools appear as `mcp__tqdaemon__*`.
 
 ```json
 {
   "mcpServers": {
-    "taskqueue": {
+    "tqdaemon": {
       "command": "tq",
       "args": ["mcp"],
       "env": {
-        "TASKQUEUE_HOME": "C:\\Users\\YOU\\.taskqueue",
+        "TQDAEMON_HOME": "C:\\Users\\YOU\\.tqdaemon",
         "TQ_OPERATOR": "YOU"
       }
     }
@@ -74,9 +74,9 @@ confirm `taskqueue` is connected; tools appear as `mcp__taskqueue__*`.
 
 ### Daemon home
 
-| Target | `TASKQUEUE_HOME` | UI port (daemon) |
+| Target | `TQDAEMON_HOME` | UI port (daemon) |
 |--------|------------------|------------------|
-| Default | omit (uses `~/.taskqueue`) | `8765` |
+| Default | omit (uses `~/.tqdaemon`) | `8765` |
 
 Point MCP at the same home the overnight daemon uses. Confirm with `tq doctor` / MCP `queue_status`.
 
@@ -254,7 +254,7 @@ No arguments.
 
 ### `drain_notifications`
 
-Read task-end events from `{TASKQUEUE_HOME}/notify.jsonl` (written for **every**
+Read task-end events from `{TQDAEMON_HOME}/notify.jsonl` (written for **every**
 terminal task — `notify_url` in the YAML only adds a webhook; see
 [`task_standards.md`](task_standards.md) — and also when a **system alert** fires, with `status` like `alert:any_failure` /
 `alert:tq_stopped`; see [Alerts](help/page-alerts.md)).
@@ -550,7 +550,7 @@ Two supported paths (same YAML contract — `docs/task_standards.md`):
 ### B. File on disk + `tq sync` (CLI / editors)
 
 1. **Find the project root.** MCP `list_projects`, or CLI `tq projects`, or
-   `~/.taskqueue/projects.yaml`.
+   `~/.tqdaemon/projects.yaml`.
 2. **Write** `<project_root>/<queue_dir>/<task_id>.yaml` (default queue dir
    `experiments/operator_queue/`). Set `enabled: true`.
 3. **`tq sync`** (or wait up to ~60 s for auto-sync).

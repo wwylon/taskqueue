@@ -21,10 +21,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue._db_runs import reclaim_expired_leases
-from taskqueue._db_tasks import get_task, request_stop_with_control, retry_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
+from tqdaemon._db_runs import reclaim_expired_leases
+from tqdaemon._db_tasks import get_task, request_stop_with_control, retry_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import SCHEMA_VERSION, open_db, parse_task_yaml
 
 pytestmark = pytest.mark.stress
 
@@ -61,7 +61,7 @@ def test_high_task_count_no_lock_error(tmp_path: Path) -> None:
 
 def test_high_task_count_fairshare_no_starvation(tmp_path: Path) -> None:
     """With 1000 tasks across 5 projects, fair-share query doesn't starve any project."""
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -92,7 +92,7 @@ def test_high_task_count_fairshare_no_starvation(tmp_path: Path) -> None:
 
 def test_many_projects_sync_skips_unchanged(tmp_path: Path) -> None:
     """50 projects with 1 YAML each: second sync skips all parses (mtime cache)."""
-    from taskqueue.db import parse_task_yaml, upsert_task
+    from tqdaemon.db import parse_task_yaml, upsert_task
 
     db = open_db(tmp_path / "q.db")
     projects = {}
@@ -144,11 +144,11 @@ def test_many_projects_sync_skips_unchanged(tmp_path: Path) -> None:
 
 def test_runaway_project_capped(tmp_path: Path) -> None:
     """A project with 600 tasks gets capped; other projects are still scheduled."""
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
-    from taskqueue.db import get_config
+    from tqdaemon.db import get_config
 
     cap = int(get_config(db).get("max_queued_tasks_per_project", 500))
 
@@ -176,7 +176,7 @@ def test_runaway_project_capped(tmp_path: Path) -> None:
 
 def test_large_log_tail_clamped(tmp_path: Path) -> None:
     """A 10 MB log file: read_log_tail returns only max_bytes, not the full file."""
-    from taskqueue.logio import read_log_tail
+    from tqdaemon.logio import read_log_tail
 
     log_file = tmp_path / "big.log"
     # Write 10 MB of data.
@@ -199,7 +199,7 @@ def test_large_log_memory_stable(tmp_path: Path) -> None:
     """Reading a large log tail does not load the full file into memory."""
     import os
 
-    from taskqueue.logio import read_log_tail
+    from tqdaemon.logio import read_log_tail
 
     log_file = tmp_path / "huge.log"
     target_size = 50 * 1024 * 1024  # 50 MB
@@ -265,7 +265,7 @@ def test_rapid_stop_retry_no_stranded_running(tmp_path: Path) -> None:
 
 def test_stop_requested_survives_daemon_restart(tmp_path: Path) -> None:
     """requeue_orphaned_running: stop_requested=1 → interrupted, not re-queued."""
-    from taskqueue.daemon import requeue_orphaned_running
+    from tqdaemon.daemon import requeue_orphaned_running
 
     db = open_db(tmp_path / "q.db")
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path)
@@ -295,7 +295,7 @@ def test_stop_requested_survives_daemon_restart(tmp_path: Path) -> None:
 
 def test_stop_without_stop_requested_requeues(tmp_path: Path) -> None:
     """requeue_orphaned_running: stop_requested=0 → queued (normal restart)."""
-    from taskqueue.daemon import requeue_orphaned_running
+    from tqdaemon.daemon import requeue_orphaned_running
 
     db = open_db(tmp_path / "q.db")
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path)
@@ -520,7 +520,7 @@ def test_100_projects_sync_budget(tmp_path: Path) -> None:
 @pytest.mark.nightly
 def test_20k_queue_admission_budget(tmp_path: Path) -> None:
     """20k queued tasks remain queryable within the scale-ladder budget."""
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -550,7 +550,7 @@ def test_local_stdout_flood_and_pathological_line(tmp_path: Path) -> None:
     )
     assert len(flood.stdout) < 1 * 1024 * 1024
 
-    from taskqueue.logio import read_log_tail
+    from tqdaemon.logio import read_log_tail
 
     log = tmp_path / "pathological.log"
     log.write_text("z" * (2 * 1024 * 1024) + "\nlast\n", encoding="utf-8")
@@ -562,7 +562,7 @@ def test_local_stdout_flood_and_pathological_line(tmp_path: Path) -> None:
 @pytest.mark.nightly
 def test_progress_and_remote_log_chunk_bursts_coalesce() -> None:
     """The remote batcher turns a burst of progress/log chunks into one send."""
-    from taskqueue.worker_slot import _LogBatcher
+    from tqdaemon.worker_slot import _LogBatcher
 
     sent: list[str] = []
     batcher = _LogBatcher(sent.append, interval_sec=60)

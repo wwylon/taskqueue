@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from taskqueue.db import insert_run, open_db
-from taskqueue.run_diff import diff_runs, render_diff
 from tests.helpers.master_worker import seed_queued_task
+from tqdaemon.db import insert_run, open_db
+from tqdaemon.run_diff import diff_runs, render_diff
 
 
 def _runs(tmp_path):

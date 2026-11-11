@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STATIC = ROOT / "taskqueue" / "static"
+STATIC = ROOT / "tqdaemon" / "static"
 sys.path.insert(0, str(ROOT))
 
-from taskqueue.docs_loader import (  # noqa: E402
+from tqdaemon.docs_loader import (  # noqa: E402
     load_manifest,
     validate_manifest,
     write_generated_artifacts,

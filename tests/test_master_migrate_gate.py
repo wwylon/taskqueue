@@ -10,11 +10,11 @@ import json
 from pathlib import Path
 from urllib.error import URLError
 
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 
 def test_master_migrate_rejects_non_standby(tmp_path: Path, monkeypatch):
-    from taskqueue._cli_admin import cmd_master_migrate
+    from tqdaemon._cli_admin import cmd_master_migrate
 
     home = tmp_path / "home"
     home.mkdir()
@@ -39,7 +39,7 @@ def test_master_migrate_rejects_non_standby(tmp_path: Path, monkeypatch):
 
 
 def test_master_migrate_unreachable_target(tmp_path: Path, monkeypatch):
-    from taskqueue._cli_admin import cmd_master_migrate
+    from tqdaemon._cli_admin import cmd_master_migrate
 
     home = tmp_path / "home"
     home.mkdir()

@@ -12,8 +12,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from taskqueue.config import db_path, state_home
-from taskqueue.db import open_db
+from tqdaemon.config import db_path, state_home
+from tqdaemon.db import open_db
 
 
 def main() -> int:

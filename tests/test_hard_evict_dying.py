@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from taskqueue.daemon import _split_dying
+from tqdaemon.daemon import _split_dying
 
 
 def test_dying_runs_excluded_and_counted_as_relief() -> None:

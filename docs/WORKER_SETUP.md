@@ -13,13 +13,13 @@ Full guide for configuring a **master** daemon and one or more **worker** agents
 
 ## Quick start — step by step
 
-Use this path once for a normal setup (master port **8765**, default home `~/.taskqueue`).
+Use this path once for a normal setup (master port **8765**, default home `~/.tqdaemon`).
 
 ### A. On the master machine
 
 1. **Install and start**
    ```powershell
-   cd path\to\taskqueue
+   cd path\to\tqdaemon
    uv sync
    uv run tq start
    uv run tq doctor
@@ -33,7 +33,7 @@ Use this path once for a normal setup (master port **8765**, default home `~/.ta
    ```
    Prefer [Tailscale](https://tailscale.com/). Note the master Tailscale IP (e.g. `100.64.0.1`).
 
-3. **Register projects** (edit `%USERPROFILE%\.taskqueue\projects.yaml`):
+3. **Register projects** (edit `%USERPROFILE%\.tqdaemon\projects.yaml`):
    ```yaml
    projects:
      myproject:
@@ -41,7 +41,7 @@ Use this path once for a normal setup (master port **8765**, default home `~/.ta
        git_url: git@github.com:org/myproject.git
        remote: true   # optional: fleet + allowlisted file sync
    ```
-   Optional sync allowlist in the repo: `<project>/.taskqueue/project.yaml` with `sync.push: [...]`.
+   Optional sync allowlist in the repo: `<project>/.tqdaemon/project.yaml` with `sync.push: [...]`.
    Then:
    ```powershell
    uv run tq sync
@@ -55,16 +55,16 @@ Use this path once for a normal setup (master port **8765**, default home `~/.ta
 
 ### B. On the worker machine
 
-5. **Install taskqueue**
+5. **Install tqdaemon**
    ```powershell
-   git clone git@github.com:wwylon/taskqueue.git
-   cd taskqueue
+   git clone git@github.com:wwylon/tqdaemon.git
+   cd tqdaemon
    uv sync
    ```
 
 6. **One-time setup from the join file**:
    ```powershell
-   .venv\Scripts\python.exe -m taskqueue.cli worker setup `
+   .venv\Scripts\python.exe -m tqdaemon.cli worker setup `
      --from path\to\worker-join.yaml `
      --worker-id laptop-B
    ```
@@ -74,7 +74,7 @@ Use this path once for a normal setup (master port **8765**, default home `~/.ta
 
 7. **Start the worker and leave it running**
    ```powershell
-   .venv\Scripts\python.exe -m taskqueue.cli worker
+   .venv\Scripts\python.exe -m tqdaemon.cli worker
    ```
    (Auth comes from setup / `worker.yaml` / `TQ_AUTH_TOKEN`.)
 
@@ -113,13 +113,13 @@ If something fails, jump to [§9 Troubleshooting](#9-troubleshooting). Details f
 
 | Role | Machine | State home | What it does |
 |------|---------|------------|--------------|
-| **Master** | Development / overnight host | `~/.taskqueue` (default) | Runs daemon + HTTP API; admits local tasks; leases remote runs |
-| **Worker** | Spare laptop/desktop | Own home (often default `~/.taskqueue` on that machine) | Pulls work from master URL; executes; streams logs; finalizes |
+| **Master** | Development / overnight host | `~/.tqdaemon` (default) | Runs daemon + HTTP API; admits local tasks; leases remote runs |
+| **Worker** | Spare laptop/desktop | Own home (often default `~/.tqdaemon` on that machine) | Pulls work from master URL; executes; streams logs; finalizes |
 
-`TASKQUEUE_HOME` selects the state directory. Everything else (DB, `projects.yaml`, `worker.yaml`, logs, `daemon.pid`) lives under that home.
+`TQDAEMON_HOME` selects the state directory. Everything else (DB, `projects.yaml`, `worker.yaml`, logs, `daemon.pid`) lives under that home.
 
 ```
-{TASKQUEUE_HOME}/
+{TQDAEMON_HOME}/
   projects.yaml      # project registry (master and worker both have one)
   worker.yaml        # worker only: master_url + worker_id (+ optional pin)
   queue.db           # master authoritative DB (workers do not share this)
@@ -141,7 +141,7 @@ Workers initiate all HTTP. The master never opens outbound connections to worker
 
 | Target | Master home | Port | Worker must use |
 |--------|-------------|------|-----------------|
-| Default overnight | `~/.taskqueue` | **8765** | `--master http://<master-ip>:8765` |
+| Default overnight | `~/.tqdaemon` | **8765** | `--master http://<master-ip>:8765` |
 
 Confirm with `tq doctor` on the master (home + port) before starting a worker.
 
@@ -149,12 +149,12 @@ Confirm with `tq doctor` on the master (home + port) before starting a worker.
 
 ## 3. Master configuration
 
-Run these on the **master** machine (default home; omit `TASKQUEUE_HOME`).
+Run these on the **master** machine (default home; omit `TQDAEMON_HOME`).
 
 ### 3.1 Start the daemon
 
 ```powershell
-cd path\to\taskqueue
+cd path\to\tqdaemon
 uv run tq start
 uv run tq doctor
 ```
@@ -206,7 +206,7 @@ projects:
     queue_dir: experiments/operator_queue   # optional; this is the default
     git_url: https://github.com/example/myapp.git
   tqdemo:
-    root: path\to\taskqueue\fixtures\tqdemo
+    root: path\to\tqdaemon\fixtures\tqdemo
     git_url: null   # fixture-only; worker cannot clone — use local path or skip
 ```
 
@@ -250,23 +250,23 @@ Do **not** expose the scheduler on the public Internet without Tailscale (or equ
 1. Python **3.12+** (required by `pyproject.toml`) and [`uv`](https://github.com/astral-sh/uv).
 2. Git with SSH keys (or HTTPS) that can clone the same repos as `git_url`.
 3. GPU drivers if claiming GPU tasks.
-4. Clone of **taskqueue**:
+4. Clone of **tqdaemon**:
 
 ```powershell
-git clone git@github.com:wwylon/taskqueue.git
-cd taskqueue
+git clone git@github.com:wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 ```
 
 ### 4.2 Automated setup (recommended)
 
-From the taskqueue checkout on the **worker**:
+From the tqdaemon checkout on the **worker**:
 
 ```powershell
 # Point at the master
 $env:TQ_AUTH_TOKEN = "<token-from-master>"   # if auth enabled
 
-.venv\Scripts\python.exe -m taskqueue.cli worker setup `
+.venv\Scripts\python.exe -m tqdaemon.cli worker setup `
   --master http://100.64.0.1:8765 `
   --worker-id laptop-B `
   --token $env:TQ_AUTH_TOKEN
@@ -279,11 +279,11 @@ What setup does:
 3. Runs `uv sync` when `pyproject.toml` is present.
 4. Writes `{home}/projects.yaml` and `{home}/worker.yaml`.
 
-Default worker home is `~/.taskqueue` on that machine unless `TASKQUEUE_HOME` is set. Use a **separate** home on the worker if you need isolated dogfood state; the worker’s home is not the master’s DB.
+Default worker home is `~/.tqdaemon` on that machine unless `TQDAEMON_HOME` is set. Use a **separate** home on the worker if you need isolated dogfood state; the worker’s home is not the master’s DB.
 
 ### 4.3 `worker.yaml` (saved by setup)
 
-Path: `{TASKQUEUE_HOME}/worker.yaml`
+Path: `{TQDAEMON_HOME}/worker.yaml`
 
 ```yaml
 master_url: http://100.64.0.1:8765
@@ -321,10 +321,10 @@ Re-run `tq worker setup` or edit this file after adding projects on the master, 
 ### 4.5 Start the worker agent
 
 ```powershell
-cd D:\path\to\taskqueue
+cd D:\path\to\tqdaemon
 $env:TQ_AUTH_TOKEN = "<token>"   # if required
 
-.venv\Scripts\python.exe -m taskqueue.cli worker
+.venv\Scripts\python.exe -m tqdaemon.cli worker
 # or: uv run tq worker
 ```
 
@@ -405,7 +405,7 @@ Remote logs stream to the master during the run (`POST /api/worker/log-chunk`). 
 | `code.provider` | `git_patch` (default in git repos), `bundle`, or `project_root` |
 | `bundle` / `bundle_hash` | Pin `tq bundle` artifact |
 | `transfer` | Push/pull files (≤64 MiB upload); not multi-GB |
-| Allowlisted file sync | `<project>/.taskqueue/project.yaml` `sync.push` + `tq resync` |
+| Allowlisted file sync | `<project>/.tqdaemon/project.yaml` `sync.push` + `tq resync` |
 | `execution_semantics` | Lease loss → re-queue vs `unknown` |
 | `resume_args` | Resume after interrupt when last run was interrupted |
 
@@ -421,7 +421,7 @@ Full field reference: [task_standards.md](task_standards.md).
 | Remove stale worker row | `tq worker remove <worker_id>` |
 | Ask worker to git sync | `tq worker sync <worker_id>` (picked up on next heartbeat) |
 | Build wheel for workers | `tq worker build-wheel` (master; optional auto-upgrade path) |
-| Restart worker after master upgrade | Stop agent → pull matching taskqueue version → start |
+| Restart worker after master upgrade | Stop agent → pull matching tqdaemon version → start |
 | Pending finalize after crash | Restart worker; `{home}/pending_finalize/` flushes before new claims |
 | Point worker at another master | Edit `worker.yaml` `master_url` or pass `--master`; restart |
 
@@ -431,7 +431,7 @@ Full field reference: [task_standards.md](task_standards.md).
 
 **Master**
 
-- [ ] Correct `TASKQUEUE_HOME` (`tq doctor`)
+- [ ] Correct `TQDAEMON_HOME` (`tq doctor`)
 - [ ] Daemon running; port matches URL workers will use
 - [ ] `bind_host=0.0.0.0` (or Tailscale IP) if remotes exist
 - [ ] `auth_token` set; token shared only with workers / operators
@@ -493,7 +493,7 @@ Environment variables:
 
 | Variable | Used by | Meaning |
 |----------|---------|---------|
-| `TASKQUEUE_HOME` | master + worker CLI | State directory |
+| `TQDAEMON_HOME` | master + worker CLI | State directory |
 | `TQ_AUTH_TOKEN` | worker / HTTP clients | Bearer token |
 | `TQ_MASTER` | CLI/MCP mutations | Optional remote master URL (see [mcp.md](mcp.md)) |
 | `TQ_OPERATOR` | CLI / MCP | Attribution for `started_by` |

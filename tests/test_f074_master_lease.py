@@ -8,19 +8,19 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from taskqueue.config import MASTER_LEASE_RENEW_SEC, MASTER_LEASE_TTL_SEC, WORK_LONGPOLL_MAX_SEC
-from taskqueue.daemon import _cas_master_lease
-from taskqueue.db import (
-    master_holder_process_dead,
-    open_db,
-    parse_master_instance_id,
-    release_master_lease,
-)
 from tests.helpers.master_worker import (
     http_request,
     make_handler_env,
     seed_master_lease,
     seed_worker,
+)
+from tqdaemon.config import MASTER_LEASE_RENEW_SEC, MASTER_LEASE_TTL_SEC, WORK_LONGPOLL_MAX_SEC
+from tqdaemon.daemon import _cas_master_lease
+from tqdaemon.db import (
+    master_holder_process_dead,
+    open_db,
+    parse_master_instance_id,
+    release_master_lease,
 )
 
 
@@ -34,7 +34,7 @@ def test_master_lease_ttl_defaults() -> None:
 def test_idle_longpoll_skips_claim_when_queue_empty(tmp_path: Path) -> None:
     HandlerClass, db, _ = make_handler_env(tmp_path)
     seed_worker(db, projects=[], session_id=None)
-    with patch("taskqueue.web._claim_next_remote_task") as claim:
+    with patch("tqdaemon.web._claim_next_remote_task") as claim:
         claim.return_value = {"task": None}
         t0 = time.monotonic()
         code, data = http_request(HandlerClass, "GET", "/api/worker/next-task?worker_id=w1&wait=0.6")
@@ -130,7 +130,7 @@ def test_get_workers_hides_secrets(tmp_path: Path) -> None:
     seed_worker(db, projects=[], session_id="secret-sess")
     db.execute("UPDATE workers SET credential_hash='deadbeef'")
     db.commit()
-    import taskqueue.web.routes_read as rr
+    import tqdaemon.web.routes_read as rr
 
     rr._workers_cache = (0.0, [])
     code, workers = http_request(HandlerClass, "GET", "/api/workers")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from taskqueue.resources import ResourceBudget
+from tqdaemon.resources import ResourceBudget
 
 
 def _budget(*, used: float, total: float = 64.0, soft: int = 80, hard: int = 95) -> ResourceBudget:

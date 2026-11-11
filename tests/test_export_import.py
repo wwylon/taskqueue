@@ -1,8 +1,8 @@
 def test_force_import_keeps_pre_import_backup(tmp_path):
     import sqlite3
 
-    from taskqueue.db import open_db
-    from taskqueue.export_import import export_home, import_home
+    from tqdaemon.db import open_db
+    from tqdaemon.export_import import export_home, import_home
 
     src = tmp_path / "src"
     src.mkdir()
@@ -23,8 +23,8 @@ def test_force_import_keeps_pre_import_backup(tmp_path):
 
 
 def test_config_set_validates_all_pairs_before_writing(tmp_path, capsys):
-    from taskqueue._cli_admin import cmd_config_set
-    from taskqueue.db import get_config, open_db
+    from tqdaemon._cli_admin import cmd_config_set
+    from tqdaemon.db import get_config, open_db
 
     home = tmp_path / "h"
     rc = cmd_config_set(home, ["scheduler_tick_sec=3", "no_such_key=1"])
@@ -35,8 +35,8 @@ def test_config_set_validates_all_pairs_before_writing(tmp_path, capsys):
 
 
 def test_remove_project_offline_drops_resource_history(tmp_path):
-    from taskqueue._cli_task import cmd_remove_project
-    from taskqueue.db import open_db
+    from tqdaemon._cli_task import cmd_remove_project
+    from tqdaemon.db import open_db
 
     home = tmp_path / "h"
     home.mkdir()
@@ -61,7 +61,7 @@ def test_import_refuses_when_pid_file_has_create_time(tmp_path):
     import psutil
     import pytest
 
-    from taskqueue.export_import import import_home
+    from tqdaemon.export_import import import_home
 
     ct = psutil.Process(os.getpid()).create_time()
     (tmp_path / "daemon.pid").write_text(f"{os.getpid()}:{ct}")
@@ -72,8 +72,8 @@ def test_import_refuses_when_pid_file_has_create_time(tmp_path):
 
 
 def test_stop_offline_unknown_task_fails(tmp_path, capsys):
-    from taskqueue._cli_task import cmd_stop
-    from taskqueue.db import open_db
+    from tqdaemon._cli_task import cmd_stop
+    from tqdaemon.db import open_db
 
     home = tmp_path / "h"
     home.mkdir()

@@ -1,4 +1,4 @@
-from taskqueue import scheduler
+from tqdaemon import scheduler
 
 
 def _row(task_id, deps=(), project="p"):

@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import upsert_task
-from taskqueue.config import Project
-from taskqueue.daemon import _preempt_scavenger
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.scheduler import _local_admit_queued
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import upsert_task
+from tqdaemon.config import Project
+from tqdaemon.daemon import _preempt_scavenger
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.scheduler import _local_admit_queued
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:

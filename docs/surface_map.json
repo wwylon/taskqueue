@@ -7,7 +7,7 @@
     },
     "admit": {
       "mcp": ["capacity", "why_not_running"],
-      "cli": ["plan", "why", "force", "priority", "pause", "resume", "freeze", "unfreeze", "locks", "fair-share", "deps"]
+      "cli": ["plan", "why", "force", "priority", "pause", "resume", "freeze", "unfreeze", "set", "locks", "fair-share", "deps"]
     },
     "run": {
       "mcp": ["enqueue_task", "retry_task", "retry_tasks", "patch_task", "stop_task", "hold_task", "unhold_task"],

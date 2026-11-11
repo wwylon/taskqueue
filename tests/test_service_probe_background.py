@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 import time
 
-from taskqueue import errors as tqerr
-from taskqueue import scheduler
-from taskqueue.scheduler import SERVICE_PROBE_PENDING, check_services_cached, clear_service_probe_cache
+from tqdaemon import errors as tqerr
+from tqdaemon import scheduler
+from tqdaemon.scheduler import SERVICE_PROBE_PENDING, check_services_cached, clear_service_probe_cache
 
 SVC = '[{"health_url": "http://127.0.0.1:9/"}]'
 
@@ -34,7 +34,7 @@ def test_miss_returns_pending_and_probes_off_thread(monkeypatch):
 
     monkeypatch.setattr(scheduler, "_check_services", slow)
     woke = []
-    monkeypatch.setattr("taskqueue.sched_wake.wake_scheduler", lambda: woke.append(1))
+    monkeypatch.setattr("tqdaemon.sched_wake.wake_scheduler", lambda: woke.append(1))
     t0 = time.monotonic()
     assert check_services_cached(SVC, background=True) == (SERVICE_PROBE_PENDING, tqerr.BLOCK_SERVICE)
     assert check_services_cached(SVC, background=True)[0] == SERVICE_PROBE_PENDING  # deduped, still pending
@@ -50,7 +50,7 @@ def test_expired_entry_served_stale_while_refreshing(monkeypatch):
     clear_service_probe_cache()
     results = iter([("down", tqerr.BLOCK_SERVICE), (None, "")])
     monkeypatch.setattr(scheduler, "_check_services", lambda *a, **k: next(results))
-    monkeypatch.setattr("taskqueue.sched_wake.wake_scheduler", lambda: None)
+    monkeypatch.setattr("tqdaemon.sched_wake.wake_scheduler", lambda: None)
     assert check_services_cached(SVC)[0] == "down"  # sync fill
     key = next(iter(scheduler._svc_probe_cache))
     ts, val = scheduler._svc_probe_cache[key]
@@ -68,7 +68,7 @@ def test_ollama_ps_background_never_blocks(monkeypatch):
         gate.wait(5)
         return 200, b'{"models": [{"name": "m"}]}'
 
-    monkeypatch.setattr("taskqueue.netutil.probe_get", slow)
+    monkeypatch.setattr("tqdaemon.netutil.probe_get", slow)
     url = "http://127.0.0.1:11434/api/ps"
     t0 = time.monotonic()
     assert scheduler._fetch_ollama_ps_models(url, background=True) is None

@@ -6,13 +6,13 @@ import base64
 import json
 from pathlib import Path
 
-from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import (
     http_request,
     make_handler_env,
     seed_queued_task,
     seed_worker,
 )
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def _claim(db_path, worker_row):
@@ -20,7 +20,7 @@ def _claim(db_path, worker_row):
 
 
 def test_log_chunk_appends_in_order(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")
@@ -52,7 +52,7 @@ def test_log_chunk_appends_in_order(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_log_chunk_session_mismatch_rejected(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")
@@ -74,7 +74,7 @@ def test_log_chunk_session_mismatch_rejected(tmp_path: Path, monkeypatch) -> Non
 
 
 def test_log_chunk_renews_lease(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")
@@ -98,7 +98,7 @@ def test_log_chunk_renews_lease(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_log_chunk_increments_metrics_json_log(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")
@@ -128,7 +128,7 @@ def test_log_chunk_increments_metrics_json_log(tmp_path: Path, monkeypatch) -> N
 
 
 def test_log_chunk_retry_with_same_seq_is_not_duplicated(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")
@@ -163,9 +163,9 @@ def test_log_chunk_retry_with_same_seq_is_not_duplicated(tmp_path: Path, monkeyp
 
 def test_log_chunk_busy_db_503_then_retry_same_seq_is_applied(tmp_path: Path, monkeypatch) -> None:
     """A 503 'database busy' must not write the file or burn the seq (retry must apply)."""
-    from taskqueue.db import open_write_conn
+    from tqdaemon.db import open_write_conn
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")

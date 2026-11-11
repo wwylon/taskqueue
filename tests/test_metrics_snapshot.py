@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from taskqueue.db import open_db, record_resource_sample
-from taskqueue.metrics_snapshot import build_run_metrics
 from tests.helpers.master_worker import seed_queued_task
+from tqdaemon.db import open_db, record_resource_sample
+from tqdaemon.metrics_snapshot import build_run_metrics
 
 
 def test_build_run_metrics_history_and_gpu(tmp_path: Path) -> None:

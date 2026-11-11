@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.config import Project
-from taskqueue.daemon import MasterLeaseLockTimeout, _cas_master_lease, requeue_orphaned_running
-from taskqueue.db import open_db
-from taskqueue.runner import _descendant_pids, build_process_children_map
-from taskqueue.scheduler import check_services_cached, clear_service_probe_cache
-from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache
+from tqdaemon.config import Project
+from tqdaemon.daemon import MasterLeaseLockTimeout, _cas_master_lease, requeue_orphaned_running
+from tqdaemon.db import open_db
+from tqdaemon.runner import _descendant_pids, build_process_children_map
+from tqdaemon.scheduler import check_services_cached, clear_service_probe_cache
+from tqdaemon.yaml_sync import _sync_project, clear_yaml_mtime_cache
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:
@@ -40,7 +40,7 @@ def test_f079_vanished_queue_dir_does_not_wipe_tasks(tmp_path: Path, monkeypatch
         listed["done"] = True
         return []
 
-    monkeypatch.setattr("taskqueue.yaml_sync.iter_queue_files", _empty_list)
+    monkeypatch.setattr("tqdaemon.yaml_sync.iter_queue_files", _empty_list)
 
     qdir = proj.queue_dir.resolve()
     real_is_dir = Path.is_dir
@@ -81,7 +81,7 @@ def test_f080_db_flip_before_kill(tmp_path: Path, monkeypatch) -> None:
         seen.append("kill")
         return "ok"
 
-    monkeypatch.setattr("taskqueue.reap.kill_process_tree", _kill)
+    monkeypatch.setattr("tqdaemon.reap.kill_process_tree", _kill)
     requeue_orphaned_running(db, reason="orphan", graceful_sec=0.0)
     assert seen == ["kill"]
     db.close()
@@ -120,7 +120,7 @@ def test_f085_claim_uses_service_cache(monkeypatch) -> None:
         calls["n"] += 1
         return ("down", "tq.block.service_down")
 
-    monkeypatch.setattr("taskqueue.scheduler._check_services", _fake)
+    monkeypatch.setattr("tqdaemon.scheduler._check_services", _fake)
     clear_service_probe_cache()
     assert check_services_cached('[{"health_url":"http://127.0.0.1:9"}]')[0] == "down"
     assert check_services_cached('[{"health_url":"http://127.0.0.1:9"}]')[0] == "down"
@@ -132,10 +132,10 @@ def test_f084_capture_before_begin_immediate(tmp_path: Path, monkeypatch) -> Non
     """F-084: the (slow) code-package capture runs before the claim takes the write lock."""
     import sqlite3
 
-    from taskqueue import worker_api
     from tests.helpers.master_worker import make_handler_env, seed_queued_task, seed_worker
+    from tqdaemon import worker_api
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     _h, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     seed_worker(db)
@@ -164,7 +164,7 @@ def test_f084_capture_before_begin_immediate(tmp_path: Path, monkeypatch) -> Non
 def test_p6_hold_credit_only_for_held_task() -> None:
     # P6 hold credit must only apply to the exact held task, not to any other task.
     # _cross_project_hold was removed: cross-project tasks no longer receive P6 credit.
-    from taskqueue.scheduler import p6_hold_credit
+    from tqdaemon.scheduler import p6_hold_credit
 
     held = ("p", "big")
     assert p6_hold_credit(held, held, 12.0, 4.0) == (12.0, 4.0)

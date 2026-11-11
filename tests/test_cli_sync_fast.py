@@ -7,9 +7,9 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue.config import Project
-from taskqueue.yaml_sync import clear_yaml_mtime_cache
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon.config import Project
+from tqdaemon.yaml_sync import clear_yaml_mtime_cache
 
 
 def _project(tmp_path: Path, name: str, n: int) -> Project:
@@ -25,7 +25,7 @@ def _project(tmp_path: Path, name: str, n: int) -> Project:
 
 
 def _spy_parses(monkeypatch) -> list[str]:
-    import taskqueue.yaml_sync as ys
+    import tqdaemon.yaml_sync as ys
 
     real = ys.parse_task_yaml_many
     seen: list[str] = []
@@ -124,7 +124,7 @@ def test_sync_reloads_projects_yaml_for_new_name(tmp_path: Path) -> None:
 
 
 def test_cli_sync_passes_projects_and_force(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue import _cli_project
+    from tqdaemon import _cli_project
 
     seen: dict = {}
 
@@ -132,16 +132,16 @@ def test_cli_sync_passes_projects_and_force(tmp_path: Path, monkeypatch) -> None
         seen.update(path=path, body=body)
         return {"ok": True, "total": 3, "projects": {"b": 3}}
 
-    monkeypatch.setattr("taskqueue.master_client.via_master", _fake)
-    monkeypatch.setattr("taskqueue._cli_helpers.warn_enabled_terminal_summary", lambda db: None)
-    monkeypatch.setattr("taskqueue.db.open_db", lambda *a, **k: type("D", (), {"close": lambda s: None})())
+    monkeypatch.setattr("tqdaemon.master_client.via_master", _fake)
+    monkeypatch.setattr("tqdaemon._cli_helpers.warn_enabled_terminal_summary", lambda db: None)
+    monkeypatch.setattr("tqdaemon.db.open_db", lambda *a, **k: type("D", (), {"close": lambda s: None})())
     monkeypatch.setattr(_cli_project, "print_wait_hint", lambda: None)
     assert _cli_project.cmd_sync(tmp_path, projects=["b"], force=True) == 0
     assert seen == {"path": "/api/cli/sync", "body": {"projects": ["b"], "force": True}}
 
 
 def test_cli_sync_accepts_project_flag(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue import cli
+    from tqdaemon import cli
 
     got: dict = {}
     monkeypatch.setattr(cli, "cmd_sync", lambda home, **k: got.update(k) or 0)

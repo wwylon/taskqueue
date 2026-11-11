@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from taskqueue.project_sync import (
+from tqdaemon.project_sync import (
     build_manifest,
     bump_sync_generation,
     compute_fingerprint,

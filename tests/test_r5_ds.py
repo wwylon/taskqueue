@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.capacity import build_capacity
-from taskqueue.config import Project, validate_config
-from taskqueue.db import get_config, open_db, parse_task_yaml_many, set_config
-from taskqueue.scheduler import check_services_cached, clear_service_probe_cache
-from taskqueue.yaml_sync import (
+from tqdaemon.capacity import build_capacity
+from tqdaemon.config import Project, validate_config
+from tqdaemon.db import get_config, open_db, parse_task_yaml_many, set_config
+from tqdaemon.scheduler import check_services_cached, clear_service_probe_cache
+from tqdaemon.yaml_sync import (
     YAML_PARSER_GEN,
     _sync_project,
     _yaml_mtime_cache,
@@ -84,11 +84,11 @@ def test_f077_parser_gen_busts_mtime_cache(tmp_path: Path, monkeypatch) -> None:
         calls["n"] += 1
         return real(*args, **kwargs)
 
-    monkeypatch.setattr("taskqueue.yaml_sync.parse_task_yaml_many", _spy)
+    monkeypatch.setattr("tqdaemon.yaml_sync.parse_task_yaml_many", _spy)
     _sync_project(db, proj)
     assert calls["n"] == 0
 
-    monkeypatch.setattr("taskqueue.yaml_sync.YAML_PARSER_GEN", YAML_PARSER_GEN + 1)
+    monkeypatch.setattr("tqdaemon.yaml_sync.YAML_PARSER_GEN", YAML_PARSER_GEN + 1)
     _sync_project(db, proj)
     assert calls["n"] == 1
     assert _yaml_mtime_cache[str(path)][1] == YAML_PARSER_GEN + 1
@@ -102,7 +102,7 @@ def test_f078_service_probe_cached_for_ttl(monkeypatch) -> None:
         calls["n"] += 1
         return ("down", "tq.block.service_down")
 
-    monkeypatch.setattr("taskqueue.scheduler._check_services", _fake)
+    monkeypatch.setattr("tqdaemon.scheduler._check_services", _fake)
     clear_service_probe_cache()
     assert check_services_cached('[{"health_url":"http://127.0.0.1:9"}]')[0] == "down"
     assert check_services_cached('[{"health_url":"http://127.0.0.1:9"}]')[0] == "down"
@@ -114,7 +114,7 @@ def test_capacity_skips_detect_system_when_snapshot_given(tmp_path: Path, monkey
     def _boom():
         raise AssertionError("detect_system should not run")
 
-    monkeypatch.setattr("taskqueue.capacity.detect_system", _boom)
+    monkeypatch.setattr("tqdaemon.capacity.detect_system", _boom)
     db = open_db(tmp_path / "q.db")
     cap = build_capacity(
         db,
@@ -129,8 +129,8 @@ def test_capacity_skips_detect_system_when_snapshot_given(tmp_path: Path, monkey
 def test_rconn_opens_without_migrate() -> None:
     import threading
 
-    import taskqueue.db as dbmod
-    from taskqueue.web.handler import Handler
+    import tqdaemon.db as dbmod
+    from tqdaemon.web.handler import Handler
 
     seen = {}
 

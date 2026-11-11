@@ -29,7 +29,7 @@ def test_fits_now_html_free_next_blocked_and_empty():
         " f._fitsNowHtml({ headroom: plan.headroom, tasks: [] }), f._fitsNowHtml({})]));"
     )
     start, blocked, empty, none = out
-    assert "CPU 6 cores · RAM 40 GiB" in start and "VRAM" not in start  # no GPU headroom → no VRAM part
+    assert "fits.cpuCores{&quot;n&quot;:&quot;6&quot;} · RAM 40 GiB" in start and "VRAM" not in start  # no GPU headroom → no VRAM part
     assert "dashboard.fitsNext" in start and "p/small" in start and "&quot;n&quot;:2" in start
     assert "VRAM 8 GiB" in blocked and "dashboard.fitsBlocked" in blocked and "RAM: need 90 GiB" in blocked
     assert "dashboard.fitsNothingQueued" in empty

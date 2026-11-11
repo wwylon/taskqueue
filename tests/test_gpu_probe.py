@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import errors as tqerr
-from taskqueue.resources import (
+from tqdaemon import errors as tqerr
+from tqdaemon.resources import (
     ResourceBudget,
     apply_gpu_last_good,
     gpu_refresh_interval,
@@ -17,7 +17,7 @@ from taskqueue.resources import (
     reset_gpu_probe_state,
     resolve_nvidia_smi,
 )
-from taskqueue.scheduler import _check_services, _warm_vram_admit_gib
+from tqdaemon.scheduler import _check_services, _warm_vram_admit_gib
 
 
 @pytest.fixture(autouse=True)
@@ -49,12 +49,12 @@ def test_gpu_refresh_interval_backoff() -> None:
 
 
 def test_probe_gpus_timeout(monkeypatch) -> None:
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: r"C:\fake\nvidia-smi.exe")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: r"C:\fake\nvidia-smi.exe")
 
     def _timeout(*_a, **_k):
         raise subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=5)
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", _timeout)
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", _timeout)
     result = probe_gpus()
     assert result.ok is False
     assert result.gpus == []
@@ -62,21 +62,21 @@ def test_probe_gpus_timeout(monkeypatch) -> None:
 
 
 def test_probe_gpus_not_found(monkeypatch) -> None:
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: None)
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: None)
     result = probe_gpus()
     assert result.ok is False
     assert "not found" in (result.error or "")
 
 
 def test_probe_gpus_parses_csv(monkeypatch) -> None:
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
 
     class _Proc:
         returncode = 0
         stdout = "0, NVIDIA GeForce RTX 4060, 8188, 1024, 560.00, 45, 3, 20.0, 115.0\n"
         stderr = ""
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", lambda *_a, **_k: _Proc())
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", lambda *_a, **_k: _Proc())
     result = probe_gpus()
     assert result.ok is True
     assert result.error is None
@@ -86,13 +86,13 @@ def test_probe_gpus_parses_csv(monkeypatch) -> None:
 
 
 def test_resolve_nvidia_smi_windows_fallback(monkeypatch) -> None:
-    monkeypatch.setattr("taskqueue.resources.os.name", "nt")
-    monkeypatch.setattr("taskqueue.resources.shutil.which", lambda _n: None)
+    monkeypatch.setattr("tqdaemon.resources.os.name", "nt")
+    monkeypatch.setattr("tqdaemon.resources.shutil.which", lambda _n: None)
 
     def _isfile(path: str) -> bool:
         return path == r"C:\Windows\System32\nvidia-smi.exe"
 
-    monkeypatch.setattr("taskqueue.resources.os.path.isfile", _isfile)
+    monkeypatch.setattr("tqdaemon.resources.os.path.isfile", _isfile)
     assert resolve_nvidia_smi() == r"C:\Windows\System32\nvidia-smi.exe"
 
 
@@ -178,7 +178,7 @@ def test_success_clears_stale() -> None:
 
 
 def _budget(system: dict, monkeypatch) -> ResourceBudget:
-    import taskqueue.resources as R
+    import tqdaemon.resources as R
 
     monkeypatch.setattr(R, "ram_used_gib", lambda: 1.0)
     cfg = {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 80}
@@ -224,11 +224,11 @@ def test_fits_last_good_still_admits(monkeypatch) -> None:
 
 
 def test_capacity_exposes_probe_error(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue.capacity import build_capacity
-    from taskqueue.db import open_db
+    from tqdaemon.capacity import build_capacity
+    from tqdaemon.db import open_db
 
     monkeypatch.setattr(
-        "taskqueue.capacity.detect_system",
+        "tqdaemon.capacity.detect_system",
         lambda: {
             "cpu_total_cores": 8,
             "ram_total_gib": 32.0,
@@ -242,7 +242,7 @@ def test_capacity_exposes_probe_error(tmp_path: Path, monkeypatch) -> None:
             "gpu_processes": [],
         },
     )
-    monkeypatch.setattr("taskqueue.capacity.ram_used_gib", lambda: 4.0)
+    monkeypatch.setattr("tqdaemon.capacity.ram_used_gib", lambda: 4.0)
     db = open_db(tmp_path / "q.db")
     cap = build_capacity(db, {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100})
     assert cap["master"]["gpu_probe_error"] == "nvidia-smi timed out (5s)"
@@ -291,7 +291,7 @@ def test_vram_probe_timeout_is_not_service_vram(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(_ollama_yaml())
     assert code == tqerr.BLOCK_SERVICE
@@ -303,7 +303,7 @@ def test_vram_probe_timeout_does_not_call_detect_system(monkeypatch) -> None:
     def _boom(*_a, **_k):
         raise AssertionError("detect_system must not run on the admit path")
 
-    monkeypatch.setattr("taskqueue.resources.detect_system", _boom)
+    monkeypatch.setattr("tqdaemon.resources.detect_system", _boom)
 
     def _urlopen(req, timeout=None):
         if "/api/ps" in _url_of(req):
@@ -311,7 +311,7 @@ def test_vram_probe_timeout_does_not_call_detect_system(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(_ollama_yaml())
     assert code == tqerr.BLOCK_SERVICE
@@ -327,7 +327,7 @@ def test_vram_shortfall_still_service_vram(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(),
@@ -347,7 +347,7 @@ def test_service_vram_uses_smi_free_when_fresh(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(min_vram_free_gib=4.0),
@@ -384,7 +384,7 @@ def test_vram_probe_skipped_when_device_has_headroom(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(),
@@ -419,7 +419,7 @@ def test_resident_ok_models_passes_when_pinned_model_loaded(monkeypatch) -> None
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
@@ -452,7 +452,7 @@ def test_resident_ok_models_blocks_wrong_model(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
@@ -486,7 +486,7 @@ def test_resident_ok_models_blocks_mixed_residents(monkeypatch) -> None:
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     reason, code = _check_services(
         _ollama_yaml(resident_ok_models=["llama3.2"]),
@@ -511,7 +511,7 @@ def test_vram_probe_uses_system_info_total_not_detect_system(monkeypatch) -> Non
     def _boom(*_a, **_k):
         raise AssertionError("detect_system must not run on the admit path")
 
-    monkeypatch.setattr("taskqueue.resources.detect_system", _boom)
+    monkeypatch.setattr("tqdaemon.resources.detect_system", _boom)
     body = json.dumps({"models": []}).encode()
 
     def _urlopen(req, timeout=None):
@@ -520,7 +520,7 @@ def test_vram_probe_uses_system_info_total_not_detect_system(monkeypatch) -> Non
         return _HttpResp()
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: _urlopen(req, timeout=timeout)
     )
     # Stale snapshot so we do not skip /api/ps; total still comes from system_info.
     reason, code = _check_services(
@@ -536,18 +536,18 @@ def test_vram_probe_uses_system_info_total_not_detect_system(monkeypatch) -> Non
 
 
 def test_probe_gpu_processes_parses_and_sorts(monkeypatch) -> None:
-    from taskqueue.resources import probe_gpu_processes
+    from tqdaemon.resources import probe_gpu_processes
 
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
 
     class _Proc:
         returncode = 0
         stdout = "111, ollama.exe, 4300\n222, python.exe, 512\n"
         stderr = ""
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", lambda *_a, **_k: _Proc())
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", lambda *_a, **_k: _Proc())
     monkeypatch.setattr(
-        "taskqueue.resources._gpu_proc_meta",
+        "tqdaemon.resources._gpu_proc_meta",
         lambda pid: {"name": "", "cmdline_short": ""},
     )
     rows = probe_gpu_processes()
@@ -558,9 +558,9 @@ def test_probe_gpu_processes_parses_and_sorts(monkeypatch) -> None:
 
 
 def test_probe_gpu_processes_keeps_wddm_na(monkeypatch) -> None:
-    from taskqueue.resources import probe_gpu_processes
+    from tqdaemon.resources import probe_gpu_processes
 
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
 
     class _Proc:
         returncode = 0
@@ -570,9 +570,9 @@ def test_probe_gpu_processes_keeps_wddm_na(monkeypatch) -> None:
         )
         stderr = ""
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", lambda *_a, **_k: _Proc())
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", lambda *_a, **_k: _Proc())
     monkeypatch.setattr(
-        "taskqueue.resources._gpu_proc_meta",
+        "tqdaemon.resources._gpu_proc_meta",
         lambda pid: {"name": "", "cmdline_short": ""},
     )
     rows = probe_gpu_processes()
@@ -585,39 +585,39 @@ def test_probe_gpu_processes_keeps_wddm_na(monkeypatch) -> None:
 
 
 def test_probe_gpu_memory_used(monkeypatch) -> None:
-    from taskqueue.resources import probe_gpu_memory_used
+    from tqdaemon.resources import probe_gpu_memory_used
 
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
 
     class _Proc:
         returncode = 0
         stdout = "5535\n"
         stderr = ""
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", lambda *_a, **_k: _Proc())
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", lambda *_a, **_k: _Proc())
     assert probe_gpu_memory_used() == pytest.approx(5.405, abs=0.01)
 
 
 def test_probe_gpu_compute_apps_ok_empty(monkeypatch) -> None:
-    from taskqueue.resources import probe_gpu_compute_apps
+    from tqdaemon.resources import probe_gpu_compute_apps
 
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: "/bin/nvidia-smi")
 
     class _Proc:
         returncode = 0
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr("taskqueue.resources.subprocess.run", lambda *_a, **_k: _Proc())
+    monkeypatch.setattr("tqdaemon.resources.subprocess.run", lambda *_a, **_k: _Proc())
     result = probe_gpu_compute_apps()
     assert result.ok is True
     assert result.processes == []
 
 
 def test_probe_gpu_compute_apps_failure_not_empty_success(monkeypatch) -> None:
-    from taskqueue.resources import probe_gpu_compute_apps, probe_gpu_processes
+    from tqdaemon.resources import probe_gpu_compute_apps, probe_gpu_processes
 
-    monkeypatch.setattr("taskqueue.resources.resolve_nvidia_smi", lambda: None)
+    monkeypatch.setattr("tqdaemon.resources.resolve_nvidia_smi", lambda: None)
     result = probe_gpu_compute_apps()
     assert result.ok is False
     assert result.processes == []
@@ -626,11 +626,11 @@ def test_probe_gpu_compute_apps_failure_not_empty_success(monkeypatch) -> None:
 
 
 def test_capacity_includes_gpu_processes(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue.capacity import build_capacity
-    from taskqueue.db import open_db
+    from tqdaemon.capacity import build_capacity
+    from tqdaemon.db import open_db
 
     monkeypatch.setattr(
-        "taskqueue.capacity.detect_system",
+        "tqdaemon.capacity.detect_system",
         lambda: {
             "cpu_total_cores": 8,
             "ram_total_gib": 32.0,
@@ -648,7 +648,7 @@ def test_capacity_includes_gpu_processes(tmp_path: Path, monkeypatch) -> None:
             ],
         },
     )
-    monkeypatch.setattr("taskqueue.capacity.ram_used_gib", lambda: 4.0)
+    monkeypatch.setattr("tqdaemon.capacity.ram_used_gib", lambda: 4.0)
     db = open_db(tmp_path / "q.db")
     cap = build_capacity(db, {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100})
     assert cap["master"]["gpu_processes"][0]["name"] == "ollama.exe"

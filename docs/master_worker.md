@@ -3,7 +3,7 @@
 Reference for how remote workers claim tasks, synchronize code and files, stream logs, and recover from disconnects.
 
 **Configure (simple steps + full reference):** [WORKER_SETUP.md](WORKER_SETUP.md) — start with **Quick start — step by step**.  
-YAML fields: [task_standards.md](task_standards.md) §4. Errors: [errors.md](errors.md). State home: default `~/.taskqueue` (port **8765**).
+YAML fields: [task_standards.md](task_standards.md) §4. Errors: [errors.md](errors.md). State home: default `~/.tqdaemon` (port **8765**).
 
 ---
 
@@ -191,7 +191,7 @@ See [scheduler.md](scheduler.md).
 
 ## Appendix A — live soak checklist
 
-Run against the default home (`~/.taskqueue`, port **8765**). Confirm with `tq doctor` before pointing a worker at a master.
+Run against the default home (`~/.tqdaemon`, port **8765**). Confirm with `tq doctor` before pointing a worker at a master.
 
 1. `tq sync` with `fixtures/tqdemo` registered; enqueue `mw-dispatch-*` YAMLs.
 2. Confirm `dispatch: remote` runs on worker-B; `local` stays on master.

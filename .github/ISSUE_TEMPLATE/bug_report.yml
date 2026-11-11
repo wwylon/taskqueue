@@ -1,0 +1,28 @@
+name: Bug report
+description: Something in tq, the daemon or the web UI does not work as documented
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal task YAML and commands if possible.
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS
+      description: Output of `tq doctor` (version, OS, Python).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell

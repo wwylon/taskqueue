@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
-from taskqueue import scheduler
-from taskqueue.scheduler import FilterResult
+from tqdaemon import scheduler
+from tqdaemon.scheduler import FilterResult
 
 
 def test_paused_project_skips_service_probe(monkeypatch):

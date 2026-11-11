@@ -7,10 +7,10 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import stamp_provenance
-from taskqueue.config import Project
-from taskqueue.db import SCHEMA_VERSION, open_db
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon._db_tasks import stamp_provenance
+from tqdaemon.config import Project
+from tqdaemon.db import SCHEMA_VERSION, open_db
 
 
 def _yaml(task_id: str) -> str:
@@ -74,7 +74,7 @@ def test_cli_add_route_stamps_and_audits(tmp_path: Path) -> None:
 
 
 def test_identity_headers() -> None:
-    from taskqueue import master_client as mc
+    from tqdaemon import master_client as mc
 
     mc.set_identity("mcp", "mcp/cursor 1.0")
     try:

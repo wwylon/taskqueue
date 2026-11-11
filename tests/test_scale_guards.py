@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.operator_features import TASK_STATS_UNSCOPED_LIMIT, task_stats
-from taskqueue.web import _get_deps_response
-from taskqueue.web.responses import HEAVY_SORT_TOTAL_THRESHOLD, _get_queue_response
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon.db import open_db
+from tqdaemon.operator_features import TASK_STATS_UNSCOPED_LIMIT, task_stats
+from tqdaemon.web import _get_deps_response
+from tqdaemon.web.responses import HEAVY_SORT_TOTAL_THRESHOLD, _get_queue_response
 
 
 def _task(conn, project: str, task_id: str, *, status: str = "queued", suite: str = "") -> None:

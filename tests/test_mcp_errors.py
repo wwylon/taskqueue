@@ -3,7 +3,7 @@
 import io
 import json
 
-from taskqueue import mcp_server
+from tqdaemon import mcp_server
 
 
 def _run(monkeypatch, tmp_path, lines):

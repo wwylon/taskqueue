@@ -1,4 +1,4 @@
-# Error codes — taskqueue
+# Error codes — tqdaemon
 
 Stable machine-readable codes stored in `tasks.last_error_code` (and optionally `runs.last_error_code`). Human text may also appear in `tasks.block_reason`.
 
@@ -65,7 +65,7 @@ Reclaim *timing* is unchanged either way — a run is reclaimed purely on lease 
 
 ## CLI exit codes
 
-Every `tq` command follows one contract (constants in `taskqueue/_cli_helpers.py`):
+Every `tq` command follows one contract (constants in `tqdaemon/_cli_helpers.py`):
 
 | Code | Meaning |
 |------|---------|

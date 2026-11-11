@@ -1,14 +1,16 @@
-# taskqueue
+# tqdaemon
 
 [English](README.md) | [Polski](README.pl.md) | [中文](README.zh.md) | [العربية](README.ar.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub stars](https://img.shields.io/github/stars/wwylon/taskqueue?style=social)](https://github.com/wwylon/taskqueue)
+[![CI](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml/badge.svg)](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tqdaemon)](https://pypi.org/project/tqdaemon/)
+[![Latest tag](https://img.shields.io/github/v/tag/wwylon/tqdaemon?label=version)](https://github.com/wwylon/tqdaemon/tags)
 
-![taskqueue — local jobs, agents, workers](docs/assets/hero.jpg)
+![tqdaemon — local jobs, agents, workers](https://raw.githubusercontent.com/wwylon/tqdaemon/main/docs/assets/demo.gif)
 
-**taskqueue** runs long jobs on your own machines without melting them.
+**tqdaemon** runs long jobs on your own machines without melting them.
 Describe each job in YAML. A local **daemon** starts work only when there is
 enough CPU, RAM, and GPU memory. Watch progress in a **web UI**, the **`tq`**
 CLI, or from an **AI coding agent** (MCP).
@@ -25,7 +27,7 @@ Not Celery, Kubernetes, or CI. Not the 2011 AMQP/Debian
 
 ## Best start: ask your agent
 
-Tell your coding agent (Cursor, Claude Code, …) to use **taskqueue** for long
+Tell your coding agent (Cursor, Claude Code, …) to use **tqdaemon** for long
 jobs: wire MCP (`tq mcp`), submit YAML tasks, and `wait_for_task` instead of
 blocking the chat. Setup: **[docs/mcp.md](docs/mcp.md)**.
 
@@ -33,9 +35,11 @@ blocking the chat. Setup: **[docs/mcp.md](docs/mcp.md)**.
 
 **Need:** Python **3.12+**, [Git](https://git-scm.com/), [`uv`](https://docs.astral.sh/uv/).
 
+**From PyPI:** `uvx --from tqdaemon tq doctor` (or `pipx install tqdaemon`). From source:
+
 ```powershell
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 uv run tq doctor
 uv run tq start

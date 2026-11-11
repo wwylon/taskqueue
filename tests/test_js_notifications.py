@@ -112,7 +112,7 @@ console.log('RESULT:' + JSON.stringify({{ html, empty }}));
     )
     h = out["html"]
     assert 'class="proj-tag"' in h and ">p</span>" in h and ">c</span>" in h
-    assert "exit code" in h and "l1\nl2" in h and "tqOpenDrawer" in h
+    assert "notif.exitCode" in h and "l1\nl2" in h and "tqOpenDrawer" in h
     assert "<pre" in h
     assert "tqOpenDrawer" not in out["empty"] and "<pre" not in out["empty"]
 

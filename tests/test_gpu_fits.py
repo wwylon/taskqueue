@@ -1,4 +1,4 @@
-from taskqueue.web.hardware import gpu_fit_summary
+from tqdaemon.web.hardware import gpu_fit_summary
 
 HW = {
     "ram_available_gib": 16,

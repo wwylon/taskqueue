@@ -1,4 +1,4 @@
-from taskqueue import estimate
+from tqdaemon import estimate
 
 
 def test_declared_change_busts_cache_and_cache_is_bounded(monkeypatch) -> None:

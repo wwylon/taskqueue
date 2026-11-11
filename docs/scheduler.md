@@ -5,7 +5,7 @@ start, what to stop, and how it estimates what a task will cost.
 
 Field reference for what a YAML may declare: [`task_standards.md`](task_standards.md).
 
-**Master–worker:** local admission (this doc) and remote worker claims share `filter_task()` in `taskqueue/scheduler.py`. Remote workers pull via `GET /api/worker/next-task`. With `placement_mode=binpack` (default), claim is gated by best-fit among online peers (see §3 Remote scoring). Full reference: [master_worker.md](master_worker.md).
+**Master–worker:** local admission (this doc) and remote worker claims share `filter_task()` in `tqdaemon/scheduler.py`. Remote workers pull via `GET /api/worker/next-task`. With `placement_mode=binpack` (default), claim is gated by best-fit among online peers (see §3 Remote scoring). Full reference: [master_worker.md](master_worker.md).
 
 ---
 
@@ -34,7 +34,7 @@ Between full ticks the daemon sleeps up to `scheduler_interval_sec`, but **wakes
 
 ### Fast path (on local subprocess exit)
 
-When any local `ActiveRun` finishes, the reader thread signals `sched_wake` (`taskqueue/sched_wake.py`). If the daemon is sleeping between ticks, it runs a **minimal pass** instead of waiting for the next full tick:
+When any local `ActiveRun` finishes, the reader thread signals `sched_wake` (`tqdaemon/sched_wake.py`). If the daemon is sleeping between ticks, it runs a **minimal pass** instead of waiting for the next full tick:
 
 1. **Reap** — same logic as step 2 above.
 2. **Admit** — same gates as the full tick (`recovery_cooldown`, CPU soft gate, `ResourceBudget`, `admit_max_per_tick`, …). Optionally sync first when `_sync_requested`.
@@ -95,7 +95,7 @@ flowchart TD
 ## 2. Estimating what a task will cost
 
 Declared `resources:` are a *hint*, not the truth — the common failure is a task
-that declares nothing, or declares far less than it uses. `taskqueue/estimate.py`
+that declares nothing, or declares far less than it uses. `tqdaemon/estimate.py`
 resolves an estimate for every candidate, taking the **maximum** of the declared
 value and the predicted one, floored at `default_task_ram_gib`.
 
@@ -121,7 +121,7 @@ An estimate resolving to `default` with no declared VRAM is flagged **unknown**
 ## 3. Admission
 
 Queued tasks are ranked (`sort_queued_fairshare` in `resources.py`), then the
-same **Filter → Score → Reserve → Assign** path in `taskqueue/scheduler.py`
+same **Filter → Score → Reserve → Assign** path in `tqdaemon/scheduler.py`
 runs against a `Node`: `master-local` for the daemon, or a worker row for
 `claim_next_remote_task`. Hard filters (project, OS/arch/tags, RAM, per-GPU
 VRAM, deps, exclusive / exclusive_project, freeze/pause, global/project limits) are shared.
@@ -331,7 +331,7 @@ are left out of the candidate list and their current RAM/VRAM counts as relief a
 on the way, so a dying victim does not consume the per-tick `stop_max_per_tick` budget.
 
 All three stop paths — hard-RAM relief, limit-drop eviction, and
-`max_concurrent_tasks` excess — share `taskqueue/victim.py`. Each candidate is
+`max_concurrent_tasks` excess — share `tqdaemon/victim.py`. Each candidate is
 scored on the **cost of killing it**, lowest wins:
 
 ```
@@ -509,7 +509,7 @@ These are real and not yet addressed — do not read the above as full protectio
 
 By default a running task cannot outlive the daemon: on Windows it runs in a job object that kills the whole tree when the daemon exits, and on Linux/macOS its output goes through a pipe to the daemon. So `tq restart` refuses while tasks run (unless `--force`, which stops and re-queues them), and a daemon crash loses them.
 
-With `tq config set adopt_on_restart=1`, **new** local runs start through a small wrapper (`python -m taskqueue.run_wrapper`) instead:
+With `tq config set adopt_on_restart=1`, **new** local runs start through a small wrapper (`python -m tqdaemon.run_wrapper`) instead:
 
 - the task appends its output straight to its log file (on every OS), and nothing kills it when the daemon exits;
 - the wrapper waits for the task and writes its exit code to `<log>.exit`, because a restarted daemon cannot read the exit code of a process it did not start.

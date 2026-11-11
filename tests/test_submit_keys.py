@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue import mcp_server, submit_keys
-from taskqueue.config import Project, db_path
-from taskqueue.db import open_db
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import mcp_server, submit_keys
+from tqdaemon.config import Project, db_path
+from tqdaemon.db import open_db
 
 
 def _yaml(task_id: str) -> str:
@@ -88,8 +88,8 @@ def test_mcp_offline_submit_honours_client_key(tmp_path: Path, monkeypatch) -> N
     qdir = root / "experiments" / "operator_queue"
     root.mkdir()
     proj = Project(name="p", root=root, queue_dir=qdir)
-    monkeypatch.setattr("taskqueue.config.load_projects", lambda h: {"p": proj})
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon.config.load_projects", lambda h: {"p": proj})
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
     args = {"project": "p", "yaml_text": "task_id: t1\ncommand: echo hi\n", "client_key": "run-1"}
     r1 = mcp_server._submit_task_nowait(home, args)
     r2 = mcp_server._submit_task_nowait(home, args)
@@ -104,6 +104,6 @@ def test_mcp_online_passes_client_key_and_reports_dedup(tmp_path: Path, monkeypa
         sent.update(body)
         return {"ok": True, "task_ids": ["t1"], "deduplicated": True}
 
-    monkeypatch.setattr("taskqueue.master_client.via_master", fake)
+    monkeypatch.setattr("tqdaemon.master_client.via_master", fake)
     out = mcp_server._submit_task_nowait(tmp_path, {"project": "p", "yaml_text": "task_id: t1\n", "client_key": "k9"})
     assert sent["client_key"] == "k9" and out == {"ok": True, "task_ids": ["t1"], "errors": [], "deduplicated": True}

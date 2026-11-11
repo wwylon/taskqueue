@@ -6,8 +6,8 @@ import sqlite3
 
 import pytest
 
-from taskqueue._db_runs import get_recent_runs, reclaim_expired_leases
-from taskqueue.db import open_db
+from tqdaemon._db_runs import get_recent_runs, reclaim_expired_leases
+from tqdaemon.db import open_db
 
 # ---------------------------------------------------------------------------
 # W0.1: missing indexes
@@ -70,7 +70,7 @@ def test_history_no_filter_returns_global_limit(tmp_path):
 
 def test_migration_failure_raises(tmp_path, monkeypatch):
     """open_db must raise, not swallow, a migration exception."""
-    import taskqueue.db as tqdb
+    import tqdaemon.db as tqdb
 
     original_connect = sqlite3.connect
 

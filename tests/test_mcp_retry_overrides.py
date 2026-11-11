@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import master_client, mcp_server
-from taskqueue.db import open_db
+from tqdaemon import config as tqconfig
+from tqdaemon import master_client, mcp_server
+from tqdaemon.db import open_db
 
 
 @pytest.fixture()
 def home(tmp_path: Path, monkeypatch) -> Path:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     monkeypatch.setattr(master_client, "via_master", lambda *a, **k: None)
     c = open_db(tqconfig.db_path(tmp_path))
     c.execute(

@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from taskqueue.cli import _cmd_explain
-from taskqueue.db import open_db
-from taskqueue.mcp_server import _call_tool
+from tqdaemon.cli import _cmd_explain
+from tqdaemon.db import open_db
+from tqdaemon.mcp_server import _call_tool
 
 
 def _seed(

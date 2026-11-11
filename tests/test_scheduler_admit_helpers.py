@@ -1,6 +1,14 @@
 """Helpers split out of _local_admit_queued: excess-running stops, estimate cache, P6 hold."""
 
-from taskqueue import _db_tasks, scheduler
+from tqdaemon import _db_tasks, scheduler
+
+
+def _patch_limits(monkeypatch, limits=None):
+    """Per-project limits now come from tqdaemon.project_limits (sets + inheritance)."""
+    import tqdaemon.project_limits as pl
+
+    monkeypatch.setattr(pl, "get_all_set_limits", lambda conn: {})
+    monkeypatch.setattr(pl, "get_effective_project_limits", lambda conn, pn, path, all_set_limits=None: dict(limits or {}))
 
 
 def _rows(*pairs):
@@ -10,11 +18,11 @@ def _rows(*pairs):
 def _capture_stops(monkeypatch):
     stops = []
     monkeypatch.setattr(_db_tasks, "request_stop_with_control", lambda c, h, p, t: stops.append((p, t)))
-    import taskqueue.db as db
+    import tqdaemon.db as db
 
     monkeypatch.setattr(db, "request_stop_with_control", lambda c, h, p, t: stops.append((p, t)))
     monkeypatch.setattr(scheduler, "_most_recent_first", lambda conn, rows: list(reversed(rows)))
-    monkeypatch.setattr(scheduler, "get_project_limits", lambda c, p: {})
+    _patch_limits(monkeypatch)
     return stops
 
 
@@ -35,7 +43,7 @@ def test_no_cap_no_stops(monkeypatch):
 
 def test_project_cap_stops_excess(monkeypatch):
     stops = _capture_stops(monkeypatch)
-    monkeypatch.setattr(scheduler, "get_project_limits", lambda c, p: {"max_tasks": 1})
+    _patch_limits(monkeypatch, {"max_tasks": 1})
     snap = _rows(("a", "1"), ("a", "2"))
     active = {("a", "1"): 1, ("a", "2"): 1}
     scheduler._enforce_excess_running(None, None, active, snap, 0, 2, {"a": 2})
@@ -43,14 +51,14 @@ def test_project_cap_stops_excess(monkeypatch):
 
 
 def test_stop_failure_is_swallowed(monkeypatch, capsys):
-    import taskqueue.db as db
+    import tqdaemon.db as db
 
     def boom(*a):
         raise RuntimeError("x")
 
     monkeypatch.setattr(db, "request_stop_with_control", boom)
     monkeypatch.setattr(scheduler, "_most_recent_first", lambda conn, rows: list(rows))
-    monkeypatch.setattr(scheduler, "get_project_limits", lambda c, p: {})
+    _patch_limits(monkeypatch)
     scheduler._enforce_excess_running(
         None, None, {("a", "1"): 1, ("a", "2"): 1}, _rows(("a", "1"), ("a", "2")), 1, 2, {}
     )
@@ -58,7 +66,7 @@ def test_stop_failure_is_swallowed(monkeypatch, capsys):
 
 
 def test_estimate_cache_evicts_only_changed_tasks(tmp_path, monkeypatch):
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     conn = open_db(tmp_path / "q.db")
     monkeypatch.setattr(scheduler, "_estimate_cross_tick", {})
@@ -79,7 +87,7 @@ def test_estimate_cache_evicts_only_changed_tasks(tmp_path, monkeypatch):
 
 
 def test_estimate_cache_evicts_when_a_run_finishes(tmp_path, monkeypatch):
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     conn = open_db(tmp_path / "q.db")
     conn.execute(

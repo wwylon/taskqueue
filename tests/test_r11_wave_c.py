@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_tasks import get_queued_tasks, get_running_tasks
-from taskqueue.db import open_db, parse_task_yaml, upsert_task
-from taskqueue.rows import admit_task_select_sql, row_resources
 from tests.test_queue import _project, _yaml
+from tqdaemon._db_tasks import get_queued_tasks, get_running_tasks
+from tqdaemon.db import open_db, parse_task_yaml, upsert_task
+from tqdaemon.rows import admit_task_select_sql, row_resources
 
 
 def test_f127_row_resources_tolerant() -> None:

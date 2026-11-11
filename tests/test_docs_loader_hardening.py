@@ -1,6 +1,6 @@
 import json
 
-from taskqueue import docs_loader as dl
+from tqdaemon import docs_loader as dl
 
 
 def test_inline_md_no_double_escape():

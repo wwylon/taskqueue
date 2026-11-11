@@ -7,12 +7,12 @@ import json
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from taskqueue._cli_admin import cmd_attention, cmd_health
-from taskqueue._cli_task import cmd_list
-from taskqueue.db import open_db
-from taskqueue.mcp_server import TOOLS, _call_tool
-from taskqueue.queries import build_task_health, find_broken_deps
-from taskqueue.web import _get_deps_response, _get_queue_response
+from tqdaemon._cli_admin import cmd_attention, cmd_health
+from tqdaemon._cli_task import cmd_list
+from tqdaemon.db import open_db
+from tqdaemon.mcp_server import TOOLS, _call_tool
+from tqdaemon.queries import build_task_health, find_broken_deps
+from tqdaemon.web import _get_deps_response, _get_queue_response
 
 
 def _seed(

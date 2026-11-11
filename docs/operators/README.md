@@ -1,6 +1,6 @@
 # Operators
 
-Human-facing guides for the taskqueue web UI and CLI.
+Human-facing guides for the tqdaemon web UI and CLI.
 
 | Guide | Description |
 |-------|-------------|

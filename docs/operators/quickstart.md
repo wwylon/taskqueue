@@ -5,17 +5,17 @@ Install and run your first task in about ten minutes.
 ## Install
 
 ```powershell
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 tq doctor
 ```
 
-`tq doctor` prints your state home (`~/.taskqueue`), schema version, daemon pid, and port. Run it first whenever something seems off — it's the fastest way to confirm the daemon is up before issuing any commands. `tq doctor --fix` (alias `--dry-run`) lists proposed remediations without changing anything.
+`tq doctor` prints your state home (`~/.tqdaemon`), schema version, daemon pid, and port. Run it first whenever something seems off — it's the fastest way to confirm the daemon is up before issuing any commands. `tq doctor --fix` (alias `--dry-run`) lists proposed remediations without changing anything.
 
 ## Register a project
 
-Edit `~/.taskqueue/projects.yaml`:
+Edit `~/.tqdaemon/projects.yaml`:
 
 ```yaml
 projects:

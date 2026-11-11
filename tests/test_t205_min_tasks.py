@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.db import get_all_project_limits, get_project_limits, open_db, set_project_limit
-from taskqueue.scheduler import (
+from tqdaemon.db import get_all_project_limits, get_project_limits, open_db, set_project_limit
+from tqdaemon.scheduler import (
     FilterContext,
     filter_project_min,
     reserved_slots_for_others,

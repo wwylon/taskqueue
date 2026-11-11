@@ -6,9 +6,9 @@ import json
 import time
 from pathlib import Path
 
-from taskqueue._db_tasks import clear_control_file, write_control_action
-from taskqueue.config import control_path
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+from tqdaemon._db_tasks import clear_control_file, write_control_action
+from tqdaemon.config import control_path
 
 
 def test_write_control_hold_payload(tmp_path: Path) -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from taskqueue.docs_loader import build_help_bundle, load_manifest, static_dir, validate_manifest
+from tqdaemon.docs_loader import build_help_bundle, load_manifest, static_dir, validate_manifest
 
 UI_TABS = ("queue", "dashboard", "history", "workers", "groups", "deps", "resources", "usage", "config")
 

@@ -6,7 +6,7 @@ import signal
 import threading
 from pathlib import Path
 
-from taskqueue import daemon
+from tqdaemon import daemon
 
 
 def test_sigterm_during_lease_wait_returns(tmp_path: Path, monkeypatch) -> None:
@@ -21,7 +21,7 @@ def test_sigterm_during_lease_wait_returns(tmp_path: Path, monkeypatch) -> None:
             signal.raise_signal(signal.SIGTERM)
         return False
 
-    monkeypatch.setattr("taskqueue.lease._cas_master_lease", fake_cas)  # used by _acquire_master_lease
+    monkeypatch.setattr("tqdaemon.lease._cas_master_lease", fake_cas)  # used by _acquire_master_lease
     t = threading.Timer(60, lambda: signal.raise_signal(signal.SIGTERM))
     t.daemon = True
     t.start()

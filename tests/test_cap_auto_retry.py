@@ -7,8 +7,8 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import (
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import (
     apply_cap_auto_retry,
     get_task,
     retry_task,
@@ -16,9 +16,9 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
-from taskqueue.config import Project
-from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
-from taskqueue.models import STATUS_INTERRUPTED, STATUS_QUEUED
+from tqdaemon.config import Project
+from tqdaemon.db import SCHEMA_VERSION, open_db, parse_task_yaml
+from tqdaemon.models import STATUS_INTERRUPTED, STATUS_QUEUED
 
 
 def _project(name: str, root: Path) -> Project:

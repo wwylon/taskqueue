@@ -15,7 +15,7 @@ Start with the capability you need:
 - **Wait / notify:** `tq wait`, `tq watch`, `tq tail`, `tq result`, `tq logs`
 - **Diagnose:** `tq diagnose`, `tq explain`, `tq metrics`, `tq report`,
   `tq diff`, `tq health`
-- **Workers:** `tq worker`, `tq projects`, `tq resync`, `tq bundle`,
+- **Workers:** `tq worker`, `tq projects`, `tq set`, `tq resync`, `tq bundle`,
   `tq master-status`, `tq master-migrate`
 - **Auth:** `tq token`, `tq config`, `tq mcp`
 - **Observe:** `tq status`, `tq list`, `tq describe`, `tq top`, `tq capacity`,
@@ -88,7 +88,13 @@ Exit codes: `0` ok, `1` error, `2` usage (unknown flags or extra args are reject
 | `tq doctor [--json] [--torch]` | Home, uptime, DB, projects, memory, port; daemon line is `running` / `UNREACHABLE` / `not running` (HTTP probe). Then checks, each `ok` / `warn` / `fail`: daemon HTTP, stale pid file, `PRAGMA quick_check` (read-only), WAL size, free disk, project roots and queue dirs. Exits 1 when a check fails; `--json` prints only the checks. `--torch` also checks `torch.cuda` (importing torch takes tens of seconds, so it is off by default); the RAM-consumer scan stops after 5 s and says so |
 | `tq reverify <project/root> --up-to <task_id>` | Enable root→target, disable other downstream, retry with skip report |
 | `tq locks [--json]` | Active `resources.locks` holders and waiters |
-| `tq projects` | List registered projects |
+| `tq projects` | List registered projects (includes `set=` path when assigned) |
+| `tq set tree` | Print multilevel project-set tree + counts (from `projects.yaml` `set:`) |
+| `tq set show <path>` | Subtree members + frozen/paused |
+| `tq set assign <project> <path>` / `tq set clear <project>` | Assign or clear a project's set path |
+| `tq set rename <old> <new>` / `tq set move <old> <new>` | Rewrite every `set:` equal to `old` or under `old/` |
+| `tq set limits <path> [field=val…]` / `tq set limits-show <path>` | Set-level limit defaults (inherited by members) / show defaults + effective |
+| `tq set freeze\|unfreeze\|pause\|resume\|stop <path>` | Fan-out to every project in the subtree (distinct from task `tq group`) |
 | `tq bundle <project>` | Pack project binary bundle for workers |
 | `tq worker list` | List workers |
 | `tq worker remove <worker_id>` | Deregister worker |

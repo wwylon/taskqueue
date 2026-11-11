@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task, seed_worker
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def test_truncated_cas_upload_rejected_and_cleaned(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     worker = seed_worker(db, session_id="sess-1")

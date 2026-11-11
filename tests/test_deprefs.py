@@ -1,7 +1,7 @@
 import json
 import sqlite3
 
-from taskqueue.deprefs import resolve_dep_ref, row_dep_refs
+from tqdaemon.deprefs import resolve_dep_ref, row_dep_refs
 
 
 def _row(**cols):

@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import errors as tqerr
-from taskqueue.daemon import _collect_finished_runs, is_negative_exit
-from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
-from taskqueue.queries import cancel_negative_dependents
-from taskqueue.runner import ActiveRun
 from tests.helpers.wait import wait_until
 from tests.test_queue import _project, _yaml
+from tqdaemon import errors as tqerr
+from tqdaemon.daemon import _collect_finished_runs, is_negative_exit
+from tqdaemon.db import get_task, open_db, parse_task_yaml, upsert_task
+from tqdaemon.queries import cancel_negative_dependents
+from tqdaemon.runner import ActiveRun
 
 
 def test_yaml_validation(tmp_path: Path) -> None:

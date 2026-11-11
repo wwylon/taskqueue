@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db
-from taskqueue.sse_ticket import issue_ticket, redeem_ticket
-from taskqueue.statuses import FINALIZE_STATUSES
-from taskqueue.taskspec import parse_task_yaml_many
+from tqdaemon.db import open_db
+from tqdaemon.sse_ticket import issue_ticket, redeem_ticket
+from tqdaemon.statuses import FINALIZE_STATUSES
+from tqdaemon.taskspec import parse_task_yaml_many
 
 
 def test_f151_sse_ticket_single_use():
@@ -28,7 +28,7 @@ def test_f154_finalize_statuses_allowlist():
 
 
 def test_f155_tq_master_unreachable_no_none(monkeypatch, tmp_path: Path):
-    from taskqueue import master_client as mc
+    from tqdaemon import master_client as mc
 
     monkeypatch.setenv("TQ_MASTER", "http://127.0.0.1:9")
     monkeypatch.setattr(mc, "api_request", lambda *a, **k: None)
@@ -41,16 +41,16 @@ def test_f155_tq_master_unreachable_no_none(monkeypatch, tmp_path: Path):
 def test_f156_offline_blocked_when_lease_held(tmp_path: Path, monkeypatch):
     import time
 
-    from taskqueue._cli_helpers import offline_sqlite_write_blocked
-    from taskqueue.db import open_db
+    from tqdaemon._cli_helpers import offline_sqlite_write_blocked
+    from tqdaemon.db import open_db
 
     monkeypatch.delenv("TQ_MASTER", raising=False)
     home = tmp_path / "home"
     home.mkdir()
     db_path = home / "queue.db"
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
-    # Point helpers at this home: _db uses TASKQUEUE_HOME / queue.db via config.
-    from taskqueue import _cli_helpers as h
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
+    # Point helpers at this home: _db uses TQDAEMON_HOME / queue.db via config.
+    from tqdaemon import _cli_helpers as h
 
     monkeypatch.setattr(h, "_db", lambda _home: db_path)
     monkeypatch.setattr(h, "_daemon_running", lambda _home: None)
@@ -67,7 +67,7 @@ def test_f156_offline_blocked_when_lease_held(tmp_path: Path, monkeypatch):
 
 
 def test_f158_matrix_cap_and_dupes(tmp_path: Path):
-    from taskqueue.config import Project
+    from tqdaemon.config import Project
 
     proj = Project(name="proj", root=tmp_path, queue_dir=tmp_path)
     path = tmp_path / "m.yaml"
@@ -91,7 +91,7 @@ def test_f158_matrix_cap_and_dupes(tmp_path: Path):
 
 
 def test_f158_mcp_wait_timeout_clamped():
-    from taskqueue.mcp_server import MCP_WAIT_DEFAULT_SEC, _mcp_wait_max_sec
+    from tqdaemon.mcp_server import MCP_WAIT_DEFAULT_SEC, _mcp_wait_max_sec
 
     # Inline the clamp logic used by _wait_for_task
     cap = _mcp_wait_max_sec()
@@ -105,7 +105,7 @@ def test_f158_mcp_wait_timeout_clamped():
 
 
 def test_f153_notify_cursor_concurrent(tmp_path: Path):
-    from taskqueue import notify as n
+    from tqdaemon import notify as n
 
     home = tmp_path
     log = n.notify_log_path(home)
@@ -136,7 +136,7 @@ def test_f153_notify_cursor_concurrent(tmp_path: Path):
 
 
 def test_f150_pending_log_apply(tmp_path: Path):
-    from taskqueue.web.routes_worker import _apply_pending_log_chunk, _pending_log_path
+    from tqdaemon.web.routes_worker import _apply_pending_log_chunk, _pending_log_path
 
     log_path = tmp_path / "run.log"
     pending = _pending_log_path(log_path, 7)
@@ -153,6 +153,6 @@ def test_f150_schema_has_last_log_seq(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     cols = {r["name"] for r in db.execute("PRAGMA table_info(runs)").fetchall()}
     assert "last_log_seq" in cols
-    from taskqueue.migrations import SCHEMA_VERSION
+    from tqdaemon.migrations import SCHEMA_VERSION
 
     assert SCHEMA_VERSION >= 31

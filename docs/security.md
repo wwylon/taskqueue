@@ -2,7 +2,7 @@
 
 ## Overview
 
-`taskqueue` is designed for a **trusted LAN / single-host** environment. It is not a hardened web service. This guide documents the security properties honestly so you can make informed decisions about how to deploy it.
+`tqdaemon` is designed for a **trusted LAN / single-host** environment. It is not a hardened web service. This guide documents the security properties honestly so you can make informed decisions about how to deploy it.
 
 ## Auth token
 
@@ -21,7 +21,7 @@ Once set, all `/api/*` requests must include the token in one of:
 - `?tq_token=<token>` query parameter (convenient for browser use, avoid logging URLs). The web UI stores it in `localStorage` on first load and strips it from the address bar.
 - `?tq_ticket=<ticket>` on the streaming endpoints only (`/api/events`, `/api/logs/<id>/stream`): the web UI POSTs `/api/sse-ticket` (normal header auth) and opens `EventSource` with the returned 120 s ticket, so the long-lived token stays out of URLs, logs and Referer headers. A ticket inherits the issuer's scope and project limits, works for GET streams only, and is held in daemon memory (lost on restart).
 
-**Token is stored in plaintext** in `~/.taskqueue/queue.db` (SQLite `config` table). This is intentional — the goal is authentication, not secret management. If you need stronger protection, restrict filesystem access to the queue home directory.
+**Token is stored in plaintext** in `~/.tqdaemon/queue.db` (SQLite `config` table). This is intentional — the goal is authentication, not secret management. If you need stronger protection, restrict filesystem access to the queue home directory.
 
 ## Non-loopback bind
 
@@ -83,7 +83,7 @@ Mutating operator actions are appended to `operator_audit`: stop, retry, force, 
 
 ```yaml
 scrape_configs:
-  - job_name: taskqueue
+  - job_name: tqdaemon
     metrics_path: /api/metrics
     authorization: {credentials: "<read-scope token>"}
     static_configs: [{targets: ["host:8765"]}]
@@ -117,7 +117,7 @@ To allow remote webhook targets:
 tq config set notify_allow_remote=1
 ```
 
-Failed webhook deliveries are retried 3 times (1s, 4s, 9s delays) then written to `~/.taskqueue/notify_failed.jsonl` for manual inspection.
+Failed webhook deliveries are retried 3 times (1s, 4s, 9s delays) then written to `~/.tqdaemon/notify_failed.jsonl` for manual inspection.
 
 ## What this system does NOT provide
 
@@ -181,14 +181,14 @@ Once a worker has registered with a `credential_hash` (SHA-256 of its token), th
 
 ## Privacy / telemetry
 
-taskqueue does **not** phone home. The daemon, CLI, and local web UI do not send
+tqdaemon does **not** phone home. The daemon, CLI, and local web UI do not send
 usage pings, install IDs, or analytics to the authors.
 
 Public signals (anyone can see):
 
 - GitHub stars, forks, and watchers (and README badges that mirror them)
 - PyPI download counts after a package is published under a distinct name
-  (the bare name `taskqueue` on PyPI is already taken by an unrelated placeholder)
+  (the bare name `tqdaemon` on PyPI is already taken by an unrelated placeholder)
 
 Maintainer-only (GitHub Insights → Traffic): repo views and clones for about
 14 days. Clones are not the same as installs.

@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from taskqueue.web.change_tracker import ChangeTracker
+from tqdaemon.web.change_tracker import ChangeTracker
 
 
 def test_counter_changes_on_foreign_commit(tmp_path):

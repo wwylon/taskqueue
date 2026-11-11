@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server
-from taskqueue import usage_track as ut
-from taskqueue.agent_stats import agent_usage, tasks_by, usage_by
-from taskqueue.cli import _cmd_agents
-from taskqueue.db import open_db
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server
+from tqdaemon import usage_track as ut
+from tqdaemon.agent_stats import agent_usage, tasks_by, usage_by
+from tqdaemon.cli import _cmd_agents
+from tqdaemon.db import open_db
 
 
 def _task(db, tid, status, via=None, by=None, client=None, project="p", err=None, wall=None):
@@ -84,7 +84,7 @@ def test_http_route_mcp_tool_and_cli(seeded, monkeypatch, capsys) -> None:
     home, db = seeded
     out = agent_usage(db, days=7)
     assert out["tracking_enabled"] is True and out["usage"] and out["tasks"]
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     res = mcp_server._call_tool(home, "agent_usage_summary", {"by": "op", "days": 1})
     assert {r["op"] for r in res["usage"]} == {"wait_for_task", "tq list"}
     assert any(t["name"] == "agent_usage_summary" for t in mcp_server.TOOLS)

@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue._db_runs import insert_run, reclaim_expired_leases, renew_run_lease
-from taskqueue._db_tasks import claim_task_running, get_task, set_task_status, upsert_task
-from taskqueue.config import Project
-from taskqueue.daemon import requeue_orphaned_running
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.models import STATUS_QUEUED, STATUS_RUNNING
-from taskqueue.runner import ActiveRun
+from tqdaemon import errors as tqerr
+from tqdaemon._db_runs import insert_run, reclaim_expired_leases, renew_run_lease
+from tqdaemon._db_tasks import claim_task_running, get_task, set_task_status, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.daemon import requeue_orphaned_running
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.models import STATUS_QUEUED, STATUS_RUNNING
+from tqdaemon.runner import ActiveRun
 
 
 def _project(root: Path) -> Project:
@@ -83,7 +83,7 @@ def test_start_compensates_when_popen_fails(tmp_path: Path) -> None:
         graceful_stop_sec=5,
         db_path=tmp_path / "queue.db",
     )
-    with patch("taskqueue.runner.subprocess.Popen", side_effect=OSError("boom")):
+    with patch("tqdaemon.runner.subprocess.Popen", side_effect=OSError("boom")):
         err = run.start(use_resume=False)
     assert err is not None
     assert "start failed" in err

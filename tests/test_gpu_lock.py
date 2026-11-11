@@ -1,4 +1,4 @@
-"""F-241: ~/.taskqueue/locks/gpu.lock refcount / stale scrub."""
+"""F-241: ~/.tqdaemon/locks/gpu.lock refcount / stale scrub."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from taskqueue.config import gpu_lock_path
-from taskqueue.gpu_lock import acquire, release, scrub_stale, sync_from_holders
+from tqdaemon.config import gpu_lock_path
+from tqdaemon.gpu_lock import acquire, release, scrub_stale, sync_from_holders
 
 
 def test_acquire_release_refcount(tmp_path: Path) -> None:

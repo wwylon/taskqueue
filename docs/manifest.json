@@ -1,36 +1,100 @@
 {
   "version": 1,
   "topics": {
-    "block-project": {"path": "help/block-project.md"},
-    "cooperative-control": {"path": "help/cooperative-control.md"},
-    "force-run": {"path": "help/force-run.md"},
-    "groups": {"path": "help/groups.md"},
-    "dependencies": {"path": "help/dependencies.md"},
-    "tq-metric": {"path": "help/tq-metric.md"},
-    "prod-vs-dev": {"path": "help/prod-vs-dev.md"},
-    "queue-hygiene": {"path": "help/queue-hygiene.md"},
-    "page-queue": {"path": "help/page-queue.md"},
-    "page-dashboard": {"path": "help/page-dashboard.md"},
-    "page-history": {"path": "help/page-history.md"},
-    "page-workers": {"path": "help/page-workers.md"},
-    "page-groups": {"path": "help/page-groups.md"},
-    "page-deps": {"path": "help/page-deps.md"},
-    "page-resources": {"path": "help/page-resources.md"},
-    "page-usage": {"path": "help/page-usage.md"},
-    "page-tasks": {"path": "help/page-tasks.md"},
-    "page-timeline": {"path": "help/page-timeline.md"},
-    "page-schedule": {"path": "help/page-schedule.md"},
-    "page-alerts": {"path": "help/page-alerts.md"},
-    "page-audit": {"path": "help/page-audit.md"},
-    "page-api": {"path": "help/page-api.md"},
-    "page-config": {"path": "help/page-config.md"}
+    "block-project": {
+      "path": "help/block-project.md"
+    },
+    "cooperative-control": {
+      "path": "help/cooperative-control.md"
+    },
+    "force-run": {
+      "path": "help/force-run.md"
+    },
+    "groups": {
+      "path": "help/groups.md"
+    },
+    "dependencies": {
+      "path": "help/dependencies.md"
+    },
+    "tq-metric": {
+      "path": "help/tq-metric.md"
+    },
+    "prod-vs-dev": {
+      "path": "help/prod-vs-dev.md"
+    },
+    "queue-hygiene": {
+      "path": "help/queue-hygiene.md"
+    },
+    "page-queue": {
+      "path": "help/page-queue.md"
+    },
+    "page-dashboard": {
+      "path": "help/page-dashboard.md"
+    },
+    "page-history": {
+      "path": "help/page-history.md"
+    },
+    "page-workers": {
+      "path": "help/page-workers.md"
+    },
+    "page-groups": {
+      "path": "help/page-groups.md"
+    },
+    "page-deps": {
+      "path": "help/page-deps.md"
+    },
+    "page-resources": {
+      "path": "help/page-resources.md"
+    },
+    "page-usage": {
+      "path": "help/page-usage.md"
+    },
+    "page-tasks": {
+      "path": "help/page-tasks.md"
+    },
+    "page-timeline": {
+      "path": "help/page-timeline.md"
+    },
+    "page-schedule": {
+      "path": "help/page-schedule.md"
+    },
+    "page-alerts": {
+      "path": "help/page-alerts.md"
+    },
+    "page-audit": {
+      "path": "help/page-audit.md"
+    },
+    "page-api": {
+      "path": "help/page-api.md"
+    },
+    "page-config": {
+      "path": "help/page-config.md"
+    },
+    "project-sets": {
+      "path": "help/project-sets.md"
+    }
   },
   "guides": {
     "web-ui": {
       "path": "operators/web-ui.md",
       "audience": "human",
       "capability": "observe",
-      "ui_pages": ["queue", "dashboard", "history", "workers", "groups", "deps", "resources", "usage", "tasks", "timeline", "schedule", "alerts", "audit", "api"]
+      "ui_pages": [
+        "queue",
+        "dashboard",
+        "history",
+        "workers",
+        "groups",
+        "deps",
+        "resources",
+        "usage",
+        "tasks",
+        "timeline",
+        "schedule",
+        "alerts",
+        "audit",
+        "api"
+      ]
     },
     "quickstart": {
       "path": "operators/quickstart.md",
@@ -52,13 +116,44 @@
     }
   },
   "references": {
-    "capabilities": {"path": "capabilities.md", "capability": "observe"},
-    "surface-map": {"path": "surface_map.json", "capability": "observe"},
-    "errors": {"path": "errors.md", "capability": "diagnose"},
-    "task-standards": {"path": "task_standards.md", "capability": "submit"},
-    "scheduler": {"path": "scheduler.md", "capability": "admit"},
-    "mcp": {"path": "mcp.md", "capability": "wait_notify"},
-    "security": {"path": "security.md", "capability": "auth"}
+    "capabilities": {
+      "path": "capabilities.md",
+      "capability": "observe"
+    },
+    "surface-map": {
+      "path": "surface_map.json",
+      "capability": "observe"
+    },
+    "errors": {
+      "path": "errors.md",
+      "capability": "diagnose"
+    },
+    "task-standards": {
+      "path": "task_standards.md",
+      "capability": "submit"
+    },
+    "scheduler": {
+      "path": "scheduler.md",
+      "capability": "admit"
+    },
+    "mcp": {
+      "path": "mcp.md",
+      "capability": "wait_notify"
+    },
+    "security": {
+      "path": "security.md",
+      "capability": "auth"
+    }
   },
-  "general_topic_ids": ["block-project", "cooperative-control", "force-run", "groups", "dependencies", "tq-metric", "prod-vs-dev", "queue-hygiene"]
+  "general_topic_ids": [
+    "block-project",
+    "cooperative-control",
+    "force-run",
+    "groups",
+    "project-sets",
+    "dependencies",
+    "tq-metric",
+    "prod-vs-dev",
+    "queue-hygiene"
+  ]
 }

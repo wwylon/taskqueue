@@ -17,16 +17,16 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from taskqueue._db_tasks import count_online_workers
-from taskqueue.config import PROTOCOL_VERSION
-from taskqueue.db import open_db
-from taskqueue.scheduler import (
+from tqdaemon._db_tasks import count_online_workers
+from tqdaemon.config import PROTOCOL_VERSION
+from tqdaemon.db import open_db
+from tqdaemon.scheduler import (
     FilterContext,
     filter_task,
     node_from_worker,
     should_schedule_locally,
 )
-from taskqueue.web import make_handler
+from tqdaemon.web import make_handler
 
 
 def seed_master_lease(db, holder: str | None = None, ttl: int = 90) -> str:
@@ -369,7 +369,7 @@ def mini_cluster(
 ) -> Iterator[MiniCluster]:
     home = tmp_path
     if monkeypatch is not None:
-        monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+        monkeypatch.setenv("TQDAEMON_HOME", str(home))
     db_path = home / "queue.db"
     db = open_db(db_path)
     seed_master_lease(db, ttl=lease_ttl)

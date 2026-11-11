@@ -1,7 +1,7 @@
 """Hard RAM/VRAM eviction: caps, dying runs, VRAM path, no-victim case."""
 
-from taskqueue import daemon
 from tests.test_daemon_tick_helpers import PressureRun
+from tqdaemon import daemon
 
 
 def _patch(monkeypatch, *, host_used=98.0):

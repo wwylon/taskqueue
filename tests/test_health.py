@@ -1,4 +1,4 @@
-"""Queue health verdict: taskqueue.health, `tq health`, /api/health, coloured toasts and CLI colours."""
+"""Queue health verdict: tqdaemon.health, `tq health`, /api/health, coloured toasts and CLI colours."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue._fmt import color_status
-from taskqueue.db import open_db
-from taskqueue.health import compute_health, format_line, read_ack, write_ack
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import config as tqconfig
+from tqdaemon._fmt import color_status
+from tqdaemon.db import open_db
+from tqdaemon.health import compute_health, format_line, read_ack, write_ack
 
 
 def _iso(minutes_ago: float) -> str:
@@ -46,7 +46,7 @@ def _task(
 
 @pytest.fixture()
 def conn(tmp_path: Path, monkeypatch):
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     c = open_db(tqconfig.db_path(tmp_path))
     yield c
     c.close()
@@ -98,8 +98,8 @@ def test_format_line_icons_and_plain(conn) -> None:
 
 
 def test_tq_health_cli_exit_codes(conn, tmp_path: Path, capsys, monkeypatch) -> None:
-    from taskqueue import cli
-    from taskqueue.cli import _cmd_health
+    from tqdaemon import cli
+    from tqdaemon.cli import _cmd_health
 
     monkeypatch.setattr(cli, "_daemon_running", lambda _home: 4242)
     _task(conn, "boom", "failed")
@@ -111,7 +111,7 @@ def test_tq_health_cli_exit_codes(conn, tmp_path: Path, capsys, monkeypatch) -> 
 
 
 def test_api_health_and_ack(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     Handler, db, home = make_handler_env(tmp_path)
     try:
         _task(db, "boom", "failed")
@@ -129,7 +129,7 @@ def test_api_health_and_ack(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_toast_level_prefix_and_icon(monkeypatch) -> None:
-    from taskqueue import notify
+    from tqdaemon import notify
 
     sent: dict = {}
 
@@ -153,7 +153,7 @@ def test_toast_level_prefix_and_icon(monkeypatch) -> None:
     icon = Path(sent["icon"])
     assert icon.is_file() and icon.read_bytes().startswith(b"\x89PNG")
 
-    from taskqueue.system_alerts import SYSTEM_ALERT_KEYS, SYSTEM_ALERT_LEVELS
+    from tqdaemon.system_alerts import SYSTEM_ALERT_KEYS, SYSTEM_ALERT_LEVELS
 
     assert set(SYSTEM_ALERT_LEVELS) == set(SYSTEM_ALERT_KEYS)
 

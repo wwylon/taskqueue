@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.scheduler import build_task_status_map, worker_slot_reserved_many
-from taskqueue.yaml_sync import clear_yaml_mtime_cache, yaml_cache_stats
+from tqdaemon.db import open_db
+from tqdaemon.scheduler import build_task_status_map, worker_slot_reserved_many
+from tqdaemon.yaml_sync import clear_yaml_mtime_cache, yaml_cache_stats
 
 
 def _now() -> str:
@@ -75,7 +75,7 @@ def test_yaml_cache_stats_reset() -> None:
 
 def test_progress_helpers_support_batched_commit(tmp_path: Path) -> None:
     conn = open_db(tmp_path / "queue.db")
-    from taskqueue._db_runs import update_run_metrics, update_run_progress
+    from tqdaemon._db_runs import update_run_metrics, update_run_progress
 
     now = _now()
     run_id = conn.execute(

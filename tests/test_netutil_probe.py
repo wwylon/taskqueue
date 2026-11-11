@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from taskqueue.netutil import ProbeBlocked, check_probe_url, is_loopback_host, probe_get
+from tqdaemon.netutil import ProbeBlocked, check_probe_url, is_loopback_host, probe_get
 
 
 @pytest.mark.parametrize(
@@ -86,7 +86,7 @@ def _no_connect(monkeypatch):
         calls.append(req.full_url)
         raise AssertionError(f"connected to {req.full_url}")
 
-    monkeypatch.setattr("taskqueue.netutil._open", _open)
+    monkeypatch.setattr("tqdaemon.netutil._open", _open)
     return calls
 
 
@@ -95,8 +95,8 @@ def test_remote_vram_probe_url_blocked_without_connecting(monkeypatch):
     import io
     import json
 
-    from taskqueue import errors as tqerr
-    from taskqueue.scheduler import _check_services
+    from tqdaemon import errors as tqerr
+    from tqdaemon.scheduler import _check_services
 
     seen = []
 
@@ -106,7 +106,7 @@ def test_remote_vram_probe_url_blocked_without_connecting(monkeypatch):
             raise AssertionError("connected to remote VRAM probe")
         return io.BytesIO(b"{}")
 
-    monkeypatch.setattr("taskqueue.netutil._open", _open)
+    monkeypatch.setattr("tqdaemon.netutil._open", _open)
     svc = [
         {
             "name": "ollama",
@@ -122,7 +122,7 @@ def test_remote_vram_probe_url_blocked_without_connecting(monkeypatch):
 
 def test_remote_ollama_ps_not_fetched(monkeypatch):
     """F-229: the admit-time /api/ps fetch honours the SSRF policy."""
-    from taskqueue import scheduler
+    from tqdaemon import scheduler
 
     scheduler._ollama_ps_cache.clear()
     calls = _no_connect(monkeypatch)

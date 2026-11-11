@@ -3,7 +3,7 @@
   Install (or remove) a Windows Scheduled Task that starts the tq daemon at logon.
 
 .DESCRIPTION
-  After laptop Sleep/hibernate the tq daemon is usually dead (taskqueue F-001).
+  After laptop Sleep/hibernate the tq daemon is usually dead (tqdaemon F-001).
   This task runs `tq start` when you log on so the Web UI comes back and orphaned
   `running` tasks are re-queued (daemon.py startup). Resumable jobs with
   resume_args then continue if resources fit.
@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$TaskName = "TaskQueueDaemonAutostart"
+$TaskName = "TqDaemonAutostart"
 
 if ($Help) {
     Get-Help $PSCommandPath -Full
@@ -39,7 +39,7 @@ if ($Help) {
 
 $tq = Get-Command tq -ErrorAction SilentlyContinue
 if (-not $tq) {
-    throw "tq not found on PATH. Install/activate the taskqueue CLI first."
+    throw "tq not found on PATH. Install/activate the tqdaemon CLI first."
 }
 $tqPath = $tq.Source
 
@@ -94,5 +94,5 @@ Register-ScheduledTask `
 
 Write-Host "Installed '$TaskName': runs 'tq start' at logon for $env:USERNAME."
 Write-Host "tq path: $tqPath"
-Write-Host "After Sleep while still logged in: unlock and run 'tq start' (or re-logon), or wait for taskqueue F-001 wake auto-detect."
+Write-Host "After Sleep while still logged in: unlock and run 'tq start' (or re-logon), or wait for tqdaemon F-001 wake auto-detect."
 Write-Host "Remove later: powershell -File scripts\install_tq_autostart.ps1 -Remove"

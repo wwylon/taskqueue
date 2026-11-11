@@ -8,11 +8,11 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import get_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.daemon import _collect_finished_runs
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.runner import ActiveRun
+from tqdaemon._db_tasks import get_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.daemon import _collect_finished_runs
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.runner import ActiveRun
 
 
 def _db_with_task(tmp_path: Path):
@@ -102,7 +102,7 @@ def test_reader_keeps_draining_past_cap(tmp_path: Path) -> None:
 
 
 def test_pressure_victim_exit75_stays_stopped(tmp_path: Path) -> None:
-    from taskqueue.daemon import EXIT_SUSPENDED
+    from tqdaemon.daemon import EXIT_SUSPENDED
 
     db = _db_with_task(tmp_path)
     assert _status(db, tmp_path, EXIT_SUSPENDED, "ram_hard") == "stopped"

@@ -1,9 +1,9 @@
-# CLAUDE.md — taskqueue (public)
+# CLAUDE.md — tqdaemon (public)
 
 Public checkout guidance. Prefer [AGENTS.md](AGENTS.md) and [docs/](docs/).
 
-- Package: `taskqueue/` (`cli.py`, `daemon.py`, `db.py`, `worker.py`, …)
-- Web UI: `taskqueue/static/` + ES modules under `taskqueue/static/js/`
+- Package: `tqdaemon/` (`cli.py`, `daemon.py`, `db.py`, `worker.py`, …)
+- Web UI: `tqdaemon/static/` + ES modules under `tqdaemon/static/js/`
 - Scheduler tick: `daemon.daemon_tick` — see `tests/test_daemon_tick.py`
 - Docs hub: [docs/README.md](docs/README.md)
 

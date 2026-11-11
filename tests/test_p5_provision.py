@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from taskqueue.provision import (
+from tqdaemon.provision import (
     PROVIDER_BUNDLE,
     PROVIDER_GIT_PATCH,
     PROVIDER_PROJECT_ROOT,

@@ -1,6 +1,6 @@
-# AGENTS.md — taskqueue (public)
+# AGENTS.md — tqdaemon (public)
 
-Bootstrap for agents on the **public** taskqueue tree.
+Bootstrap for agents on the **public** tqdaemon tree.
 
 1. [README.md](README.md) — pitch, install, first win  
 2. [llms.txt](llms.txt) — compact agent index  
@@ -17,7 +17,7 @@ Bootstrap for agents on the **public** taskqueue tree.
 - Do not invent CLI commands or YAML keys.
 - Prefer `tq wait` / MCP `wait_for_task` over sleep polling.
 - Set `TQ_OPERATOR` so `started_by` / `my_tasks` work.
-- Default home `~/.taskqueue`, UI **8765**.
+- Default home `~/.tqdaemon`, UI **8765**.
 
 ## Tests
 

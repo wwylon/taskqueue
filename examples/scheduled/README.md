@@ -5,7 +5,7 @@ Nightly (or any cron) pattern using YAML `schedule.cron` (UTC). After a terminal
 ```yaml
 projects:
   scheduled:
-    root: path/to/taskqueue/examples/scheduled
+    root: path/to/tqdaemon/examples/scheduled
     queue_dir: experiments/operator_queue
 ```
 

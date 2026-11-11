@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import master_client, mcp_server
-from taskqueue._cli_project import cmd_retry_keys
-from taskqueue.db import open_db
-from taskqueue.waiting import print_wait_hint, wait_command, wait_hint
 from tests.test_waiting import _mk
+from tqdaemon import config as tqconfig
+from tqdaemon import master_client, mcp_server
+from tqdaemon._cli_project import cmd_retry_keys
+from tqdaemon.db import open_db
+from tqdaemon.waiting import print_wait_hint, wait_command, wait_hint
 
 
 @pytest.fixture()
 def home(tmp_path: Path, monkeypatch) -> Path:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     monkeypatch.delenv("TQ_NO_HINTS", raising=False)
     open_db(tqconfig.db_path(tmp_path)).close()
     return tmp_path

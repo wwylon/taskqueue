@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue._db_tasks import retry_task, upsert_task
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.finalize_hooks import apply_finalize_wake_hooks
-from taskqueue.queries import find_broken_deps
-from taskqueue.scheduler import FilterContext, filter_deps
-from taskqueue.web.sse import SSEMixin, clear_status_snapshot_cache
+from tqdaemon._db_tasks import retry_task, upsert_task
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.finalize_hooks import apply_finalize_wake_hooks
+from tqdaemon.queries import find_broken_deps
+from tqdaemon.scheduler import FilterContext, filter_deps
+from tqdaemon.web.sse import SSEMixin, clear_status_snapshot_cache
 
 
 def _write_yaml(proj: Path, task_id: str, body: str) -> Path:
@@ -27,7 +27,7 @@ def _write_yaml(proj: Path, task_id: str, body: str) -> Path:
 
 
 def _project(tmp_path: Path, name: str = "p"):
-    from taskqueue.config import Project
+    from tqdaemon.config import Project
 
     root = tmp_path / name
     root.mkdir()
@@ -40,7 +40,7 @@ def _project(tmp_path: Path, name: str = "p"):
 
 
 def test_retry_task_calls_wake_scheduler(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from taskqueue import sched_wake
+    from tqdaemon import sched_wake
 
     woken: list[bool] = []
 
@@ -173,7 +173,7 @@ def test_find_broken_deps_any_only_when_all_dead(tmp_path: Path) -> None:
 
 
 def test_deps_api_or_edges(tmp_path: Path) -> None:
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import __version__
-from taskqueue.cli import cmd_doctor
-from taskqueue.config import PROTOCOL_VERSION
-from taskqueue.db import SCHEMA_VERSION, open_db, set_config
+from tqdaemon import __version__
+from tqdaemon.cli import cmd_doctor
+from tqdaemon.config import PROTOCOL_VERSION
+from tqdaemon.db import SCHEMA_VERSION, open_db, set_config
 
 
 def test_protocol_version_constant() -> None:
@@ -41,7 +41,7 @@ def test_doctor_prints_key_fields(tmp_path: Path, capsys) -> None:
 
 
 def test_daemon_log_grep(tmp_path: Path, capsys) -> None:
-    from taskqueue._cli_admin import cmd_daemon_log
+    from tqdaemon._cli_admin import cmd_daemon_log
 
     home = tmp_path / "tq-home"
     home.mkdir()
@@ -57,7 +57,7 @@ def test_daemon_log_grep(tmp_path: Path, capsys) -> None:
 
 
 def test_daemon_log_missing(tmp_path: Path, capsys) -> None:
-    from taskqueue._cli_admin import cmd_daemon_log
+    from tqdaemon._cli_admin import cmd_daemon_log
 
     home = tmp_path / "tq-home"
     home.mkdir()

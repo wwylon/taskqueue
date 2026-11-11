@@ -1,14 +1,16 @@
-# taskqueue
+# tqdaemon
 
 [English](README.md) | [Polski](README.pl.md) | [中文](README.zh.md) | [العربية](README.ar.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![GitHub stars](https://img.shields.io/github/stars/wwylon/taskqueue?style=social)](https://github.com/wwylon/taskqueue)
+[![CI](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml/badge.svg)](https://github.com/wwylon/tqdaemon/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/tqdaemon)](https://pypi.org/project/tqdaemon/)
+[![Latest tag](https://img.shields.io/github/v/tag/wwylon/tqdaemon?label=version)](https://github.com/wwylon/tqdaemon/tags)
 
-![taskqueue — مهام محلية ووكلاء وعمال](docs/assets/hero.jpg)
+![tqdaemon — مهام محلية ووكلاء وعمال](https://raw.githubusercontent.com/wwylon/tqdaemon/main/docs/assets/demo.gif)
 
-**taskqueue** يشغّل المهام الطويلة على أجهزتك دون إنهاكها.
+**tqdaemon** يشغّل المهام الطويلة على أجهزتك دون إنهاكها.
 تصف كل مهمة في YAML. يعمل **daemon** محلي ويبدأ العمل فقط عند توفر
 CPU وRAM وذاكرة GPU كافية. راقب التقدّم عبر **واجهة ويب** أو CLI **`tq`**
 أو وكيل ترميز بالذكاء الاصطناعي (**MCP**).
@@ -25,7 +27,7 @@ CPU وRAM وذاكرة GPU كافية. راقب التقدّم عبر **واجه
 
 ## أفضل بداية: اطلب من الوكيل
 
-اطلب من وكيلك (Cursor أو Claude Code وغيرهما) استخدام **taskqueue** للمهام
+اطلب من وكيلك (Cursor أو Claude Code وغيرهما) استخدام **tqdaemon** للمهام
 الطويلة: إعداد MCP (`tq mcp`) وإرسال YAML و`wait_for_task` بدل حجب المحادثة.
 الإعداد: **[docs/mcp.md](docs/mcp.md)**.
 
@@ -34,8 +36,8 @@ CPU وRAM وذاكرة GPU كافية. راقب التقدّم عبر **واجه
 **المتطلبات:** Python **3.12+** و[Git](https://git-scm.com/) و[`uv`](https://docs.astral.sh/uv/).
 
 ```powershell
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync
 uv run tq doctor
 uv run tq start

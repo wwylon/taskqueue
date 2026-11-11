@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://wwylon.github.io/taskqueue/sitemap.xml
+Sitemap: https://wwylon.github.io/tqdaemon/sitemap.xml

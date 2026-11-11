@@ -1,4 +1,4 @@
-"""Wave 7: adopt running tasks across a daemon restart (adopt_on_restart, taskqueue.run_wrapper)."""
+"""Wave 7: adopt running tasks across a daemon restart (adopt_on_restart, tqdaemon.run_wrapper)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue import adopt
-from taskqueue._db_tasks import get_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.daemon import _collect_finished_runs, _detach_adoptable_runs, adopt_live_runs, requeue_orphaned_running
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.runner import ActiveRun
 from tests.helpers.wait import wait_until
+from tqdaemon import adopt
+from tqdaemon._db_tasks import get_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.daemon import _collect_finished_runs, _detach_adoptable_runs, adopt_live_runs, requeue_orphaned_running
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.runner import ActiveRun
 
 
 def _wrapper(log: Path, exit_file: Path, *cmd: str) -> subprocess.Popen:
@@ -157,7 +157,7 @@ def test_keep_runs_marker_is_one_shot_and_expires(tmp_path: Path) -> None:
 
 
 def test_restart_keeps_adoptable_runs_and_refuses_only_for_others(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue import _cli_admin
+    from tqdaemon import _cli_admin
 
     monkeypatch.setattr(_cli_admin, "_daemon_running", lambda home: 4242)
     seen = {}
@@ -186,9 +186,9 @@ def test_task_survives_the_daemon_process_exiting_and_is_adopted(tmp_path: Path)
         "import os, sys\n"
         f"sys.path.insert(0, {str(Path(__file__).resolve().parent.parent)!r})\n"
         "from pathlib import Path\n"
-        "from taskqueue.db import open_db\n"
-        "from taskqueue._db_tasks import get_task\n"
-        "from taskqueue.runner import ActiveRun\n"
+        "from tqdaemon.db import open_db\n"
+        "from tqdaemon._db_tasks import get_task\n"
+        "from tqdaemon.runner import ActiveRun\n"
         f"home = Path({str(home)!r}); root = Path({str(proj.root)!r})\n"
         "db = open_db(home / 'queue.db')\n"
         "run = ActiveRun(db, get_task(db, 'p', 't'), log_dir=home / 'logs' / 'p', cwd=root, db_path=home / 'queue.db')\n"

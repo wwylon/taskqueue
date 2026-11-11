@@ -1,7 +1,7 @@
 import json
 
-from taskqueue._db_tasks import get_queued_tasks
-from taskqueue.db import open_db
+from tqdaemon._db_tasks import get_queued_tasks
+from tqdaemon.db import open_db
 
 
 def _ins(db, tid, prio, deps="[]", status="queued"):
@@ -32,9 +32,9 @@ def test_queued_window_matches_two_pass_selection(tmp_path) -> None:
     import json
     import random
 
-    from taskqueue._db_tasks import get_queued_window
-    from taskqueue.db import open_db
-    from taskqueue.scheduler import build_task_status_map
+    from tqdaemon._db_tasks import get_queued_window
+    from tqdaemon.db import open_db
+    from tqdaemon.scheduler import build_task_status_map
 
     rnd = random.Random(7)
     db = open_db(tmp_path / "w.db")

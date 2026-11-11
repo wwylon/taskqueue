@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.daemon import _detect_hung_remote
-from taskqueue.db import open_db
 from tests.helpers.master_worker import seed_master_lease, seed_queued_task, seed_worker
+from tqdaemon.daemon import _detect_hung_remote
+from tqdaemon.db import open_db
 
 
 def _seed_running_remote(db, *, semantics: str = "idempotent", idempotent: int = 1) -> int:

@@ -8,17 +8,17 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import (
+from tests.helpers.wait import wait_until
+from tqdaemon._db_tasks import (
     get_task,
     retry_task,
     upsert_task,
     write_control_action,
 )
-from taskqueue.config import Project, control_path, state_home
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.models import EXIT_SUSPENDED, STATUS_QUEUED, STATUS_SUSPENDED
-from taskqueue.runner import ActiveRun
-from tests.helpers.wait import wait_until
+from tqdaemon.config import Project, control_path, state_home
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.models import EXIT_SUSPENDED, STATUS_QUEUED, STATUS_SUSPENDED
+from tqdaemon.runner import ActiveRun
 
 
 def _project(tmp_path: Path) -> Project:
@@ -30,7 +30,7 @@ def _project(tmp_path: Path) -> Project:
 
 
 def test_write_control_action(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path / "home"))
     home = state_home()
     path = write_control_action(home, "p", "t1", "suspend")
     assert path == control_path(home, "p", "t1")
@@ -40,7 +40,7 @@ def test_write_control_action(tmp_path: Path, monkeypatch) -> None:
 def test_exit_75_marks_suspended(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     db = open_db(home / "queue.db")
     proj = _project(tmp_path)
     script = tmp_path / "suspend_me.py"

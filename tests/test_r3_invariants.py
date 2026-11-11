@@ -9,11 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.config import Project
-from taskqueue.daemon import _cas_master_lease
-from taskqueue.db import open_db, set_config
-from taskqueue.worker_api import claim_next_remote_task
-from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache, iter_queue_files
+from tqdaemon.config import Project
+from tqdaemon.daemon import _cas_master_lease
+from tqdaemon.db import open_db, set_config
+from tqdaemon.worker_api import claim_next_remote_task
+from tqdaemon.yaml_sync import _sync_project, clear_yaml_mtime_cache, iter_queue_files
 
 
 def _project(tmp_path: Path, name: str = "p") -> Project:
@@ -144,7 +144,7 @@ def test_two_workers_cannot_exceed_global_cap(tmp_path: Path, monkeypatch) -> No
     w2 = _insert_worker(db, "w2", ["p2"])
 
     barrier = threading.Barrier(2)
-    import taskqueue.db as dbmod
+    import tqdaemon.db as dbmod
 
     real_open = dbmod.open_write_conn
 
@@ -203,8 +203,8 @@ def test_remote_override_consumed_in_claim_transaction(tmp_path: Path) -> None:
 
 
 def test_nonloopback_standby_requires_auth(tmp_path: Path) -> None:
-    from taskqueue.db import set_config
-    from taskqueue.web import start_standby_server
+    from tqdaemon.db import set_config
+    from tqdaemon.web import start_standby_server
 
     db = open_db(tmp_path / "queue.db")
     set_config(db, "auth_token", "")
@@ -222,7 +222,7 @@ def test_worker_popen_uses_utf8_encoding(tmp_path: Path) -> None:
     import subprocess
     import sys
 
-    from taskqueue.worker_slot import child_stdio_kwargs
+    from tqdaemon.worker_slot import child_stdio_kwargs
 
     code = "import sys; sys.stdout.buffer.write('ok \\u0645 '.encode() + bytes([0x81, 10]))"
     p = subprocess.Popen([sys.executable, "-c", code], **child_stdio_kwargs())
@@ -242,7 +242,7 @@ def test_sync_invalid_yaml_sentinel_inserts_and_holds_no_lock(tmp_path: Path) ->
 
 
 def test_run_summary_counts_runs(tmp_path: Path) -> None:
-    from taskqueue.db import run_summary
+    from tqdaemon.db import run_summary
 
     db = open_db(tmp_path / "q.db")
     assert run_summary(db, "p", "t")["run_number"] == 0
@@ -320,7 +320,7 @@ def test_parse_error_does_not_requeue_completed_task(tmp_path: Path) -> None:
 
 def test_sync_returns_stats_dict_when_listing_fails(tmp_path: Path, monkeypatch) -> None:
     """F-223: every early exit honours the {"upserted", "deleted"} contract."""
-    from taskqueue import yaml_sync
+    from tqdaemon import yaml_sync
 
     proj = _project(tmp_path)
     db = open_db(tmp_path / "q.db")
@@ -334,7 +334,7 @@ def test_sync_returns_stats_dict_when_listing_fails(tmp_path: Path, monkeypatch)
 
 def test_yaml_cache_holds_ids_not_parsed_tasks(tmp_path: Path) -> None:
     """F-235: the mtime cache keeps task ids only (a hit never needs the parsed objects)."""
-    from taskqueue import yaml_sync
+    from tqdaemon import yaml_sync
 
     proj = _project(tmp_path)
     (proj.queue_dir / "a.yaml").write_text("task_id: a1\ncommand: echo\n", encoding="utf-8")

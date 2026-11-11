@@ -7,7 +7,7 @@ Register:
 ```yaml
 projects:
   checkpointable:
-    root: path/to/taskqueue/examples/checkpointable
+    root: path/to/tqdaemon/examples/checkpointable
     queue_dir: experiments/operator_queue
 ```
 

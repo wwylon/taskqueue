@@ -7,12 +7,12 @@ import sys
 import threading
 from pathlib import Path
 
-from taskqueue import runner as runner_mod
-from taskqueue.daemon import _collect_finished_runs
-from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
-from taskqueue.runner import ActiveRun
 from tests.helpers.wait import wait_until
 from tests.test_queue import _project, _yaml
+from tqdaemon import runner as runner_mod
+from tqdaemon.daemon import _collect_finished_runs
+from tqdaemon.db import get_task, open_db, parse_task_yaml, upsert_task
+from tqdaemon.runner import ActiveRun
 
 
 def test_locked_db_during_progress_write_does_not_crash_reader(tmp_path: Path, monkeypatch) -> None:

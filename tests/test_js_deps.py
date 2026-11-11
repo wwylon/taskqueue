@@ -80,8 +80,8 @@ r.pd = ev.pd;
 // the menu entries are data-click actions run by the delegated handler
 g.showDagCtxMenu(ev, 'p', 't', 'completed');
 const menu = menuEl();
-const force = menu.querySelectorAll('.dag-ctx-item').find(b => b.textContent === 'Force run');
-const mark = menu.querySelectorAll('.dag-ctx-item').find(b => b.textContent === 'Mark done');
+const force = menu.querySelectorAll('.dag-ctx-item').find(b => b.textContent === 'dagctx.forceRun');
+const mark = menu.querySelectorAll('.dag-ctx-item').find(b => b.textContent === 'dagctx.markDone');
 fire(doc, 'click', force); fire(doc, 'click', mark);
 await g.flush();
 r.calls = calls.map(c => c.slice(0, 3));
@@ -90,8 +90,8 @@ console.log('RESULT:' + JSON.stringify(r));
 """
     )
     assert out["pd"] is True
-    assert out["running"][:2] == ["Go to Queue", "Open YAML"] and "Stop" in out["running"]
-    assert "Enable" in out["disabled"] and "Stop" not in out["disabled"]
+    assert out["running"][:2] == ["dagctx.goQueue", "dagctx.openYaml"] and "dagctx.stop" in out["running"]
+    assert "dagctx.enable" in out["disabled"] and "dagctx.stop" not in out["disabled"]
     assert any("(40)" in label for label in out["timeline"])
     assert ["forceTask", "p", "t"] in out["calls"] and ["markProcessed", "p", "t"] in out["calls"]
     assert out["hidden"] == "none"

@@ -7,11 +7,11 @@ Cheap dummy tasks for dogfooding and CI. No CUDA in the default set.
 ## Register
 
 ```powershell
-cd path\to\taskqueue
+cd path\to\tqdaemon
 
-# edit %USERPROFILE%\.taskqueue\projects.yaml — add:
+# edit %USERPROFILE%\.tqdaemon\projects.yaml — add:
 # tqdemo:
-#   root: path\to\taskqueue\fixtures\tqdemo
+#   root: path\to\tqdaemon\fixtures\tqdemo
 
 uv run tq sync
 uv run tq list --project tqdemo

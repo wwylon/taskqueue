@@ -6,16 +6,16 @@ import itertools
 
 import pytest
 
-from taskqueue import errors as tqerr
-from taskqueue.daemon import decide_terminal_status as d
-from taskqueue.models import (
+from tqdaemon import errors as tqerr
+from tqdaemon.daemon import decide_terminal_status as d
+from tqdaemon.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_INTERRUPTED,
     STATUS_STOPPED,
     STATUS_SUSPENDED,
 )
-from taskqueue.stop_reasons import FORCED_STOP_REASONS, PRESSURE_STOP_REASONS, TQ_STOP_REASONS
+from tqdaemon.stop_reasons import FORCED_STOP_REASONS, PRESSURE_STOP_REASONS, TQ_STOP_REASONS
 
 SUSP = 75
 

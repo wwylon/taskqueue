@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.scheduler import MASTER_NODE_ID, FilterContext, Node, filter_task
-from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import (
     http_request,
     local_dispatch_allowed,
@@ -14,6 +12,8 @@ from tests.helpers.master_worker import (
     seed_queued_task,
     seed_worker,
 )
+from tqdaemon.scheduler import MASTER_NODE_ID, FilterContext, Node, filter_task
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def _claim(db_path, worker_row, projects=None):
@@ -23,7 +23,7 @@ def _claim(db_path, worker_row, projects=None):
 
 def test_local_dispatch_not_claimable_by_worker(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -35,7 +35,7 @@ def test_local_dispatch_not_claimable_by_worker(tmp_path: Path) -> None:
 
 def test_remote_dispatch_claimed_by_worker(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -48,7 +48,7 @@ def test_remote_dispatch_claimed_by_worker(tmp_path: Path) -> None:
 
 def test_remote_blocked_on_master_when_workers_online(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -58,7 +58,7 @@ def test_remote_blocked_on_master_when_workers_online(tmp_path: Path) -> None:
 
 def test_remote_fallback_on_master_when_no_workers(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -67,7 +67,7 @@ def test_remote_fallback_on_master_when_no_workers(tmp_path: Path) -> None:
 
 def test_any_dispatch_claimable_by_worker(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -79,7 +79,7 @@ def test_any_dispatch_claimable_by_worker(tmp_path: Path) -> None:
 
 def test_draining_worker_cannot_claim(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -91,7 +91,7 @@ def test_draining_worker_cannot_claim(tmp_path: Path) -> None:
 
 def test_worker_missing_project_skips_task(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -103,7 +103,7 @@ def test_worker_missing_project_skips_task(tmp_path: Path) -> None:
 
 def test_requires_os_mismatch_blocks_claim(tmp_path: Path) -> None:
     db_path = tmp_path / "q.db"
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(db_path)
     seed_master_lease(db)
@@ -133,7 +133,7 @@ def test_local_master_dispatch_filter_with_online_workers() -> None:
 
 
 def test_next_task_http_returns_task(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     seed_worker(db, session_id="sess-1")
@@ -149,9 +149,9 @@ def test_next_task_http_returns_task(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_claim_whose_response_write_fails_is_reclaimable_immediately(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue.web.handler import Handler  # noqa: F401  (ensures _json exists)
+    from tqdaemon.web.handler import Handler  # noqa: F401  (ensures _json exists)
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, home = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     seed_worker(db, session_id="sess-1")
@@ -165,16 +165,16 @@ def test_claim_whose_response_write_fails_is_reclaimable_immediately(tmp_path: P
     except Exception:
         pass
     row = db.execute("SELECT lease_expires_at FROM runs WHERE status = 'running'").fetchone()
-    from taskqueue.db import lease_expiry_iso
+    from tqdaemon.db import lease_expiry_iso
 
     assert row is not None and row["lease_expires_at"] < lease_expiry_iso(0)
     db.close()
 
 
 def test_finalize_run_and_task_applies_task_error_fields_in_one_commit(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue.db import finalize_run_and_task
+    from tqdaemon.db import finalize_run_and_task
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     _, db, _ = make_handler_env(tmp_path)
     tid = seed_queued_task(db, dispatch="remote")
     row = db.execute("SELECT project, task_id FROM tasks LIMIT 1").fetchone()

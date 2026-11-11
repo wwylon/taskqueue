@@ -129,7 +129,7 @@ console.log('RESULT:' + JSON.stringify(r));
     )
     assert out["err"] == ["", "yaml.errorStatus", "block"]
     assert out["written"] == ["k: v"]
-    assert "Copy failed" in out["alerts"][0] and out["alerts"][1] is True
+    assert "modal.copyFailedMsg" in out["alerts"][0] and out["alerts"][1] is True
 
 
 def test_resource_modal_tracks_run_and_compare_swaps_in_diff_table():
@@ -147,7 +147,7 @@ const r = {};
 g.showResourceModal(3);
 r.title = $('resource-modal-title').textContent;
 r.runId = g.getResourceModalRunId();
-r.body = $('resource-modal-body').innerHTML.includes('usage') && $('resource-modal-body').innerHTML.includes('Updates automatically');
+r.body = $('resource-modal-body').innerHTML.includes('usage') && $('resource-modal-body').innerHTML.includes('modal.autoUpdates');
 r.lastHtml = !!$('resource-modal-body').dataset.lastHtml;
 r.display = $('resource-modal').style.display;
 // compare: first pick only toasts, second opens the diff and detaches live updates

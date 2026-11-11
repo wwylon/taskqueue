@@ -1,6 +1,6 @@
 # Capabilities
 
-This page is the small map of taskqueue's public surfaces. Use it to choose
+This page is the small map of tqdaemon's public surfaces. Use it to choose
 the least surprising interface: `tq` for a human at a terminal, the web UI
 for interactive observation, and MCP for an AI coding agent. The machine
 readable version is [`surface_map.json`](surface_map.json).
@@ -72,7 +72,7 @@ Find out why work failed or what a run consumed.
 Workers are trusted machines that join a master and claim eligible tasks.
 `dispatch: remote` prefers a worker but falls back locally when none is online.
 
-- **CLI:** `tq worker`, `tq projects`, `tq resync`, `tq bundle`,
+- **CLI:** `tq worker`, `tq projects`, `tq set`, `tq resync`, `tq bundle`,
   `tq master-status`, and `tq master-migrate`.
 - **Reference:** [Worker setup](WORKER_SETUP.md) and
   [Master-worker architecture](master_worker.md).
@@ -112,13 +112,13 @@ This is an extraction guide, not a package reorganization:
 
 | Question | Primary owner |
 |---|---|
-| CLI parsing and command surface | `taskqueue/cli.py`, `_cli_*.py` |
-| MCP schemas and dispatch | `taskqueue/mcp_server.py` |
-| Scheduling and admission | `taskqueue/daemon.py`, `scheduler.py`, `resources.py` |
-| Persistence and task queries | `taskqueue/db.py`, `_db_*.py`, `queries.py` |
-| HTTP API and auth | `taskqueue/web/`, `taskqueue/auth.py`, `docs/security.md` |
-| Workers and remote execution | `taskqueue/worker.py`, `_cli_worker.py`, `master_worker.md` |
-| Static web UI | `taskqueue/static/`, `docs/operators/web-ui.md` |
+| CLI parsing and command surface | `tqdaemon/cli.py`, `_cli_*.py` |
+| MCP schemas and dispatch | `tqdaemon/mcp_server.py` |
+| Scheduling and admission | `tqdaemon/daemon.py`, `scheduler.py`, `resources.py` |
+| Persistence and task queries | `tqdaemon/db.py`, `_db_*.py`, `queries.py` |
+| HTTP API and auth | `tqdaemon/web/`, `tqdaemon/auth.py`, `docs/security.md` |
+| Workers and remote execution | `tqdaemon/worker.py`, `_cli_worker.py`, `master_worker.md` |
+| Static web UI | `tqdaemon/static/`, `docs/operators/web-ui.md` |
 | Documentation registry and generated help | `docs/manifest.json`, `docs/help/`, `scripts/build_docs.py` |
 | Surface drift enforcement | `docs/surface_map.json`, `scripts/check_docs.py`, `tests/test_docs_surface.py` |
 

@@ -7,9 +7,9 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue.config import Project
 from tests.helpers.master_worker import http_request, make_handler_env
 from tests.helpers.wait import wait_until
+from tqdaemon.config import Project
 
 
 def _yaml(task_id: str) -> str:
@@ -72,7 +72,7 @@ def test_web_retry_accepts_overridable_arg(tmp_path: Path) -> None:
 
 
 def test_write_scope_cannot_edit_task_yaml() -> None:
-    from taskqueue.operator_features import scope_allows
+    from tqdaemon.operator_features import scope_allows
 
     assert scope_allows("write", "POST", "/api/tasks/p/t/retry")
     assert not scope_allows("write", "PUT", "/api/tasks/p/t/yaml")
@@ -80,7 +80,7 @@ def test_write_scope_cannot_edit_task_yaml() -> None:
 
 
 def test_atomic_write_text_replaces_and_leaves_no_temp(tmp_path: Path) -> None:
-    from taskqueue.fsutil import atomic_write_text
+    from tqdaemon.fsutil import atomic_write_text
 
     f = tmp_path / "a.yaml"
     f.write_text("old", encoding="utf-8")
@@ -92,7 +92,7 @@ def test_atomic_write_text_replaces_and_leaves_no_temp(tmp_path: Path) -> None:
 def test_patch_enabled_targets_only_matching_document(tmp_path: Path) -> None:
     import pytest
 
-    from taskqueue.yaml_patch import patch_task_yaml
+    from tqdaemon.yaml_patch import patch_task_yaml
 
     f = tmp_path / "multi.yaml"
     f.write_text(
@@ -114,7 +114,7 @@ def test_patch_enabled_targets_only_matching_document(tmp_path: Path) -> None:
 def test_runner_metrics_flush_uses_own_connection_in_reader_thread(tmp_path):
     from unittest.mock import patch
 
-    from taskqueue import runner
+    from tqdaemon import runner
 
     seen = []
 
@@ -146,7 +146,7 @@ def test_runner_metrics_flush_uses_own_connection_in_reader_thread(tmp_path):
 
 
 def test_daemon_shutdown_handles_sigint_and_stops_in_parallel():
-    src = (Path(__file__).resolve().parent.parent / "taskqueue" / "daemon.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parent.parent / "tqdaemon" / "daemon.py").read_text(encoding="utf-8")
     assert "signal.signal(signal.SIGINT, _handle_sigterm)" in src
     assert "ThreadPoolExecutor" in src and "_safe_stop" in src
     assert "finally:\n        pid_path.unlink" in src.replace("\r\n", "\n")
@@ -157,7 +157,7 @@ def test_terminate_tree_kills_grandchildren():
 
     import psutil
 
-    from taskqueue.reap import terminate_tree
+    from tqdaemon.reap import terminate_tree
 
     code = (
         "import subprocess,sys,time;"
@@ -178,7 +178,7 @@ def test_tail_reader_joins_partial_lines(tmp_path):
     import threading
     import time
 
-    from taskqueue import runner
+    from tqdaemon import runner
 
     log = tmp_path / "t.log"
     log.write_text("", encoding="utf-8")
@@ -220,7 +220,7 @@ def test_tail_reader_joins_partial_lines(tmp_path):
 def test_validate_task_spec_rejects_malformed(tmp_path):
     import pytest
 
-    from taskqueue.db import validate_task_spec
+    from tqdaemon.db import validate_task_spec
 
     p = tmp_path / "t.yaml"
     for bad in (
@@ -242,7 +242,7 @@ def test_validate_task_spec_rejects_malformed(tmp_path):
 def test_concurrent_open_db_migrations_do_not_race(tmp_path):
     import threading
 
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = tmp_path / "q.db"
     errs = []
@@ -262,7 +262,7 @@ def test_concurrent_open_db_migrations_do_not_race(tmp_path):
 def test_split2_raises_bad_request_without_sending(tmp_path):
     import pytest
 
-    from taskqueue.web.handler import BadRequest, Handler
+    from tqdaemon.web.handler import BadRequest, Handler
 
     class H:
         pass
@@ -275,7 +275,7 @@ def test_split2_raises_bad_request_without_sending(tmp_path):
 def test_next_cron_fire_cache_matches_scan():
     from datetime import UTC, datetime, timedelta
 
-    from taskqueue import operator_features as of
+    from tqdaemon import operator_features as of
 
     of._CRON_FIRE_CACHE.clear()
     base = datetime(2026, 1, 1, 10, 7, 30, tzinfo=UTC)
@@ -300,7 +300,7 @@ def test_validate_endpoint_dry_run(tmp_path: Path) -> None:
 
 
 def test_deps_dot_export(tmp_path: Path) -> None:
-    from taskqueue.web.responses import deps_to_dot
+    from tqdaemon.web.responses import deps_to_dot
 
     g = {
         "nodes": [{"id": "p/a-1", "status": "completed"}, {"id": 'p/"b"', "status": "queued", "stub": True}],
@@ -326,7 +326,7 @@ def test_deps_route_format(tmp_path: Path) -> None:
 
 
 def test_audit_filters_and_export(tmp_path: Path) -> None:
-    from taskqueue.operator_features import write_audit
+    from tqdaemon.operator_features import write_audit
 
     H, db, _ = _env(tmp_path)
     write_audit(db, "alice", "stop", "p", "t1", 'say "hi", ok')
@@ -353,7 +353,7 @@ def test_audit_filters_and_export(tmp_path: Path) -> None:
 
 
 def test_metrics_endpoint(tmp_path: Path) -> None:
-    from taskqueue.metrics_export import render_metrics
+    from tqdaemon.metrics_export import render_metrics
 
     H, db, _ = _env(tmp_path)
     code, raw = http_request(H, "GET", "/api/metrics")
@@ -361,7 +361,7 @@ def test_metrics_endpoint(tmp_path: Path) -> None:
     assert code == 200 and "# TYPE tq_tasks gauge" in text and "# TYPE tq_workers gauge" in text
     out = render_metrics(db)
     assert out.endswith("\n") and "tq_daemon_rss_megabytes" not in out
-    from taskqueue.metrics_export import _sample
+    from tqdaemon.metrics_export import _sample
 
     bs = chr(92)
     assert _sample("tq_x", 1, a='q"' + bs) == 'tq_x{a="q' + bs + '"' + bs + bs + '"} 1'
@@ -373,7 +373,7 @@ def test_notify_dead_letter_list_and_retry(tmp_path: Path) -> None:
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-    from taskqueue import notify
+    from tqdaemon import notify
 
     H, db, _ = _env(tmp_path)
     hits: list[bytes] = []
@@ -421,8 +421,8 @@ def test_notify_dead_letter_list_and_retry(tmp_path: Path) -> None:
 
 
 def test_run_detail_and_diff(tmp_path: Path) -> None:
-    from taskqueue._db_runs import insert_run
-    from taskqueue.operator_features import diff_runs
+    from tqdaemon._db_runs import insert_run
+    from tqdaemon.operator_features import diff_runs
 
     H, db, _ = _env(tmp_path)
     db.execute(
@@ -453,7 +453,7 @@ def test_run_detail_and_diff(tmp_path: Path) -> None:
 
 
 def test_cross_run_log_search(tmp_path: Path) -> None:
-    from taskqueue._db_runs import insert_run
+    from tqdaemon._db_runs import insert_run
 
     H, db, _ = _env(tmp_path)
     for tid, text in (("a", "ok\nCUDA out of memory\n"), ("b", "all good\n")):
@@ -475,7 +475,7 @@ def test_cross_run_log_search(tmp_path: Path) -> None:
 
 
 def test_log_incremental_fetch_from_offset(tmp_path: Path) -> None:
-    from taskqueue._db_runs import insert_run
+    from tqdaemon._db_runs import insert_run
 
     H, db, _ = _env(tmp_path)
     db.execute(
@@ -500,7 +500,7 @@ def test_log_incremental_fetch_from_offset(tmp_path: Path) -> None:
 
 def test_put_task_yaml_rejects_an_invalid_task_spec_and_keeps_the_file(tmp_path: Path) -> None:
     """F-238: the YAML editor's save must run the full task parse, not only "is it a mapping"."""
-    from taskqueue.db import parse_task_yaml, upsert_task
+    from tqdaemon.db import parse_task_yaml, upsert_task
 
     H, db, qdir = _env(tmp_path)
     path = qdir / "t.yaml"

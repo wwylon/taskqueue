@@ -1,11 +1,11 @@
 # minimal sample project
 
-Register in `~/.taskqueue/projects.yaml`:
+Register in `~/.tqdaemon/projects.yaml`:
 
 ```yaml
 projects:
   minimal:
-    root: path/to/taskqueue/examples/minimal
+    root: path/to/tqdaemon/examples/minimal
     queue_dir: experiments/operator_queue
 ```
 

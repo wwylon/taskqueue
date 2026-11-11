@@ -52,7 +52,7 @@ def test_deregister_requires_credential(tmp_path: Path) -> None:
 
 
 def test_sse_semaphore_released_on_body_error() -> None:
-    from taskqueue.web.sse import SSEMixin  # type: ignore[attr-defined]
+    from tqdaemon.web.sse import SSEMixin  # type: ignore[attr-defined]
 
     class H(SSEMixin):
         _sse_semaphore = threading.BoundedSemaphore(1)
@@ -88,7 +88,7 @@ def test_legacy_data_file_confined_to_data_dir(tmp_path: Path) -> None:
 
 
 def test_content_length_helper_clamps_bad_values() -> None:
-    from taskqueue.web.routes_transfer import TransferRoutes  # noqa
+    from tqdaemon.web.routes_transfer import TransferRoutes  # noqa
 
     class H(TransferRoutes):
         headers: dict = {}
@@ -113,8 +113,8 @@ def test_commands_requeued_when_write_fails(tmp_path: Path) -> None:
 
     h, _db, _ = make_handler_env(tmp_path)
     _register(h, "w1", "aaa")
-    from taskqueue.web import routes_worker
-    from taskqueue.web.handler import Handler
+    from tqdaemon.web import routes_worker
+    from tqdaemon.web.handler import Handler
 
     class Fake(routes_worker.WorkerRoutes):
         _query = Handler._query

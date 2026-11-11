@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.config import Project
-from taskqueue.db import open_db
-from taskqueue.runner import ActiveRun
-from taskqueue.yaml_sync import _sync_project, _yaml_mtime_cache, clear_yaml_mtime_cache
+from tqdaemon.config import Project
+from tqdaemon.db import open_db
+from tqdaemon.runner import ActiveRun
+from tqdaemon.yaml_sync import _sync_project, _yaml_mtime_cache, clear_yaml_mtime_cache
 
 
 def test_drain_cpu_seconds_from_cpu_times() -> None:
@@ -48,7 +48,7 @@ def test_drain_cpu_seconds_from_cpu_times() -> None:
 
 def test_cmd_report_estimate_uses_open_connection(tmp_path: Path, capsys, monkeypatch) -> None:
     """F-069: estimate_accuracy must not query a closed connection."""
-    from taskqueue import _cli_admin
+    from tqdaemon import _cli_admin
 
     home = tmp_path
     db = open_db(home / "queue.db")
@@ -61,7 +61,7 @@ def test_cmd_report_estimate_uses_open_connection(tmp_path: Path, capsys, monkey
     db.commit()
     db.close()
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     _cli_admin.cmd_report(home, project=None, days=7)
     out = capsys.readouterr().out
     assert "estimate_accuracy" in out
@@ -88,11 +88,11 @@ def test_yaml_cache_evicts_removed_paths(tmp_path: Path) -> None:
 
 def test_claim_uses_bounded_candidate_window(tmp_path, monkeypatch) -> None:
     """F-071: a remote claim fetches a bounded candidate window, never the entire queue."""
-    from taskqueue import _db_tasks
-    from taskqueue.worker_api import claim_next_remote_task
     from tests.helpers.master_worker import make_handler_env, seed_queued_task, seed_worker
+    from tqdaemon import _db_tasks
+    from tqdaemon.worker_api import claim_next_remote_task
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     _h, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     seed_worker(db)

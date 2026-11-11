@@ -6,8 +6,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.config import Project
 from tests.helpers.master_worker import http_request, make_handler_env, seed_master_lease
+from tqdaemon.config import Project
 
 
 def _seed_running_transfer(
@@ -36,7 +36,7 @@ def _seed_running_transfer(
 
 
 def test_transfer_push_get_serves_file(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     root = tmp_path / "projroot"
     root.mkdir()
     (root / "input.txt").write_text("hello-push", encoding="utf-8")
@@ -55,7 +55,7 @@ def test_transfer_push_get_serves_file(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_transfer_requires_run_capability(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     root = tmp_path / "projroot"
     root.mkdir()
     (root / "input.txt").write_text("secret", encoding="utf-8")
@@ -85,7 +85,7 @@ def test_transfer_requires_run_capability(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_transfer_push_path_escape_rejected(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     root = tmp_path / "projroot"
     root.mkdir()
     projects = {"proj": Project(name="proj", root=root, queue_dir=root / "q")}
@@ -105,7 +105,7 @@ def test_transfer_push_path_escape_rejected(tmp_path: Path, monkeypatch) -> None
 
 
 def test_transfer_pull_post_writes_file(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     root = tmp_path / "projroot"
     root.mkdir()
     projects = {"proj": Project(name="proj", root=root, queue_dir=root / "q")}
@@ -129,7 +129,7 @@ def test_transfer_pull_post_writes_file(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_transfer_pull_rejects_oversize(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     root = tmp_path / "projroot"
     root.mkdir()
     projects = {"proj": Project(name="proj", root=root, queue_dir=root / "q")}

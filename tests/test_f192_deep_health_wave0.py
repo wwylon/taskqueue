@@ -5,12 +5,12 @@ from __future__ import annotations
 import threading
 import time
 
-from taskqueue import daemon
-from taskqueue.arg_overrides import merge_arg_overrides, overrides_from_set_dict
-from taskqueue.db import open_db
-from taskqueue.resources import ResourceBudget
-from taskqueue.statuses import FINALIZE_STATUSES
-from taskqueue.waiting import wait_for
+from tqdaemon import daemon
+from tqdaemon.arg_overrides import merge_arg_overrides, overrides_from_set_dict
+from tqdaemon.db import open_db
+from tqdaemon.resources import ResourceBudget
+from tqdaemon.statuses import FINALIZE_STATUSES
+from tqdaemon.waiting import wait_for
 
 
 def test_merge_arg_overrides_preserves_base():
@@ -35,7 +35,7 @@ def test_wait_for_empty_keys_not_ok():
 
 
 def test_gpu_hold_credit_allows_pack_on_single_device(monkeypatch):
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 10.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 10.0)
     system = {
         "cpu_total_cores": 8,
         "ram_total_gib": 64.0,

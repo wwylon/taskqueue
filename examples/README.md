@@ -1,4 +1,4 @@
-# Examples — taskqueue
+# Examples — tqdaemon
 
 Copy-paste starters. **Prefer [`tq_client`](../clients/README.md)** for progress, checkpoints, and cooperative control — do not hand-print `(N%)` in new scripts.
 

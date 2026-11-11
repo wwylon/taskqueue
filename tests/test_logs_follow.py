@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import io
 
-from taskqueue._cli_task import follow_log
-from taskqueue.db import insert_run, open_db
 from tests.helpers.master_worker import seed_queued_task
+from tqdaemon._cli_task import follow_log
+from tqdaemon.db import insert_run, open_db
 
 
 def _setup(tmp_path, status):
@@ -21,7 +21,7 @@ def _setup(tmp_path, status):
 
 
 def _patch_db(monkeypatch, home):
-    monkeypatch.setattr("taskqueue._cli_task._db", lambda h: home / "queue.db")
+    monkeypatch.setattr("tqdaemon._cli_task._db", lambda h: home / "queue.db")
 
 
 def test_follow_prints_new_output_then_exits_with_task_status(tmp_path, monkeypatch):

@@ -1,4 +1,4 @@
-"""Fixture e2e against temp TASKQUEUE_HOME + fixtures/tqdemo."""
+"""Fixture e2e against temp TQDAEMON_HOME + fixtures/tqdemo."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import get_task, set_task_error, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
-from taskqueue.resources import ResourceBudget
-from taskqueue.runner import ActiveRun
 from tests.helpers.wait import wait_until
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import get_task, set_task_error, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
+from tqdaemon.resources import ResourceBudget
+from tqdaemon.runner import ActiveRun
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tqdemo"
 

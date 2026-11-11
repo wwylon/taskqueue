@@ -6,8 +6,8 @@ import re
 
 import pytest
 
-from taskqueue.db import open_db
-from taskqueue.web import _is_loopback, make_handler, start_web_server
+from tqdaemon.db import open_db
+from tqdaemon.web import _is_loopback, make_handler, start_web_server
 
 # ---------------------------------------------------------------------------
 # W1.1: bind-driven auth

@@ -11,7 +11,7 @@ from tests.helpers.master_worker import make_handler_env
 
 @pytest.fixture
 def mw_home(tmp_path: Path, monkeypatch) -> Path:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     return tmp_path
 
 
@@ -25,7 +25,7 @@ def mw_handler(mw_home: Path):
 @pytest.fixture(autouse=True)
 def _reset_master_instance_id():
     """run_daemon() sets a process-global holder id; keep it from leaking across tests."""
-    from taskqueue import db as _db
+    from tqdaemon import db as _db
 
     _db.set_master_instance_id(None)
     yield

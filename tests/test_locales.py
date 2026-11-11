@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-_LOCALES = Path(__file__).resolve().parents[1] / "taskqueue" / "static" / "locales"
+_LOCALES = Path(__file__).resolve().parents[1] / "tqdaemon" / "static" / "locales"
 
 # Keys operators see often; must exist in every locale.
 _REQUIRED = (

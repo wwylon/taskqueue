@@ -7,19 +7,19 @@ import socket
 import time
 from pathlib import Path
 
-from taskqueue.db import holds_master_lease, open_db
-from taskqueue.worker import (
-    finalize_run,
-    flush_pending_finalize,
-    pending_finalize_dir,
-    pending_finalize_is_ack,
-    write_pending_finalize,
-)
 from tests.helpers.master_worker import (
     clear_master_lease,
     http_request,
     make_handler_env,
     seed_worker,
+)
+from tqdaemon.db import holds_master_lease, open_db
+from tqdaemon.worker import (
+    finalize_run,
+    flush_pending_finalize,
+    pending_finalize_dir,
+    pending_finalize_is_ack,
+    write_pending_finalize,
 )
 
 

@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import get_task, upsert_task
-from taskqueue.backoff import MAX_DELAY_SEC, backoff_delay, backoff_left
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
 from tests.test_t026_parity import _ctx, _decide, _task, _twin_nodes
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import get_task, upsert_task
+from tqdaemon.backoff import MAX_DELAY_SEC, backoff_delay, backoff_left
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
 
 
 def test_delay_doubles_caps_and_jitters_stably() -> None:

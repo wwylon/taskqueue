@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.worker_slot import WorkerSlot
+from tqdaemon.worker_slot import WorkerSlot
 
 
 @pytest.mark.slow
@@ -19,7 +19,7 @@ def test_slot_runs_task_and_finalizes_without_master(tmp_path: Path, monkeypatch
     root.mkdir()
     (root / "reports").mkdir()
     (home / "projects.yaml").write_text(f"projects:\n  p:\n    root: {root.as_posix()}\n", encoding="utf-8")
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     script = root / "job.py"
     script.write_text(
         "import os\nprint('(50.0%) half', flush=True)\nprint(os.environ['TQ_PROJECT'])\n", encoding="utf-8"

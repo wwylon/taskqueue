@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from taskqueue.worker_slot import verify_bundle_sha
+from tqdaemon.worker_slot import verify_bundle_sha
 
 
 def test_matching_hash_passes(tmp_path):

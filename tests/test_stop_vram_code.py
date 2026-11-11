@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from taskqueue import errors as tqerr
-from taskqueue.system_alerts import _STOP_REASON_TO_ERROR_CODES
+from tqdaemon import errors as tqerr
+from tqdaemon.system_alerts import _STOP_REASON_TO_ERROR_CODES
 
 
 def test_vram_stop_has_its_own_code() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.cli import _cmd_explain
+from tqdaemon.cli import _cmd_explain
 
 
 def test_explain_known_code(tmp_path: Path, capsys) -> None:

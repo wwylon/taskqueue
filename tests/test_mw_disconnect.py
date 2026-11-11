@@ -6,9 +6,6 @@ import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue._db_runs import reclaim_expired_leases
-from taskqueue.db import open_db
-from taskqueue.worker_api import claim_next_remote_task
 from tests.helpers.master_worker import (
     clear_master_lease,
     http_request,
@@ -17,6 +14,9 @@ from tests.helpers.master_worker import (
     seed_queued_task,
     seed_worker,
 )
+from tqdaemon._db_runs import reclaim_expired_leases
+from tqdaemon.db import open_db
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def _claim(db_path, worker_row):
@@ -24,7 +24,7 @@ def _claim(db_path, worker_row):
 
 
 def test_finalize_wrong_token_rejected(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote")
     seed_worker(db, session_id="sess-1")
@@ -52,7 +52,7 @@ def test_finalize_wrong_token_rejected(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_late_finalize_after_reclaim_rejected(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, dispatch="remote", execution_semantics="idempotent", idempotent=1)
     seed_worker(db, session_id="sess-1")
@@ -119,7 +119,7 @@ def test_at_most_once_reclaim_goes_unknown(tmp_path: Path) -> None:
 
 
 def test_longpoll_aborts_when_lease_lost_mid_wait(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     HandlerClass, db, _ = make_handler_env(tmp_path)
     seed_worker(db, session_id="sess-1")
     clear_master_lease(db)

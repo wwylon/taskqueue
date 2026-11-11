@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from taskqueue import daemon
+from tqdaemon import daemon
 
 
 class FakeRun:
@@ -53,7 +53,7 @@ def test_stop_request_cooperative_then_stop(monkeypatch):
 
 def test_wall_clock_cap(monkeypatch):
     _patch_task(monkeypatch, _Row(stop_requested=0, wall_clock_cap_sec=5))
-    import taskqueue.db as db
+    import tqdaemon.db as db
 
     seen = []
     monkeypatch.setattr(db, "request_stop", lambda conn, p, t: seen.append((p, t)))
@@ -259,7 +259,7 @@ def test_registry_reload_is_visible_through_the_web_reference():
 
 
 def test_stop_request_logs_requester_once(monkeypatch, tmp_path, capsys):
-    from taskqueue.db import write_control_action
+    from tqdaemon.db import write_control_action
 
     write_control_action(tmp_path, "p", "t", "suspend", requested_by="ada via cli")
     assert daemon._control_requester(tmp_path, "p", "t") == "ada via cli"
@@ -269,7 +269,7 @@ def test_stop_request_logs_requester_once(monkeypatch, tmp_path, capsys):
 
 def test_wall_clock_cap_requests_and_logs_once(monkeypatch, capsys):
     """F-224: during the grace window a cap stop is requested and logged once, not every tick."""
-    import taskqueue.db as db
+    import tqdaemon.db as db
 
     seen = []
     monkeypatch.setattr(db, "request_stop", lambda conn, p, t: seen.append((p, t)))
@@ -288,7 +288,7 @@ def test_wall_clock_cap_requests_and_logs_once(monkeypatch, capsys):
 
 def test_queue_dir_watches_follow_registry(tmp_path):
     """F-226: projects added/removed after startup gain/lose their file watch."""
-    from taskqueue.config import Project
+    from tqdaemon.config import Project
 
     class Obs:
         def __init__(self):
@@ -316,7 +316,7 @@ def test_queue_dir_watches_follow_registry(tmp_path):
 
 def test_queue_dir_release_survives_update(tmp_path):
     """F-240: release unwatches and update/resync must not re-watch until clear_release."""
-    from taskqueue.config import Project
+    from tqdaemon.config import Project
 
     class Obs:
         def __init__(self):

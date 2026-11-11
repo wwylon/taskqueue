@@ -3,8 +3,8 @@
 ## Setup
 
 ```text
-git clone https://github.com/wwylon/taskqueue.git
-cd taskqueue
+git clone https://github.com/wwylon/tqdaemon.git
+cd tqdaemon
 uv sync --group dev
 uv run tq doctor
 ```
@@ -12,7 +12,7 @@ uv run tq doctor
 ## Tests
 
 ```text
-uv run ruff check taskqueue/ tests/
+uv run ruff check tqdaemon/ tests/
 uv run pytest -q -m "not stress"
 uv run python scripts/build_docs.py --check
 ```

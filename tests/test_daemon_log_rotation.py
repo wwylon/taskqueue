@@ -13,7 +13,7 @@ def test_rotate_own_log_copies_then_truncates_open_stdout(tmp_path: Path) -> Non
     code = (
         "import sys; sys.path.insert(0, r'%s')\n"
         "from pathlib import Path\n"
-        "from taskqueue.daemon import rotate_own_log\n"
+        "from tqdaemon.daemon import rotate_own_log\n"
         "print('x' * 3000, flush=True)\n"
         "print('rotated' if rotate_own_log(Path(r'%s'), max_bytes=1000) else 'no', flush=True)\n"
         "print('after', flush=True)\n"
@@ -29,7 +29,7 @@ def test_rotate_own_log_copies_then_truncates_open_stdout(tmp_path: Path) -> Non
 
 
 def test_rotate_ignores_a_log_that_is_not_stdout(tmp_path: Path) -> None:
-    from taskqueue.daemon import rotate_own_log
+    from tqdaemon.daemon import rotate_own_log
 
     (tmp_path / "daemon.log").write_text("y" * 5000, encoding="utf-8")
     assert rotate_own_log(tmp_path, max_bytes=10) is False

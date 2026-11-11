@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from taskqueue.config import WORK_LONGPOLL_MAX_SEC
 from tests.helpers.master_worker import http_request, make_handler_env, seed_worker
+from tqdaemon.config import WORK_LONGPOLL_MAX_SEC
 
 
 def test_wait_zero_is_immediate(tmp_path: Path) -> None:

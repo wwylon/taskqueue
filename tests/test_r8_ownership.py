@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue._db_tasks import get_task
-from taskqueue.cli import cmd_priority, cmd_remove, cmd_stop
-from taskqueue.db import open_db
+from tqdaemon._db_tasks import get_task
+from tqdaemon.cli import cmd_priority, cmd_remove, cmd_stop
+from tqdaemon.db import open_db
 
 
 def _seed_task(home: Path, *, started_by: str | None) -> None:

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_runs import insert_run, set_run_stop_reason
-from taskqueue.db import open_db
-from taskqueue.stop_summary import attach_stop_fields, format_stop_summary, label_stop_reason
-from taskqueue.why import explain_task
 from tests.helpers.master_worker import seed_queued_task
+from tqdaemon._db_runs import insert_run, set_run_stop_reason
+from tqdaemon.db import open_db
+from tqdaemon.stop_summary import attach_stop_fields, format_stop_summary, label_stop_reason
+from tqdaemon.why import explain_task
 
 
 def test_format_stop_summary_tq_and_human() -> None:
-    assert "TaskQueue" in (
+    assert "TqDaemon" in (
         format_stop_summary(stopped_by="tq", stop_reason="ram_hard", last_error_code="tq.stop.ram") or ""
     )
     assert "gate:lagging" in (format_stop_summary(stopped_by="user", stop_reason="gate:lagging") or "")
@@ -35,7 +35,7 @@ def test_why_includes_stop_summary(tmp_path: Path) -> None:
     info = explain_task(db, "p", "t")
     assert info["ok"]
     assert info.get("stop_reason") == "ram_hard"
-    assert any("TaskQueue" in r for r in info["reasons"])
+    assert any("TqDaemon" in r for r in info["reasons"])
     attached = attach_stop_fields(db, "p", "t")
     assert attached.get("stop_summary")
     db.close()
@@ -43,8 +43,8 @@ def test_why_includes_stop_summary(tmp_path: Path) -> None:
 
 def test_every_tq_stop_reason_has_a_label():
     """Wave 4: one policy set (stop_reasons) — every tq stop reason must be explained to owners."""
-    from taskqueue.stop_reasons import TQ_STOP_REASONS, stopped_by_for
-    from taskqueue.stop_summary import _STOP_REASON_LABELS
+    from tqdaemon.stop_reasons import TQ_STOP_REASONS, stopped_by_for
+    from tqdaemon.stop_summary import _STOP_REASON_LABELS
 
     assert set(_STOP_REASON_LABELS) >= TQ_STOP_REASONS
     assert stopped_by_for("scavenger_preempt") == "tq" and stopped_by_for("stop_requested") is None

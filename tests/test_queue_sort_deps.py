@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.web.responses import _get_queue_response
+from tqdaemon.db import open_db
+from tqdaemon.web.responses import _get_queue_response
 
 
 def _ins(conn, tid: str, deps: str = "[]", status: str = "queued") -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tests.test_js_modules import _run
 
-JS = Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js"
+JS = Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js"
 
 
 def test_progress_health_chip_and_negative_badge():

@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server
-from taskqueue._cli_task import cmd_wait
-from taskqueue._db_tasks import _TERMINAL_STATUSES
-from taskqueue.db import open_db
-from taskqueue.waiting import (
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server
+from tqdaemon._cli_task import cmd_wait
+from tqdaemon._db_tasks import _TERMINAL_STATUSES
+from tqdaemon.db import open_db
+from tqdaemon.waiting import (
     SETTLED_STATUSES,
     TERMINAL_STATUSES,
     exit_code_for,
@@ -68,7 +68,7 @@ def _set(db_path: Path, project: str, task_id: str, status: str) -> None:
 
 @pytest.fixture()
 def home(tmp_path: Path, monkeypatch) -> Path:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     open_db(tqconfig.db_path(tmp_path)).close()
     return tmp_path
 
@@ -145,8 +145,8 @@ def test_not_found_and_disabled(home: Path) -> None:
 
 def test_removed_mid_wait_settles_as_removed(home: Path) -> None:
     """Task visible then deleted → status removed / exit 1, not not_found / exit 3."""
-    from taskqueue.db import remove_task
-    from taskqueue.waiting import REMOVED_ERROR, REMOVED_STATUS
+    from tqdaemon.db import remove_task
+    from tqdaemon.waiting import REMOVED_ERROR, REMOVED_STATUS
 
     db = tqconfig.db_path(home)
     c = open_db(db)
@@ -171,7 +171,7 @@ def test_removed_mid_wait_settles_as_removed(home: Path) -> None:
 
 
 def test_removed_among_pending_does_not_abort_all(home: Path) -> None:
-    from taskqueue.db import remove_task
+    from tqdaemon.db import remove_task
 
     db = tqconfig.db_path(home)
     c = open_db(db)

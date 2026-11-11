@@ -53,9 +53,9 @@ r.text = [
     )
     assert out["kinds"] == ["ok", "attn", "bad", "bad", "ok", "attn", "attn", "attn"]
     assert out["text"] == [
-        "Stopped — host RAM hard limit",
+        "errlabel.tq.stop.ram",
         "custom reason",
-        "Stopped — host RAM hard limit",
+        "errlabel.tq.stop.ram",
         "tq.raw",
         "tq.unknown",
         "",
@@ -76,7 +76,7 @@ r.noText = g.waitReasonHtml({ status: 'failed', last_error_code: '', block_reaso
     )
     assert out["running"] == "" and out["empty"] == "" and out["noText"] == ""
     assert "wait-ok" in out["suspended"] and "task.suspendedCooperative" in out["suspended"]
-    assert "wait-ok" in out["ok"] and "Waiting on resources" in out["ok"] and 'title="tq.block.resources"' in out["ok"]
+    assert "wait-ok" in out["ok"] and "errlabel.tq.block.resources" in out["ok"] and 'title="tq.block.resources"' in out["ok"]
     assert (
         "wait-bad" in out["bad"] and "dead dependency &lt;x&gt;" in out["bad"] and "tq.block.deps — dead" in out["bad"]
     )

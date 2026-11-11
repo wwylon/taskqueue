@@ -75,7 +75,7 @@ g.sessionStorage.setItem('tq_spark_hist', JSON.stringify({
 }));
 const r = {};
 const { pathToFileURL } = await import('node:url');
-const fresh = await import(pathToFileURL(process.cwd() + '/taskqueue/static/js/components/sparks.js').href + '?fresh');   // module-local state starts unloaded
+const fresh = await import(pathToFileURL(process.cwd() + '/tqdaemon/static/js/components/sparks.js').href + '?fresh');   // module-local state starts unloaded
 g._computeGaugeModel = () => ({ cpuUsed: 1, gpuUsed: 0, ramUsed: 7 });
 S.status = { running: [], queued_count: 0, daemon_rss_mb: 1 };
 fresh.tqRecordSparks();                                 // loads saved history, then appends a live sample

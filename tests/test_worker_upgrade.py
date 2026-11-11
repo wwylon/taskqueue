@@ -7,7 +7,7 @@ import io
 import subprocess
 from pathlib import Path
 
-from taskqueue import worker
+from tqdaemon import worker
 
 
 class _Resp(io.BytesIO):
@@ -52,7 +52,7 @@ def test_upgrade_aborts_on_hash_mismatch_and_while_busy(tmp_path: Path, monkeypa
 def test_journal_recovery_queues_finalize_for_unfinished_runs(tmp_path: Path) -> None:
     import json
 
-    from taskqueue.worker_journal import append_entry, journal_path
+    from tqdaemon.worker_journal import append_entry, journal_path
 
     append_entry(tmp_path, 5, {"t": "claim", "run_id": 5})
     append_entry(tmp_path, 5, {"t": "exit", "code": 0})  # exited, finalize never sent

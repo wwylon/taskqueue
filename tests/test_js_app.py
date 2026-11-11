@@ -16,7 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 STUB_URL = (ROOT / "tests" / "js_dom_stub.mjs").as_uri()
-LOGPANEL_URL = (ROOT / "taskqueue" / "static" / "js" / "components" / "logpanel.js").as_uri()
+LOGPANEL_URL = (ROOT / "tqdaemon" / "static" / "js" / "components" / "logpanel.js").as_uri()
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 
@@ -54,14 +54,16 @@ console.log('RESULT:' + JSON.stringify({ a, b }));
 def test_ui_deep_link_boot_popstate_and_sync():
     out = run_js(
         """
-const { g, doc, S } = await setup({ app: true, url: 'http://localhost:8765/?page=history&project=p1&q=hello&group=g1&bogus=1' });
+const { g, doc, S } = await setup({ app: true, url: 'http://localhost:8765/?page=history&project=p1&q=hello&group=g1&set=games%2Fcard&bogus=1' });
 await g.flush();
 const active = () => (doc.querySelector('.page.active') || {}).id;
 const r = {};
-r.boot = { page: active(), project: S.selectedProject, group: S.groupFilter, q: doc.getElementById('queue-search').value };
+r.boot = { page: active(), project: S.selectedProject, group: S.groupFilter, set: S.setFilter, q: doc.getElementById('queue-search').value };
 r.read = {
   alias: g._readUiUrl('?tab=audit'), badTab: g._readUiUrl('?page=nope'), emptyQ: g._readUiUrl('?q='),
   docs: g._readUiUrl('?page=docs&doc=d&section=s'),
+  set: g._readUiUrl('?set=games%2Fcard'),
+  projects: g._readUiUrl('?projects=pokerbot,whist'),
 };
 const tabs = g.UI_TABS;
 r.tabs = tabs.length;
@@ -73,7 +75,7 @@ const before = g.history.pushed.length + g.history.replaced.length;
 g.location.search = '?page=alerts&project=zz';
 g.dispatchWinEvent({ type: 'popstate' });
 await g.flush();
-r.pop = { page: active(), project: S.selectedProject, group: S.groupFilter, q: doc.getElementById('queue-search').value,
+r.pop = { page: active(), project: S.selectedProject, group: S.groupFilter, set: S.setFilter, q: doc.getElementById('queue-search').value,
           applying: S.applyingUrl, wrote: g.history.pushed.length + g.history.replaced.length - before };
 // docs doc/section are part of the shareable URL only on the docs tab
 g._activateTabFromUrl('docs'); S.docsCurrentId = 'd1'; S.docsSectionId = 's1';
@@ -91,14 +93,16 @@ r.applyingSkips = g.history.pushed.length + g.history.replaced.length === n1;
 console.log('RESULT:' + JSON.stringify(r));
 """
     )
-    assert out["boot"] == {"page": "history", "project": "p1", "group": "g1", "q": "hello"}
+    assert out["boot"] == {"page": "history", "project": "p1", "group": "g1", "set": "games/card", "q": "hello"}
     assert out["read"]["alias"] == {"tab": "audit"}
     assert out["read"]["badTab"] == {}
     assert out["read"]["emptyQ"] == {"q": ""}
     assert out["read"]["docs"] == {"tab": "docs", "doc": "d", "section": "s"}
+    assert out["read"]["set"] == {"set": "games/card"}
+    assert out["read"]["projects"] == {"projects": ["pokerbot", "whist"]}
     assert out["tabs"] == 15 and out["missingNav"] == [] and out["missingPage"] == []
     assert out["hasDocsJump"] == "function"
-    assert out["pop"] == {"page": "alerts", "project": "zz", "group": None, "q": "", "applying": False, "wrote": 0}
+    assert out["pop"] == {"page": "alerts", "project": "zz", "group": None, "set": None, "q": "", "applying": False, "wrote": 0}
     assert len(out["sync"]["pushed"]) == 1
     p = out["sync"]["pushed"][0]
     assert "page=docs" in p and "doc=d1" in p and "section=s1" in p

@@ -8,16 +8,16 @@ from pathlib import Path
 import psutil
 import yaml
 
-from taskqueue._db_tasks import get_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.runner import ActiveRun
+from tqdaemon._db_tasks import get_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.runner import ActiveRun
 
 
 def test_failed_start_after_spawn_kills_child(tmp_path: Path, monkeypatch) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     db = open_db(home / "queue.db")
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")
     script = tmp_path / "sleeper.py"
@@ -36,7 +36,7 @@ def test_failed_start_after_spawn_kills_child(tmp_path: Path, monkeypatch) -> No
     def boom(*a, **k):
         raise RuntimeError("post-spawn failure")
 
-    monkeypatch.setattr("taskqueue.db.set_run_pid", boom)
+    monkeypatch.setattr("tqdaemon.db.set_run_pid", boom)
     err = run.start(use_resume=False)
     assert err and "post-spawn failure" in err
     assert run.proc is not None

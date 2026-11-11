@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_tasks import bulk_prior_run_seconds, prior_run_seconds
-from taskqueue.db import open_db
-from taskqueue.web.responses import _get_queue_response, format_server_timing
+from tqdaemon._db_tasks import bulk_prior_run_seconds, prior_run_seconds
+from tqdaemon.db import open_db
+from tqdaemon.web.responses import _get_queue_response, format_server_timing
 
 
 def test_format_server_timing():

@@ -4,7 +4,7 @@ import os
 import time
 from datetime import UTC, datetime, timedelta
 
-from taskqueue._cli_prune import (
+from tqdaemon._cli_prune import (
     _per_project_retention,
     cap_finished_logs,
     prune_audit,
@@ -13,7 +13,7 @@ from taskqueue._cli_prune import (
     rotate_logs,
     run_maintenance,
 )
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 UTC = UTC
 
@@ -113,8 +113,8 @@ def test_run_maintenance_end_to_end(tmp_path):
 
 
 def test_cmd_prune_keeps_each_tasks_latest_log(tmp_path):
-    from taskqueue._cli_prune import cmd_prune
-    from taskqueue.config import db_path
+    from tqdaemon._cli_prune import cmd_prune
+    from tqdaemon.config import db_path
 
     db = open_db(db_path(tmp_path))
     logs = tmp_path / "logs" / "p"
@@ -185,8 +185,8 @@ def test_cap_off_when_max_bytes_zero(tmp_path):
 
 
 def test_worker_remove_reports_unknown_worker(tmp_path, capsys):
-    from taskqueue._cli_worker import cmd_worker_remove
-    from taskqueue.config import db_path
+    from tqdaemon._cli_worker import cmd_worker_remove
+    from tqdaemon.config import db_path
 
     open_db(db_path(tmp_path)).close()
     assert cmd_worker_remove(tmp_path, "ghost") == 1

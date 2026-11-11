@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from taskqueue.config import Project
-from taskqueue.db import get_task, open_db
-from taskqueue.scheduler import _local_admit_queued
+from tqdaemon.config import Project
+from tqdaemon.db import get_task, open_db
+from tqdaemon.scheduler import _local_admit_queued
 
 
 def test_running_task_charged_by_estimate_against_global_ram(tmp_path) -> None:
@@ -63,7 +63,7 @@ def test_max_attempts_exhausted_tasks_marked_failed_in_one_pass(tmp_path) -> Non
 
 def test_local_admit_considers_stopped_tasks(tmp_path, monkeypatch) -> None:
     """F-233: auto-restartable ``stopped`` tasks are local admit candidates (lost in F-214)."""
-    from taskqueue import scheduler
+    from tqdaemon import scheduler
 
     conn = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -84,7 +84,7 @@ def test_local_admit_considers_stopped_tasks(tmp_path, monkeypatch) -> None:
     system = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
     cfg = {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100, "ram_hard_limit_pct": 100}
     monkeypatch.setattr(scheduler, "ram_used_gib", lambda: 1.0)
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 1.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 1.0)
     _local_admit_queued(conn, tmp_path, projects, {}, system, cfg, 30, False)
     assert started == [("p", "evicted")]
 
@@ -93,7 +93,7 @@ def test_local_admit_respects_lock_within_one_pass(tmp_path, monkeypatch) -> Non
     """Wave 4.7: filter_mutex (live occ.running_locks) alone keeps a lock exclusive in one pass."""
     import json
 
-    from taskqueue import scheduler
+    from tqdaemon import scheduler
 
     conn = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -110,7 +110,7 @@ def test_local_admit_respects_lock_within_one_pass(tmp_path, monkeypatch) -> Non
         "_start_local_run",
         lambda c, h, p, row, key, r, g: started.append(key) or SimpleNamespace(run_id=None),
     )
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 1.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 1.0)
     monkeypatch.setattr(scheduler, "ram_used_gib", lambda: 1.0)
     projects = {"p": Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")}
     system = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}

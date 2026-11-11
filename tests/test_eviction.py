@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from taskqueue.daemon import _evict_one_suspend
-from taskqueue.db import open_db
+from tqdaemon.daemon import _evict_one_suspend
+from tqdaemon.db import open_db
 
 
 def _seed_running(db, project="proj", task_id="T1", priority=50):

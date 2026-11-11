@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.diagnose import _tail_log
-from taskqueue.logio import (
+from tqdaemon.diagnose import _tail_log
+from tqdaemon.logio import (
     DEFAULT_LOG_TAIL_BYTES,
     MAX_LOG_TAIL_BYTES,
     clamp_tail_bytes,

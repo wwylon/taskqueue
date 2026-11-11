@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server
-from taskqueue import usage_track as ut
-from taskqueue.db import open_db, set_config
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server
+from tqdaemon import usage_track as ut
+from tqdaemon.db import open_db, set_config
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def test_http_requests_are_counted_with_identity(tmp_path: Path) -> None:
 
 
 def test_mcp_calls_are_counted_without_arguments(tmp_path: Path, monkeypatch, capsys) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     db = open_db(tqconfig.db_path(tmp_path))
     mcp_server._CLIENT_INFO["name"] = "mcp/cursor 1.0"
     mcp_server._run_tool_call(tmp_path, 1, {"name": "queue_status", "arguments": {"project": "p"}})
@@ -140,7 +140,7 @@ def test_prune_honours_retention(tmp_path: Path) -> None:
 
 
 def test_cli_invocations_are_counted(tmp_path: Path, monkeypatch) -> None:
-    from taskqueue import cli
+    from tqdaemon import cli
 
     monkeypatch.setenv("TQ_OPERATOR", "ada")
     db = open_db(tqconfig.db_path(tmp_path))
@@ -155,8 +155,8 @@ def test_cli_invocations_are_counted(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_cli_wait_project_and_outcome_codes(tmp_path: Path) -> None:
-    from taskqueue import cli
-    from taskqueue.agent_stats import usage_by
+    from tqdaemon import cli
+    from tqdaemon.agent_stats import usage_by
 
     db = open_db(tqconfig.db_path(tmp_path))
     cli._record_cli_call(tmp_path, "wait", ["p/a", "p/b", "--timeout", "60"], 0.0, 0)
@@ -182,7 +182,7 @@ def test_cli_wait_project_and_outcome_codes(tmp_path: Path) -> None:
 
 def test_usage_avg_ms_excludes_wait_outcomes(tmp_path: Path) -> None:
     """Long wait polls must not inflate channel-level avg_ms / max_ms (notice latency)."""
-    from taskqueue.agent_stats import usage_by
+    from tqdaemon.agent_stats import usage_by
 
     db = open_db(tmp_path / "q.db")
     # Fast CLI call + a 60s wait.timeout in the same channel bucket.

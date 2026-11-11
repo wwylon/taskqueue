@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.yaml_patch import patch_task_yaml
+from tqdaemon.yaml_patch import patch_task_yaml
 
 
 def test_yaml_patch_rejects_newlines_and_bad_types(tmp_path: Path) -> None:

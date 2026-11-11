@@ -1,4 +1,4 @@
-from taskqueue import resources
+from tqdaemon import resources
 
 
 def test_raw_probe_does_not_poison_shared_cache() -> None:

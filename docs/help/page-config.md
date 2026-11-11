@@ -12,4 +12,6 @@ guide_anchors:
 
 Per-project rows set max concurrent tasks, **min tasks** (slots held back from other projects while this project has queued work and fewer running; only meaningful with a global `max_running_tasks`; `force` bypasses), and RAM/VRAM caps. Changes apply on save; running tasks are not restarted automatically.
 
+**Projects & sets** edits set-level limit defaults (inherited by members) and per-project overrides, plus set membership / rename. Distinct from task YAML `group:` — see [Project sets](project-sets.md).
+
 See [scheduler.md](/docs/scheduler) for how admission uses these limits.

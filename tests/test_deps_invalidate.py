@@ -6,15 +6,15 @@ import json
 import sqlite3
 from pathlib import Path
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import (
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import (
     collect_running_dependents,
     invalidate_running_dependents,
     retry_task,
     revalidate_running_dependencies,
     unmet_dependency_label,
 )
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 
 def _open(tmp_path: Path) -> sqlite3.Connection:

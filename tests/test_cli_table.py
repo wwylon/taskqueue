@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from taskqueue import cli
-from taskqueue.cli_table import build_table, completion_script
+from tqdaemon import cli
+from tqdaemon.cli_table import build_table, completion_script
 
 
 def test_every_command_has_a_spec_and_most_have_usage():

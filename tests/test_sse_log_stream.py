@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_runs import insert_run
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+from tqdaemon._db_runs import insert_run
 
 
 def _slots(handler_cls) -> int:
@@ -82,7 +82,7 @@ def test_quiet_running_stream_sends_keepalive_and_frees_slot_when_client_is_gone
     """A quiet log on a live run sends `: ka` comments; a dead socket ends the stream and frees the slot."""
     import io
 
-    from taskqueue.web import sse
+    from tqdaemon.web import sse
 
     H, db, _ = make_handler_env(tmp_path)
     log = tmp_path / "run.log"

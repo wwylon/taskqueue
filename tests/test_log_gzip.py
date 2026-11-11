@@ -7,9 +7,9 @@ import os
 import time
 from pathlib import Path
 
-from taskqueue._cli_prune import compress_finished_logs, prune_logs
-from taskqueue.logio import compress_log, gz_path, read_log_tail, readable_log, tail_log_lines
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon._cli_prune import compress_finished_logs, prune_logs
+from tqdaemon.logio import compress_log, gz_path, read_log_tail, readable_log, tail_log_lines
 
 TEXT = "".join(f"line {i} epoch loss {i / 7:.4f}\n" for i in range(2000))
 

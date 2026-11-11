@@ -6,6 +6,18 @@ this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-11
+
+### Changed
+
+- **Renamed the project from `taskqueue` to `tqdaemon`** (PyPI distribution `tqdaemon`; `taskqueue`, `tq` and `task-queue` were taken). The `tq` command is unchanged; the Python package is now `tqdaemon`.
+- New names: `TQDAEMON_HOME` (env), `~/.tqdaemon` (state home), `.tqdaemon/project.yaml` (per-project config), MCP server name `tqdaemon`.
+- Migration: the old env var `TASKQUEUE_HOME`, an existing `~/.taskqueue` home, `.taskqueue/project.yaml` and runs started under the old wrapper module are still recognised. To migrate by hand: stop the daemon, rename `~/.taskqueue` to `~/.tqdaemon`, reinstall (`pip install -U tqdaemon`), `tq start`.
+
+### Added
+
+- Automated demo GIF (`scripts/record_demo.py`), issue/PR templates and Dependabot config; PyPI publishing wired into the house publish flow.
+
 ## [0.7.6] - 2026-11-08
 
 ### Added

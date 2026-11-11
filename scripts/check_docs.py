@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from taskqueue.docs_loader import (  # noqa: E402
+from tqdaemon.docs_loader import (  # noqa: E402
     load_manifest,
     static_dir,
     validate_manifest,
 )
 
-LOCALES = ROOT / "taskqueue" / "static" / "locales"
+LOCALES = ROOT / "tqdaemon" / "static" / "locales"
 
 # Ratchet: `tq` subcommands that predate the README-coverage check. Do not add to this
 # list -- document new commands in README.md instead.
@@ -49,7 +49,7 @@ def load_surface_map() -> dict:
 
 def check_surface_documented() -> list[str]:
     """Every live MCP tool and CLI command has a capability-map entry."""
-    from taskqueue import cli, mcp_server
+    from tqdaemon import cli, mcp_server
 
     errors: list[str] = []
     mcp_doc = (ROOT / "docs" / "mcp.md").read_text(encoding="utf-8")
@@ -86,9 +86,9 @@ def main() -> int:
     if not SURFACE_MAP.is_file():
         errors.append("missing docs/surface_map.json")
     if not bundle.is_file():
-        errors.append("missing taskqueue/static/help-bundle.en.json — run scripts/build_docs.py")
+        errors.append("missing tqdaemon/static/help-bundle.en.json — run scripts/build_docs.py")
     if not labels.is_file():
-        errors.append("missing taskqueue/static/error_labels.json — run scripts/build_docs.py")
+        errors.append("missing tqdaemon/static/error_labels.json — run scripts/build_docs.py")
 
     if errors:
         for e in errors:

@@ -9,8 +9,8 @@ from datetime import UTC, datetime, timedelta
 from http.client import parse_headers
 from pathlib import Path
 
-from taskqueue.db import open_db, set_config, set_project_limit
-from taskqueue.operator_features import (
+from tqdaemon.db import open_db, set_config, set_project_limit
+from tqdaemon.operator_features import (
     create_alert,
     evaluate_alerts,
     next_cron_fire,
@@ -18,12 +18,12 @@ from taskqueue.operator_features import (
     timeline,
     update_alert,
 )
-from taskqueue.timeline_forecast import (
+from tqdaemon.timeline_forecast import (
     build_duration_index,
     estimate_duration_sec,
     tasks_similar,
 )
-from taskqueue.web import make_handler
+from tqdaemon.web import make_handler
 
 
 def _make_handler(tmp_path: Path):

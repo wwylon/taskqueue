@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from taskqueue.log_issues import SERIES_MAX_KEYS, SERIES_MAX_POINTS, merge_metrics_payload, record_metric_samples
+from tqdaemon.log_issues import SERIES_MAX_KEYS, SERIES_MAX_POINTS, merge_metrics_payload, record_metric_samples
 
 
 def test_numeric_samples_capped_and_reserved_key_protected():
@@ -22,8 +22,8 @@ def test_numeric_samples_capped_and_reserved_key_protected():
 def test_run_diff_ignores_series(tmp_path):
     import json
 
-    from taskqueue.db import open_db
-    from taskqueue.operator_features import diff_runs
+    from tqdaemon.db import open_db
+    from tqdaemon.operator_features import diff_runs
 
     db = open_db(tmp_path / "q.db")
     for mj in ({"loss": 0.1, "_series": {"loss": [[1, 0.2]]}}, {"loss": 0.1, "_series": {"loss": [[5, 0.9]]}}):
@@ -40,10 +40,10 @@ def test_runner_persists_series_from_task_output(tmp_path):
     import json
     import sys
 
-    from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
-    from taskqueue.runner import ActiveRun
     from tests.helpers.wait import wait_until
     from tests.test_queue import _project, _yaml
+    from tqdaemon.db import get_task, open_db, parse_task_yaml, upsert_task
+    from tqdaemon.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)

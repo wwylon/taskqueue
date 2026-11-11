@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_tasks import failed_attempt_count, retry_skip_reason, retry_task
-from taskqueue.db import get_task, open_db, parse_task_yaml, upsert_task
-from taskqueue.notify import list_dead_letters, redact_notify_url
-from taskqueue.scheduler import should_schedule_locally
 from tests.test_queue import _project, _yaml
+from tqdaemon._db_tasks import failed_attempt_count, retry_skip_reason, retry_task
+from tqdaemon.db import get_task, open_db, parse_task_yaml, upsert_task
+from tqdaemon.notify import list_dead_letters, redact_notify_url
+from tqdaemon.scheduler import should_schedule_locally
 
 
 def test_f120_redact_notify_url() -> None:

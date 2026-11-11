@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-APP_JS = Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "app.js"
+APP_JS = Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "app.js"
 
 
 _INLINE = re.compile(

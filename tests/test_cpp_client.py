@@ -48,7 +48,7 @@ def test_progress_range_rejects_temporaries(tmp_path):
 def test_metric_line_is_parsed_by_the_runner(tmp_path):
     import json
 
-    from taskqueue.runner import _TQ_METRIC_RE
+    from tqdaemon.runner import _TQ_METRIC_RE
 
     res, exe = _compile(
         tmp_path, '#include "tq_client.hpp"\nint main(){ tq::metric({{"loss", 0.125}, {"ep\\"och", 3}}); }\n'

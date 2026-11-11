@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue import timeline_forecast as tf
-from taskqueue.db import open_db
 from tests.test_operator_features import _insert_run, _mk_task
+from tqdaemon import timeline_forecast as tf
+from tqdaemon.db import open_db
 
 NOW = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
 

@@ -14,11 +14,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from taskqueue.db import get_config, open_db, set_config
-from taskqueue.export_import import export_home, import_home
-from taskqueue.notify import notify_log_path, notify_task_started
-from taskqueue.resources import sort_queued_fairshare
-from taskqueue.safetar import assert_safe_member
+from tqdaemon.db import get_config, open_db, set_config
+from tqdaemon.export_import import export_home, import_home
+from tqdaemon.notify import notify_log_path, notify_task_started
+from tqdaemon.resources import sort_queued_fairshare
+from tqdaemon.safetar import assert_safe_member
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,7 +138,7 @@ def test_sleep_tier_column_exists(tmp_path):
 
 def test_requeue_orphaned_running_requeues_tier2(tmp_path):
     """requeue_orphaned_running must re-queue a tier-2 run to 'queued'."""
-    from taskqueue.daemon import requeue_orphaned_running
+    from tqdaemon.daemon import requeue_orphaned_running
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -159,7 +159,7 @@ def test_requeue_orphaned_running_requeues_tier2(tmp_path):
     # Patch kill_process_tree so we don't try to reap a phantom PID,
     # and NtResumeProcess so Windows-specific code doesn't fail on Linux/CI.
     # kill_process_tree is imported inside requeue_orphaned_running; patch at source
-    with patch("taskqueue.reap.kill_process_tree", return_value="no-op"):
+    with patch("tqdaemon.reap.kill_process_tree", return_value="no-op"):
         if sys.platform == "win32":
             import ctypes
 
@@ -177,7 +177,7 @@ def test_requeue_orphaned_running_requeues_tier2(tmp_path):
 
 def test_requeue_orphaned_clears_stop_requested(tmp_path):
     """re-queued task must have stop_requested=0 so it isn't immediately re-stopped."""
-    from taskqueue.daemon import requeue_orphaned_running
+    from tqdaemon.daemon import requeue_orphaned_running
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -194,7 +194,7 @@ def test_requeue_orphaned_clears_stop_requested(tmp_path):
     )
     db.commit()
 
-    with patch("taskqueue.reap.kill_process_tree", return_value="no-op"):
+    with patch("tqdaemon.reap.kill_process_tree", return_value="no-op"):
         requeue_orphaned_running(db, reason="test", graceful_sec=0.0)
 
     row = db.execute("SELECT stop_requested FROM tasks WHERE project='p' AND task_id='t1'").fetchone()
@@ -344,8 +344,8 @@ def test_fairshare_halflife_decay_formula():
 
 def test_args_override_cleared_on_args_change(tmp_path):
     """Upserting a task with changed args must clear any stale args_override."""
-    from taskqueue.config import Project
-    from taskqueue.db import parse_task_yaml, upsert_task
+    from tqdaemon.config import Project
+    from tqdaemon.db import parse_task_yaml, upsert_task
 
     proj_root = tmp_path / "proj"
     proj_root.mkdir()
@@ -376,8 +376,8 @@ def test_args_override_cleared_on_args_change(tmp_path):
 
 def test_args_override_preserved_when_args_unchanged(tmp_path):
     """args_override must NOT be cleared when YAML args are unchanged."""
-    from taskqueue.config import Project
-    from taskqueue.db import parse_task_yaml, upsert_task
+    from tqdaemon.config import Project
+    from tqdaemon.db import parse_task_yaml, upsert_task
 
     proj_root = tmp_path / "proj"
     proj_root.mkdir()
@@ -429,7 +429,7 @@ def test_enable_task_yaml_case_insensitive(tmp_path, disabled_val):
 
 def test_task_dict_strip_secrets(tmp_path):
     """_task_dict with strip_secrets=True must omit env, args_override, yaml_source."""
-    from taskqueue.web import _task_dict
+    from tqdaemon.web import _task_dict
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -454,7 +454,7 @@ def test_task_dict_strip_secrets(tmp_path):
 
 def test_task_dict_no_strip_includes_secret_fields(tmp_path):
     """_task_dict without strip_secrets must include env and args_override."""
-    from taskqueue.web import _task_dict
+    from tqdaemon.web import _task_dict
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -675,7 +675,7 @@ def test_csrf_enforced_with_auth_token(tmp_path):
     """Foreign Origin must be rejected even when auth_token is set."""
     import io
 
-    from taskqueue.web import make_handler
+    from tqdaemon.web import make_handler
 
     db = open_db(tmp_path / "q.db")
     set_config(db, "auth_token", "supersecret")

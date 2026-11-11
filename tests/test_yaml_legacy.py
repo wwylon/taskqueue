@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue.config import Project
-from taskqueue.db import parse_task_yaml, parse_task_yaml_many
-from taskqueue.validate import validate_file, validate_home
-from taskqueue.yaml_legacy import (
+from tqdaemon.config import Project
+from tqdaemon.db import parse_task_yaml, parse_task_yaml_many
+from tqdaemon.validate import validate_file, validate_home
+from tqdaemon.yaml_legacy import (
     LEGACY_KEY_HINTS,
     fix_legacy_keys,
     fix_legacy_yaml_file,
@@ -168,7 +168,7 @@ def test_validate_fix_rewrites_then_ok(tmp_path: Path, monkeypatch) -> None:
         yaml.dump({"projects": {"demo": {"root": str(root)}}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     report = validate_home(home, fix=True)
     assert report["valid"]
     assert report["ok"] >= 1
@@ -201,7 +201,7 @@ def test_validate_file_fix_mismatched_project(tmp_path: Path, monkeypatch) -> No
         yaml.dump({"projects": {"demo": {"root": str(root)}}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     report = validate_file(path, home, fix=True)
     assert not report["valid"]
     assert any("does not match" in e["error"] for e in report["errors"])

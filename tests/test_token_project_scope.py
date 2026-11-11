@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db, set_config
-from taskqueue.operator_features import create_token, list_tokens
-from taskqueue.web import make_handler
-from taskqueue.web.api_docs import _API_REGISTRY, _register_api_docs
 from tests.test_web_routes import _make_request
+from tqdaemon.db import open_db, set_config
+from tqdaemon.operator_features import create_token, list_tokens
+from tqdaemon.web import make_handler
+from tqdaemon.web.api_docs import _API_REGISTRY, _register_api_docs
 
 _ALLOWED_GET = ("/api/queue", "/api/history", "/api/audit")
 
@@ -88,8 +88,8 @@ def test_unparseable_stored_list_fails_closed(env):
 
 def test_resolve_access_with_projects_single_query(tmp_path):
     """F-230: scope, via and the project allowlist come from one api_tokens read."""
-    from taskqueue.db import open_db
-    from taskqueue.operator_features import create_token, resolve_access_with_projects
+    from tqdaemon.db import open_db
+    from tqdaemon.operator_features import create_token, resolve_access_with_projects
 
     db = open_db(tmp_path / "q.db")
     cfg = {"auth_token": "legacy-secret"}

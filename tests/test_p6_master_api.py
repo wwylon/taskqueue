@@ -7,11 +7,11 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import upsert_task
-from taskqueue.config import Project
-from taskqueue.db import parse_task_yaml
-from taskqueue.master_client import via_master
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon._db_tasks import upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import parse_task_yaml
+from tqdaemon.master_client import via_master
 
 
 def test_via_master_none_when_unreachable(tmp_path: Path, monkeypatch) -> None:
@@ -32,7 +32,7 @@ def test_via_master_forwards_timeout(tmp_path: Path, monkeypatch) -> None:
         return {"ok": True}
 
     monkeypatch.setenv("TQ_MASTER", "http://127.0.0.1:9")
-    monkeypatch.setattr("taskqueue.master_client.api_request", _fake_api)
+    monkeypatch.setattr("tqdaemon.master_client.api_request", _fake_api)
     assert via_master(tmp_path, "POST", "/api/cli/sync", timeout=123.0) == {"ok": True}
     assert captured["timeout"] == 123.0
 

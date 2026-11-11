@@ -20,8 +20,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
-from taskqueue.config import db_path, state_home
-from taskqueue.db import open_db
+from tqdaemon.config import db_path, state_home
+from tqdaemon.db import open_db
 
 # Realistic historical snapshot. All enabled=0 — the daemon never runs these.
 # "running" is intentionally excluded: the daemon's zombie detector flips any

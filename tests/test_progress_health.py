@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from taskqueue.log_issues import merge_metrics_payload, note_progress, progress_health
+from tqdaemon.log_issues import merge_metrics_payload, note_progress, progress_health
 
 
 def test_note_progress_tracks_interval_and_rate():
@@ -31,8 +31,8 @@ def test_reserved_progress_key_cannot_be_set_by_task():
 def test_tq_status_shows_last_progress_and_stall_flag(tmp_path, capsys):
     import time
 
-    from taskqueue._cli_admin import cmd_status
-    from taskqueue.db import open_db
+    from tqdaemon._cli_admin import cmd_status
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "queue.db")
     now = time.time()
@@ -60,7 +60,7 @@ def test_tq_status_shows_last_progress_and_stall_flag(tmp_path, capsys):
 
 
 def test_worker_chunk_records_metrics_series_and_progress_timing():
-    from taskqueue.log_issues import apply_worker_chunk
+    from tqdaemon.log_issues import apply_worker_chunk
 
     lines = ["(10.0%) start", 'TQ_METRIC {"loss": 0.5, "_series": "x"}', "plain line"]
     raw = apply_worker_chunk(None, lines, None, 1000.0)
@@ -76,8 +76,8 @@ def test_worker_chunk_records_metrics_series_and_progress_timing():
 def test_status_payload_carries_progress_health_for_remote_runs(tmp_path):
     import time
 
-    from taskqueue._db_runs import insert_run
     from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+    from tqdaemon._db_runs import insert_run
 
     H, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, project="p", task_id="t", dispatch="remote")

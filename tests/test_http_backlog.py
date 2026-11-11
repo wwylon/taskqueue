@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import socket
 
-from taskqueue.web.responses import BoundedThreadingHTTPServer
+from tqdaemon.web.responses import BoundedThreadingHTTPServer
 
 
 def test_burst_of_connections_queues_instead_of_being_refused(tmp_path):

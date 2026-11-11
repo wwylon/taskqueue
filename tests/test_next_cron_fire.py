@@ -2,8 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from taskqueue.cron import cron_matches
-from taskqueue.timeline_forecast import _next_cron_fire
+from tqdaemon.cron import cron_matches
+from tqdaemon.timeline_forecast import _next_cron_fire
 
 
 def _brute(expr, now, hours):

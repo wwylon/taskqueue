@@ -7,11 +7,11 @@ import threading
 import time
 from pathlib import Path
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server
-from taskqueue._db_tasks import stamp_provenance
-from taskqueue.db import open_db
-from taskqueue.notify import (
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server
+from tqdaemon._db_tasks import stamp_provenance
+from tqdaemon.db import open_db
+from tqdaemon.notify import (
     append_notify_event,
     drain_notifications,
     emit_task_notify,
@@ -118,7 +118,7 @@ def test_drain_wait_sec_long_polls(tmp_path: Path) -> None:
 
 
 def test_mcp_piggybacks_finished_tasks(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     monkeypatch.setenv("TQ_OPERATOR", "ada")
     open_db(tqconfig.db_path(tmp_path)).close()
     monkeypatch.setitem(mcp_server._PIGGY, "ts", None)

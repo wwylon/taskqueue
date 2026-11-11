@@ -10,10 +10,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.estimate import estimate_task_resources, predict_task_resources
-from taskqueue.resources import ResourceBudget
-from taskqueue.victim import pick_victim, score_victim
+from tqdaemon.db import open_db
+from tqdaemon.estimate import estimate_task_resources, predict_task_resources
+from tqdaemon.resources import ResourceBudget
+from tqdaemon.victim import pick_victim, score_victim
 
 
 def _budget(*, used: float, total: float = 64.0, soft: int = 80, hard: int = 95) -> ResourceBudget:
@@ -195,7 +195,7 @@ def test_group_prediction_fallback(tmp_path: Path) -> None:
 
 
 def test_fails_closed_when_ram_unreadable(monkeypatch) -> None:
-    import taskqueue.resources as R
+    import tqdaemon.resources as R
 
     def _boom() -> float:
         raise RuntimeError("psutil exploded")

@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.log_issues import (
+from tqdaemon.log_issues import (
     apply_log_lines_to_metrics,
     apply_log_lines_to_metrics_json,
     classify_log_line,
     format_log_counts,
     merge_metrics_payload,
 )
-from taskqueue.resources import (
+from tqdaemon.resources import (
     attributed_gpu_pids,
     attributed_vram_gib,
     sidecar_name_hints,
@@ -135,9 +135,9 @@ def test_apply_log_lines_preserves_task_metrics() -> None:
 def test_build_run_metrics_requires_gpu_and_log(tmp_path: Path) -> None:
     import time
 
-    from taskqueue.db import open_db
-    from taskqueue.metrics_snapshot import build_run_metrics
     from tests.helpers.master_worker import seed_queued_task
+    from tqdaemon.db import open_db
+    from tqdaemon.metrics_snapshot import build_run_metrics
 
     db = open_db(tmp_path / "q.db")
     seed_queued_task(

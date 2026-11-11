@@ -8,12 +8,12 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import claim_and_insert_local_run, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.notify import iter_notify_events
-from taskqueue.queries import DEAD_DEP_STATUSES
-from taskqueue.scheduler import FilterContext, filter_deps
+from tqdaemon._db_tasks import claim_and_insert_local_run, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.notify import iter_notify_events
+from tqdaemon.queries import DEAD_DEP_STATUSES
+from tqdaemon.scheduler import FilterContext, filter_deps
 
 
 def _project(name: str, root: Path) -> Project:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_runs import finalize_run_and_task, insert_run
-from taskqueue.db import open_db
+from tqdaemon._db_runs import finalize_run_and_task, insert_run
+from tqdaemon.db import open_db
 
 
 def _running(conn, tid: str, **cols) -> int:

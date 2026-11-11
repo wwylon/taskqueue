@@ -5,16 +5,16 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue import errors as tqerr
-from taskqueue._db_runs import insert_run
-from taskqueue._db_tasks import get_task, set_task_status, upsert_task
-from taskqueue.daemon import _count_recent_clock_jump_runs, is_clock_jump, requeue_orphaned_running
-from taskqueue.db import open_db, parse_task_yaml, set_config
-from taskqueue.models import STATUS_INTERRUPTED, STATUS_QUEUED, STATUS_RUNNING
+from tqdaemon import errors as tqerr
+from tqdaemon._db_runs import insert_run
+from tqdaemon._db_tasks import get_task, set_task_status, upsert_task
+from tqdaemon.daemon import _count_recent_clock_jump_runs, is_clock_jump, requeue_orphaned_running
+from tqdaemon.db import open_db, parse_task_yaml, set_config
+from tqdaemon.models import STATUS_INTERRUPTED, STATUS_QUEUED, STATUS_RUNNING
 
 
 def _project(name: str, tmp_path: Path):
-    from taskqueue.config import Project
+    from tqdaemon.config import Project
 
     root = tmp_path / name
     root.mkdir()

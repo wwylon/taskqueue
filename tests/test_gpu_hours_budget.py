@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from taskqueue.db import get_project_limits, gpu_hours_today, set_project_limit, with_gpu_usage
-from taskqueue.scheduler import FilterContext, filter_project_limits
 from tests.helpers.master_worker import make_handler_env
+from tqdaemon.db import get_project_limits, gpu_hours_today, set_project_limit, with_gpu_usage
+from tqdaemon.scheduler import FilterContext, filter_project_limits
 
 
 def _task(db, tid, gpu):

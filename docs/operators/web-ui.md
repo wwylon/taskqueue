@@ -30,6 +30,8 @@ Below 768px the rail is icon-only. Labels return when the window is wider.
 
 {{topic:groups}}
 
+{{topic:project-sets}}
+
 {{topic:page-deps}}
 
 {{topic:dependencies}}
@@ -62,7 +64,7 @@ The UI registers a service worker (`/sw.js`, served by the daemon with a cache v
 
 ## Contributing to the UI scripts
 
-`taskqueue/static/js/main.js` is the ES-module entry and UI boot (`tqBootApp`). It imports modules under `js/`, exposes helpers as `window.*` shims for templates/`data-click`, registers delegated actions, and boots the shell. Shared UI state lives in `js/core/state.js` (`S` / `window.tqState`). Legacy `/static/app.js` is an empty shim for old caches only.
+`tqdaemon/static/js/main.js` is the ES-module entry and UI boot (`tqBootApp`). It imports modules under `js/`, exposes helpers as `window.*` shims for templates/`data-click`, registers delegated actions, and boots the shell. Shared UI state lives in `js/core/state.js` (`S` / `window.tqState`). Legacy `/static/app.js` is an empty shim for old caches only.
 
 - `core/api.js` (fetch and SSE helpers), `core/state.js`, `core/actions.js` (event delegation), `util/format.js` (escaping and formatting), `components/logview.js` and `components/logpanel.js` (log rendering, search, run-log toggles). Other components: `components/modals.js` (generic/YAML/metrics modals and toasts), `components/notifications.js` (bell and alert panel), `components/prefs.js` (theme, font, language popup) `components/drawer.js` (task drawer), `components/sparks.js` (gauge sparklines) `components/taskactions.js` (stop/retry/force/priority, project freeze/stop-all, worker sync), `components/cfgmodal.js` (config modal and the `_sendJson`/`_postJson` helpers), `components/queuefilters.js` (saved filters, selection, bulk actions, export) `components/shortcuts.js` (keyboard shortcuts) `components/mobpicker.js` (mobile task picker), `components/filterbars.js` (project/worker selects, chips, broken-deps banner), `components/runmetrics.js` (running-task metrics and live dashboard patching), `components/fitsnow.js` (dashboard "Fits now" strip from `/api/plan`), `components/runlogs.js` (per-run log plumbing and history toggles) and `components/logdock.js` (bottom log dock). `util/labels.js` holds badges, wait/error labels and resource tags. `core/loader.js` holds the tab loader, `tqLoop` and `tqBusy`; `core/nav.js` holds tab switching and queue jumps. `core/url.js` holds URL state and project selection; `core/refresh.js` holds the refresh cycle, health/offline indicators and SSE live updates.
 - `views/*.js` hold one tab each: queue, dashboard, history, usage, audit, tokens, schedule, alerts, deps, groups, resources, timeline, taskstats and docs (`views/docs.js` also holds the built-in help drawer). Views call shared helpers (`i18n`, `badge`, `refresh`, …) by global name at call time when not imported.

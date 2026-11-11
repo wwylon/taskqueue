@@ -5,16 +5,16 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 
 def _home_with_lease(tmp_path: Path, monkeypatch) -> Path:
-    from taskqueue import _cli_helpers as h
+    from tqdaemon import _cli_helpers as h
 
     home = tmp_path / "home"
     home.mkdir()
     db_path = home / "queue.db"
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     monkeypatch.delenv("TQ_MASTER", raising=False)
     monkeypatch.setattr(h, "_db", lambda _home: db_path)
     monkeypatch.setattr(h, "_daemon_running", lambda _home: None)
@@ -29,11 +29,11 @@ def _home_with_lease(tmp_path: Path, monkeypatch) -> Path:
 
 
 def test_f245_stop_op_blocked_when_lease_held(tmp_path: Path, monkeypatch):
-    from taskqueue.mutations import stop_op
+    from tqdaemon.mutations import stop_op
 
     home = _home_with_lease(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "taskqueue.master_client.via_master",
+        "tqdaemon.master_client.via_master",
         lambda *a, **k: None,
     )
     resp = stop_op(home, "proj", "T1")
@@ -43,17 +43,17 @@ def test_f245_stop_op_blocked_when_lease_held(tmp_path: Path, monkeypatch):
 
 
 def test_f246_stop_op_offline_queued_to_interrupted(tmp_path: Path, monkeypatch):
-    from taskqueue import _cli_helpers as h
-    from taskqueue.mutations import stop_op
+    from tqdaemon import _cli_helpers as h
+    from tqdaemon.mutations import stop_op
 
     home = tmp_path / "home"
     home.mkdir()
     db_path = home / "queue.db"
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     monkeypatch.delenv("TQ_MASTER", raising=False)
     monkeypatch.setattr(h, "_db", lambda _home: db_path)
     monkeypatch.setattr(h, "_daemon_running", lambda _home: None)
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
 
     db = open_db(db_path)
     now = "2026-11-07T00:00:00+00:00"

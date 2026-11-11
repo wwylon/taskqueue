@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from taskqueue import sse_ticket
-from taskqueue.operator_features import project_scope_allows, scope_allows
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import sse_ticket
+from tqdaemon.operator_features import project_scope_allows, scope_allows
 
 
 def test_ticket_roundtrip_and_expiry(monkeypatch):

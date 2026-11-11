@@ -1,9 +1,9 @@
-"""Admission dry-run (taskqueue.plan / GET /api/plan)."""
+"""Admission dry-run (tqdaemon.plan / GET /api/plan)."""
 
 from __future__ import annotations
 
-from taskqueue.plan import build_plan
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon.plan import build_plan
 
 SYSTEM = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
 CFG = {"cpu_limit_pct": 100, "ram_limit_pct": 100}
@@ -21,7 +21,7 @@ def _add(db, tid, *, prio=0, ram=1.0, status="queued", deps="[]"):
 
 def test_plan_orders_and_blocks_on_resources_and_deps(tmp_path, monkeypatch):
     _, db, _ = make_handler_env(tmp_path)
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 0.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 0.0)
     _add(db, "big", prio=5, ram=100.0)
     _add(db, "small", prio=1, ram=1.0)
     _add(db, "dep", prio=0, deps='["p/small"]')
@@ -42,8 +42,8 @@ def test_plan_endpoint(tmp_path):
 
 def test_plan_marks_paused_project_blocked(tmp_path, monkeypatch):
     _, db, _ = make_handler_env(tmp_path)
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 0.0)
-    monkeypatch.setattr("taskqueue.db.blocked_projects", lambda conn: ["p"])
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 0.0)
+    monkeypatch.setattr("tqdaemon.db.blocked_projects", lambda conn: ["p"])
     _add(db, "a")
     plan = build_plan(db, CFG, SYSTEM)
     assert plan["tasks"][0]["verdict"] == "blocked"
@@ -52,10 +52,10 @@ def test_plan_marks_paused_project_blocked(tmp_path, monkeypatch):
 
 def test_plan_gpu_daily_budget_blocks_gpu_task_only(tmp_path, monkeypatch):
     _, db, _ = make_handler_env(tmp_path)
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 0.0)
-    monkeypatch.setattr("taskqueue.plan.get_all_project_limits", lambda c: None, raising=False)
-    monkeypatch.setattr("taskqueue.db.get_all_project_limits", lambda c: {"p": {"max_gpu_hours_day": 2.0}})
-    monkeypatch.setattr("taskqueue.db.gpu_hours_today", lambda c, p: 2.5)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 0.0)
+    monkeypatch.setattr("tqdaemon.plan.get_all_project_limits", lambda c: None, raising=False)
+    monkeypatch.setattr("tqdaemon.db.get_all_project_limits", lambda c: {"p": {"max_gpu_hours_day": 2.0}})
+    monkeypatch.setattr("tqdaemon.db.gpu_hours_today", lambda c, p: 2.5)
     db.execute(
         "INSERT INTO tasks (project, task_id, command, args, status, enabled, priority, "
         "resources, depends_on, enqueued_at, updated_at) VALUES "
@@ -74,7 +74,7 @@ def test_plan_gpu_daily_budget_blocks_gpu_task_only(tmp_path, monkeypatch):
 def test_plan_reports_need_and_free_headroom(tmp_path, monkeypatch):
     """Wave 6: each resource-checked entry shows what it needs vs what was free when its turn came."""
     _, db, _ = make_handler_env(tmp_path)
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 4.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 4.0)
     _add(db, "first", prio=5, ram=50.0)
     _add(db, "second", prio=1, ram=20.0)
     plan = build_plan(db, CFG, SYSTEM)

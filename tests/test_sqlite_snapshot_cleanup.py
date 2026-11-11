@@ -1,9 +1,9 @@
 import sqlite3
 from datetime import UTC, datetime
 
-from taskqueue import config as cfg
-from taskqueue.config import Project
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon import config as cfg
+from tqdaemon.config import Project
 
 
 def test_snapshot_served_and_removed(tmp_path, monkeypatch):

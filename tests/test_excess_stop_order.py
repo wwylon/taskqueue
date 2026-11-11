@@ -10,9 +10,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue._db_tasks import get_running_tasks
-from taskqueue.db import open_db
-from taskqueue.scheduler import _most_recent_first
+from tqdaemon._db_tasks import get_running_tasks
+from tqdaemon.db import open_db
+from tqdaemon.scheduler import _most_recent_first
 
 
 def _task(db, project, task_id, status="running"):

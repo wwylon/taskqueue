@@ -6,10 +6,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.queries import list_operator_projects
-from taskqueue.web.responses import _get_history_response, _get_queue_response
 from tests.test_web_routes import _make_handler, _make_request
+from tqdaemon.db import open_db
+from tqdaemon.queries import list_operator_projects
+from tqdaemon.web.responses import _get_history_response, _get_queue_response
 
 
 def _seed(db, *, project="proj", task_id="T1", status="queued", started_by=None, submitted_by=None):

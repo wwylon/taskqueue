@@ -7,11 +7,11 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import set_started_by, upsert_task
-from taskqueue.capacity import build_capacity
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.validate import validate_home
+from tqdaemon._db_tasks import set_started_by, upsert_task
+from tqdaemon.capacity import build_capacity
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.validate import validate_home
 
 
 def test_build_capacity_shape(tmp_path: Path) -> None:
@@ -77,8 +77,8 @@ def test_validate_ok_and_bad(tmp_path: Path, monkeypatch) -> None:
         yaml.dump({"projects": {"demo": {"root": str(root)}}}),
         encoding="utf-8",
     )
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
-    from taskqueue.config import state_home
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
+    from tqdaemon.config import state_home
 
     report = validate_home(state_home())
     assert report["ok"] >= 1
@@ -127,7 +127,7 @@ def test_w619_cap_warning_fires(tmp_path: Path, monkeypatch) -> None:
     )
 
     # Seed DB with completed runs that had ~60 s median
-    from taskqueue.db import open_db as _open_db
+    from tqdaemon.db import open_db as _open_db
 
     db_file = home / "queue.db"
     db = _open_db(db_file)
@@ -140,8 +140,8 @@ def test_w619_cap_warning_fires(tmp_path: Path, monkeypatch) -> None:
     db.commit()
     db.close()
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
-    from taskqueue.config import state_home
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
+    from tqdaemon.config import state_home
 
     report = validate_home(state_home())
     assert any("long_cap" in w.get("task_id", "") for w in report["warnings"]), (
@@ -175,8 +175,8 @@ def test_w619_cap_warning_silent_no_history(tmp_path: Path, monkeypatch) -> None
         encoding="utf-8",
     )
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
-    from taskqueue.config import state_home
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
+    from tqdaemon.config import state_home
 
     report = validate_home(state_home())
     assert report["warnings"] == []

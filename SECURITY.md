@@ -2,7 +2,7 @@
 
 ## Reporting
 
-Email the maintainer listed on the GitHub profile for `wwylon/taskqueue`, or open a **private** GitHub security advisory if enabled. Do not post exploit details in public issues.
+Email the maintainer listed on the GitHub profile for `wwylon/tqdaemon`, or open a **private** GitHub security advisory if enabled. Do not post exploit details in public issues.
 
 ## Deployment notes
 

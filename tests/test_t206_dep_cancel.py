@@ -6,16 +6,16 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import errors as tqerr
-from taskqueue._db_tasks import (
+from tqdaemon import errors as tqerr
+from tqdaemon._db_tasks import (
     RETRYABLE_STATUSES,
     retry_task_with_downstream,
     upsert_task,
 )
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.queries import cancel_dead_dependents
-from taskqueue.waiting import SETTLED_STATUSES
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.queries import cancel_dead_dependents
+from tqdaemon.waiting import SETTLED_STATUSES
 
 
 def _project(tmp_path: Path) -> Project:
@@ -103,7 +103,7 @@ def test_retry_downstream_revives_cancelled(tmp_path: Path) -> None:
 
 
 def test_cancel_emits_notify_event(tmp_path: Path) -> None:
-    from taskqueue.notify import iter_notify_events, notify_log_path
+    from tqdaemon.notify import iter_notify_events, notify_log_path
 
     proj, db = _project(tmp_path), open_db(tmp_path / "q.db")
     _add(db, proj, "gate")

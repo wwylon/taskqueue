@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import time
 
-from taskqueue import sched_wake
-from taskqueue._db_tasks import RETRYABLE_STATUSES, retry_task
-from taskqueue.db import open_db
-from taskqueue.models import STATUS_RUNNING
+from tqdaemon import sched_wake
+from tqdaemon._db_tasks import RETRYABLE_STATUSES, retry_task
+from tqdaemon.db import open_db
+from tqdaemon.models import STATUS_RUNNING
 
 
 def _insert_task(db, task_id: str, *, status: str = "queued") -> None:
@@ -48,7 +48,7 @@ def test_retry_task_only_from_retryable_statuses(tmp_path) -> None:
 
 
 def test_finalize_run_and_task_atomic(tmp_path) -> None:
-    from taskqueue.db import finalize_run_and_task
+    from tqdaemon.db import finalize_run_and_task
 
     db = open_db(tmp_path / "queue.db")
     _insert_task(db, "t3", status="running")
@@ -67,7 +67,7 @@ def test_finalize_run_and_task_atomic(tmp_path) -> None:
 
 
 def test_finalize_run_and_task_rejects_stale_run(tmp_path) -> None:
-    from taskqueue.db import finalize_run_and_task
+    from tqdaemon.db import finalize_run_and_task
 
     db = open_db(tmp_path / "queue.db")
     _insert_task(db, "t4", status="running")

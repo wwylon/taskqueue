@@ -1,4 +1,4 @@
-"""Tests for taskqueue core — db, runner, multi-project scheduling."""
+"""Tests for tqdaemon core — db, runner, multi-project scheduling."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue._db_tasks import (
+from tests.helpers.wait import wait_until
+from tqdaemon._db_tasks import (
     get_all_tasks,
     get_queued_tasks,
     get_task,
@@ -16,10 +17,9 @@ from taskqueue._db_tasks import (
     set_task_status,
     upsert_task,
 )
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
-from tests.helpers.wait import wait_until
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.models import STATUS_COMPLETED, STATUS_FAILED, STATUS_QUEUED
 
 
 def _project(name: str, root: Path, queue_dir: Path | None = None) -> Project:
@@ -163,7 +163,7 @@ def test_filter_by_project(tmp_path: Path) -> None:
 
 
 def test_run_success(tmp_path: Path) -> None:
-    from taskqueue.runner import ActiveRun
+    from tqdaemon.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
@@ -203,7 +203,7 @@ def test_utf8_stdout_does_not_crash_reader_thread(tmp_path: Path) -> None:
     the "already crashed" recovery path this also guards against. This
     test instead asserts the crash doesn't happen in the first place, and
     that the Arabic text round-trips correctly through the log."""
-    from taskqueue.runner import ActiveRun
+    from tqdaemon.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
@@ -247,9 +247,9 @@ def test_stream_output_recovers_from_reader_crash(tmp_path: Path, monkeypatch) -
     self._done: poll() never returns True, finalize() never runs, and
     stop_requested is never cleared -- this is exactly what happened in
     production before the fix)."""
-    from taskqueue.runner import ActiveRun
+    from tqdaemon.runner import ActiveRun
 
-    monkeypatch.setattr("taskqueue.reap.kill_process_tree", lambda *_a, **_k: None)
+    monkeypatch.setattr("tqdaemon.reap.kill_process_tree", lambda *_a, **_k: None)
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
@@ -318,7 +318,7 @@ def test_stop_recovers_when_reader_thread_is_wedged(tmp_path: Path) -> None:
     scheduler loop re-calls stop() every tick and stop_requested is never
     cleared (finalize() is gated on run.poll()). stop() must recover within
     a bounded time instead of hanging indefinitely."""
-    from taskqueue.runner import ActiveRun
+    from tqdaemon.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
@@ -376,7 +376,7 @@ def test_suspend_grace_window(tmp_path: Path, monkeypatch) -> None:
     """Regression for Slice R5: cooperative suspend must give a real grace
     window (write control file, wait, THEN SIGTERM) instead of terminating
     in the same tick as the request."""
-    from taskqueue.runner import ActiveRun
+    from tqdaemon.runner import ActiveRun
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
@@ -396,7 +396,7 @@ def test_suspend_grace_window(tmp_path: Path, monkeypatch) -> None:
 
     home = tmp_path
     fake_now = [1000.0]
-    monkeypatch.setattr("taskqueue.runner.time.monotonic", lambda: fake_now[0])
+    monkeypatch.setattr("tqdaemon.runner.time.monotonic", lambda: fake_now[0])
 
     # Before any suspend request: nothing to wait on, grace is trivially "elapsed".
     assert run.suspend_grace_elapsed(10.0) is True
@@ -424,7 +424,7 @@ def test_sync_project_survives_locked_db_on_cleanup(tmp_path: Path) -> None:
     "database is locked" -- it had no exception handling, unlike the YAML
     parse loop right above it in the same function. A transient SQLite lock
     here must be logged and skipped, never propagate and kill the daemon."""
-    from taskqueue.daemon import _sync_project
+    from tqdaemon.daemon import _sync_project
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path, queue_dir=tmp_path / "empty_queue_dir")
@@ -466,14 +466,14 @@ def test_sync_project_survives_locked_db_on_cleanup(tmp_path: Path) -> None:
 
 
 def test_preflight_missing_command(tmp_path: Path) -> None:
-    from taskqueue.runner import preflight
+    from tqdaemon.runner import preflight
 
     err = preflight(Path("no_such_command_xyz"), ())
     assert err is not None and "not found" in err
 
 
 def test_preflight_missing_path(tmp_path: Path) -> None:
-    from taskqueue.runner import preflight
+    from tqdaemon.runner import preflight
 
     err = preflight(Path(sys.executable), (tmp_path / "missing_file.txt",))
     assert err is not None and "missing" in err
@@ -485,7 +485,7 @@ def test_preflight_missing_path(tmp_path: Path) -> None:
 
 
 def test_config_roundtrip(tmp_path: Path) -> None:
-    from taskqueue.db import get_config, set_config
+    from tqdaemon.db import get_config, set_config
 
     db = open_db(tmp_path / "queue.db")
     set_config(db, "cpu_limit_pct", 75)
@@ -501,7 +501,7 @@ def test_config_roundtrip(tmp_path: Path) -> None:
 def test_load_projects_basic(tmp_path: Path) -> None:
     import yaml
 
-    from taskqueue.config import load_projects
+    from tqdaemon.config import load_projects
 
     reg = tmp_path / "projects.yaml"
     reg.write_text(
@@ -521,6 +521,6 @@ def test_load_projects_basic(tmp_path: Path) -> None:
 
 
 def test_load_projects_missing_file(tmp_path: Path) -> None:
-    from taskqueue.config import load_projects
+    from tqdaemon.config import load_projects
 
     assert load_projects(tmp_path) == {}

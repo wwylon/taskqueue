@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from taskqueue.archive import archive_tasks
-from taskqueue.config import Project
-from taskqueue.db import open_db
+from tqdaemon.archive import archive_tasks
+from tqdaemon.config import Project
+from tqdaemon.db import open_db
 
 
 def _setup(tmp_path: Path):
@@ -69,7 +69,7 @@ def test_dry_run_and_status_override(tmp_path: Path) -> None:
 
 
 def test_sync_does_not_resurrect_archived(tmp_path: Path) -> None:
-    from taskqueue.yaml_sync import _sync_project, clear_yaml_mtime_cache
+    from tqdaemon.yaml_sync import _sync_project, clear_yaml_mtime_cache
 
     clear_yaml_mtime_cache()
     conn, proj, qdir = _setup(tmp_path)

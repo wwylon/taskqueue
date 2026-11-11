@@ -1,4 +1,4 @@
-"""Unit tests for taskqueue.cron — cron_matches and check_cron_schedule."""
+"""Unit tests for tqdaemon.cron — cron_matches and check_cron_schedule."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.cron import check_cron_schedule, cron_matches
+from tqdaemon.cron import check_cron_schedule, cron_matches
 
 # ---------------------------------------------------------------------------
 # cron_matches — field parsing
@@ -117,7 +117,7 @@ def _seed_scheduled_task(db, project="proj", task_id="t1", status="completed"):
 
 
 def test_first_tick_skips(tmp_path: Path):
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db)
@@ -130,7 +130,7 @@ def test_first_tick_skips(tmp_path: Path):
 def test_cron_fires_on_match(tmp_path: Path):
     from unittest.mock import patch
 
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
@@ -140,7 +140,7 @@ def test_cron_fires_on_match(tmp_path: Path):
     state = {"ts": last}
     fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=UTC)
 
-    with patch("taskqueue.cron.datetime") as mock_dt:
+    with patch("tqdaemon.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         check_cron_schedule(db, state)
@@ -152,7 +152,7 @@ def test_cron_fires_on_match(tmp_path: Path):
 def test_cron_does_not_fire_before_match(tmp_path: Path):
     from unittest.mock import patch
 
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="completed")
@@ -162,7 +162,7 @@ def test_cron_does_not_fire_before_match(tmp_path: Path):
     state = {"ts": last}
     fake_now = datetime(2025, 1, 6, 1, 45, tzinfo=UTC)
 
-    with patch("taskqueue.cron.datetime") as mock_dt:
+    with patch("tqdaemon.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         check_cron_schedule(db, state)
@@ -174,7 +174,7 @@ def test_cron_does_not_fire_before_match(tmp_path: Path):
 def test_cron_only_fires_for_terminal_status(tmp_path: Path):
     from unittest.mock import patch
 
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     _seed_scheduled_task(db, status="running")  # running — should not re-queue
@@ -183,7 +183,7 @@ def test_cron_only_fires_for_terminal_status(tmp_path: Path):
     state = {"ts": last}
     fake_now = datetime(2025, 1, 6, 2, 1, tzinfo=UTC)
 
-    with patch("taskqueue.cron.datetime") as mock_dt:
+    with patch("tqdaemon.cron.datetime") as mock_dt:
         mock_dt.now.return_value = fake_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         check_cron_schedule(db, state)
@@ -217,7 +217,7 @@ def test_dom_or_dow_when_both_restricted():
 
 
 def test_bad_cron_rejected_at_parse():
-    from taskqueue.taskspec import validate_task_spec
+    from tqdaemon.taskspec import validate_task_spec
 
     with pytest.raises(ValueError, match="schedule.cron"):
         validate_task_spec({"task_id": "t", "command": "x", "schedule": {"cron": "*/0 * * * *"}}, Path("t.yaml"))

@@ -6,9 +6,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from taskqueue import cli
-from taskqueue.doctor_checks import propose_remediations, run_checks
 from tests.helpers.master_worker import seed_queued_task, seed_worker
+from tqdaemon import cli
+from tqdaemon.doctor_checks import propose_remediations, run_checks
 
 
 def test_fresh_home_warns_but_passes(tmp_path: Path) -> None:
@@ -18,7 +18,7 @@ def test_fresh_home_warns_but_passes(tmp_path: Path) -> None:
 
 
 def test_corrupt_db_fails_and_json_exit_code(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue.config import db_path
+    from tqdaemon.config import db_path
 
     sqlite3.connect(db_path(tmp_path)).close()
     db_path(tmp_path).write_bytes(b"SQLite format 3\x00" + b"\xff" * 4096)  # header ok, pages garbage
@@ -32,7 +32,7 @@ def test_corrupt_db_fails_and_json_exit_code(tmp_path: Path, monkeypatch, capsys
 
 
 def test_doctor_fix_dry_run_lists_retry_and_start(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     conn = open_db(tmp_path / "queue.db")
     seed_queued_task(conn, project="p", task_id="t1", dispatch="local")
@@ -55,7 +55,7 @@ def test_doctor_fix_dry_run_lists_retry_and_start(tmp_path: Path, monkeypatch, c
 def test_cuda_health_does_not_import_torch_unless_asked(monkeypatch) -> None:
     import importlib
 
-    from taskqueue import resources
+    from tqdaemon import resources
 
     seen = []
     real = importlib.import_module
@@ -65,7 +65,7 @@ def test_cuda_health_does_not_import_torch_unless_asked(monkeypatch) -> None:
 
 
 def test_top_ram_consumers_respects_time_budget() -> None:
-    from taskqueue.resources import top_ram_consumers
+    from tqdaemon.resources import top_ram_consumers
 
     stats: dict = {}
     rows = top_ram_consumers(n=3, budget_sec=1e-9, stats=stats)
@@ -74,8 +74,8 @@ def test_top_ram_consumers_respects_time_budget() -> None:
 
 def test_legacy_max_concurrent_tasks_is_flagged(tmp_path: Path) -> None:
     """Wave 4.7: max_concurrent_tasks overlaps max_running_tasks — doctor advises switching."""
-    from taskqueue.config import db_path
-    from taskqueue.db import open_db, set_config
+    from tqdaemon.config import db_path
+    from tqdaemon.db import open_db, set_config
 
     db = open_db(db_path(tmp_path))
     by = {c["name"]: c for c in run_checks(tmp_path)["checks"]}

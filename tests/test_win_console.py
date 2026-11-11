@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.win_console import apply_hide_console_popen_kwargs, inject_python_hide_console
+from tqdaemon.win_console import apply_hide_console_popen_kwargs, inject_python_hide_console
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-only")

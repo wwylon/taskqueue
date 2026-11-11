@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import timeline_forecast as tf
-from taskqueue.db import open_db, set_project_limit
 from tests.test_operator_features import _insert_run, _mk_task
+from tqdaemon import timeline_forecast as tf
+from tqdaemon.db import open_db, set_project_limit
 
 
 def _seed(db, n: int, runs: int = 3):

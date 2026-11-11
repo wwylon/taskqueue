@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.system_alerts import on_run_terminal
-from taskqueue.web.responses import _get_history_response
+from tqdaemon.db import open_db
+from tqdaemon.system_alerts import on_run_terminal
+from tqdaemon.web.responses import _get_history_response
 
 
 def _add_run(db, project, task, ram, status="completed"):

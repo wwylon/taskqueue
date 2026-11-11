@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue import _cli_project
-from taskqueue.config import DEFAULT_QUEUE_DIR, Project
-from taskqueue.db import open_db
-from taskqueue.project_relocate import (
+from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+from tqdaemon import _cli_project
+from tqdaemon.config import DEFAULT_QUEUE_DIR, Project
+from tqdaemon.db import open_db
+from tqdaemon.project_relocate import (
     relocate_project_files,
     rewrite_yaml_source_prefix,
     set_project_root,
     status_histogram,
 )
-from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
 
 
 def _write_registry(home: Path, name: str, root: Path) -> None:
@@ -120,7 +120,7 @@ def test_release_relocate_http_with_callbacks(tmp_path: Path) -> None:
         def unschedule(self, watch):
             del self.live[watch]
 
-    from taskqueue import daemon
+    from tqdaemon import daemon
 
     obs = Obs()
     watches = daemon._QueueDirWatches(obs, handler=None)
@@ -135,7 +135,7 @@ def test_release_relocate_http_with_callbacks(tmp_path: Path) -> None:
         return {"ok": True, "project": name, "released": True}
 
     def relocate_cb(name: str, new_root: str) -> dict:
-        from taskqueue.project_relocate import relocate_project_files
+        from tqdaemon.project_relocate import relocate_project_files
 
         watches.release(name, projects)
         db = open_db(home / "queue.db")
@@ -156,7 +156,7 @@ def test_release_relocate_http_with_callbacks(tmp_path: Path) -> None:
     db.commit()
     db.close()
 
-    from taskqueue.web.handler import make_handler
+    from tqdaemon.web.handler import make_handler
 
     H = make_handler(
         open_db(home / "queue.db"),
@@ -206,7 +206,7 @@ def test_cli_release_relocate_via_master(tmp_path: Path, monkeypatch, capsys) ->
             "backup": "/bak",
         }
 
-    monkeypatch.setattr("taskqueue.master_client.via_master", fake_via)
+    monkeypatch.setattr("tqdaemon.master_client.via_master", fake_via)
     assert _cli_project.cmd_release(tmp_path, "p") == 0
     assert any("release" in c[1] for c in calls)
     assert _cli_project.cmd_relocate(tmp_path, "p", str(tmp_path / "new")) == 0

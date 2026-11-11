@@ -5,7 +5,7 @@ Two tasks with `depends_on`: preprocess → train. Both scripts use `tq_client.p
 ```yaml
 projects:
   pipeline:
-    root: path/to/taskqueue/examples/pipeline
+    root: path/to/tqdaemon/examples/pipeline
     queue_dir: experiments/operator_queue
 ```
 

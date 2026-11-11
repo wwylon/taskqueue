@@ -88,21 +88,21 @@ r.fail = alerts.slice(-1)[0][0];
     )
     assert out["tail"] == [True, "l149"]
     assert out["empty"] == [1, 1] and out["name"] == "p/t"
-    assert out["fail"].startswith("Copy failed:")
+    assert out["fail"].startswith("modal.copyFailedMsg")
 
 
 def test_history_helpers_render_rows_limit_and_fallbacks():
     out = run_js(
         _js("""
 r.empty = g._renderTaskRunHistoryHtml('p', 't', [], null);
-r.many = g._renderTaskRunHistoryHtml('p', 't', Array.from({ length: 25 }, (_, i) => ({ run_id: i, status: 'x' })), null).includes('20 of 25');
+r.many = g._renderTaskRunHistoryHtml('p', 't', Array.from({ length: 25 }, (_, i) => ({ run_id: i, status: 'x' })), null).includes('runlog.showingLatest');
 const one = g._renderTaskRunHistoryHtml('p', 't', [{ run_id: 4, status: 'failed', worker_id: 'w<1>', exit_code: 1 }], null);
 r.one = [one.includes('w&lt;1&gt;'), one.includes('#4')];
 g.fetch = async () => { throw new Error('down'); };
-r.failed = (await g._loadTaskRunHistoryHtml('p', 't')).includes('Failed to load history');
+r.failed = (await g._loadTaskRunHistoryHtml('p', 't')).includes('runlog.loadFailed');
 """)
     )
-    assert "No runs recorded yet." in out["empty"]
+    assert "runlog.none" in out["empty"]
     assert out["many"] is True and out["one"] == [True, True] and out["failed"] is True
 
 

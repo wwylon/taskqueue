@@ -28,7 +28,7 @@ Copy-paste project: [`examples/checkpointable/`](../../examples/checkpointable/)
 import sys
 from pathlib import Path
 
-# Prefer: PYTHONPATH=…/taskqueue/clients/python  or symlink tq_client.py into the project
+# Prefer: PYTHONPATH=…/tqdaemon/clients/python  or symlink tq_client.py into the project
 sys.path.insert(0, str(Path(__file__).resolve().parents[N] / "clients" / "python"))
 import tq_client as tq
 

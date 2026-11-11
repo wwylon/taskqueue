@@ -50,7 +50,7 @@ r.okFalseMsg = await fail();
 def test_open_cfg_fills_fields_defaults_and_builds_project_limit_table():
     out = run_js(
         _js(
-            "{ '/api/project-limits': { a: { max_tasks: 3, max_ram_gib: 1.5 } } }",
+            "{ '/api/project-limits': { projects: { a: { override: { max_tasks: 3, max_ram_gib: 1.5, min_tasks: 0, max_cpu_cores: 0, max_gpu_vram_gib: 0, max_gpu_hours_day: 0 }, effective: { max_tasks: 3, max_ram_gib: 1.5, min_tasks: 0, max_cpu_cores: 0, max_gpu_vram_gib: 0, max_gpu_hours_day: 0 }, inherited_from: { max_tasks: 'project', max_ram_gib: 'project', min_tasks: 'none', max_cpu_cores: 'none', max_gpu_vram_gib: 'none', max_gpu_hours_day: 'none' }, set: null }, b: { override: { max_tasks: 0, max_ram_gib: 0, min_tasks: 0, max_cpu_cores: 0, max_gpu_vram_gib: 0, max_gpu_hours_day: 0 }, effective: { max_tasks: 0, max_ram_gib: 0, min_tasks: 0, max_cpu_cores: 0, max_gpu_vram_gib: 0, max_gpu_hours_day: 0 }, inherited_from: { max_tasks: 'none', max_ram_gib: 'none', min_tasks: 'none', max_cpu_cores: 'none', max_gpu_vram_gib: 'none', max_gpu_hours_day: 'none' }, set: null } }, sets: {} } }",
             """
 for (const id of ['cfg-cpu', 'cfg-gpu', 'cfg-ram', 'cfg-stop', 'cfg-frozen', 'cfg-max-tasks', 'cfg-limit-policy', 'cfg-max-cpu', 'cfg-max-ram', 'cfg-vram-cap', 'cfg-project-limits', 'cfg-modal']) if (!doc.getElementById(id)) doc.add(id);
 S.cfg = { cpu_limit_pct: 70, max_running_tasks: 4 };
@@ -59,11 +59,12 @@ await g.openCfg();
 const v = id => doc.getElementById(id).value;
 r.vals = ['cfg-cpu', 'cfg-gpu', 'cfg-ram', 'cfg-stop', 'cfg-frozen', 'cfg-max-tasks', 'cfg-limit-policy'].map(v);
 const html = doc.getElementById('cfg-project-limits').innerHTML;
-r.table = [html.includes('data-proj="a" data-field="max_tasks" value="3"'), html.includes('data-field="max_ram_gib" value="1.5"'), html.includes('data-proj="b" data-field="max_tasks" value="0"'), html.includes('step="0.5"')];
+r.table = [html.includes('data-key="a" data-field="max_tasks" value="3"'), html.includes('data-field="max_ram_gib" value="1.5"'), html.includes('data-key="b" data-field="max_tasks" value="0"'), html.includes('step="0.5"')];
 r.open = doc.getElementById('cfg-modal').classList.has('open');
 g.closeCfg();
 r.closed = doc.getElementById('cfg-modal').classList.has('open');
 S.status = { projects: [] };
+window.__tqCfgLimitsPayload = { projects: {}, sets: {} };
 await g.openCfg();
 r.empty = doc.getElementById('cfg-project-limits').innerHTML.includes('config.noProjects');
 """,

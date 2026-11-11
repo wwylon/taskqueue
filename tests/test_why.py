@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue.why import explain_task, format_explanation, format_need_free
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+from tqdaemon.why import explain_task, format_explanation, format_need_free
 
 SYSTEM = {"cpu_total_cores": 8, "ram_total_gib": 64.0, "gpu_vram_total_gib": 0.0, "gpus": []}
 
@@ -25,7 +25,7 @@ def test_queued_task_with_unmet_dependency_and_block_reason(tmp_path: Path) -> N
 
 def test_free_task_should_start_and_unknown_task_404(tmp_path: Path, monkeypatch) -> None:
     # Admission reads live host RAM; pin it so the test does not depend on the machine.
-    monkeypatch.setattr("taskqueue.resources.ram_used_gib", lambda: 1.0)
+    monkeypatch.setattr("tqdaemon.resources.ram_used_gib", lambda: 1.0)
     H, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, project="p", task_id="free", dispatch="local")
     info = explain_task(db, "p", "free", system=SYSTEM)

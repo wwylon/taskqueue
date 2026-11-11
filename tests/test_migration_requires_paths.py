@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 
 def _paths(db, project: str, task_id: str) -> list[str]:

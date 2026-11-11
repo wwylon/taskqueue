@@ -5,14 +5,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue._cli_project import cmd_sync
-from taskqueue._db_tasks import (
+from tqdaemon._cli_project import cmd_sync
+from tqdaemon._db_tasks import (
     collect_downstream_task_ids,
     retry_skip_reason,
     retry_task,
     retry_task_with_downstream,
 )
-from taskqueue.db import open_db
+from tqdaemon.db import open_db
 
 
 def _now() -> str:
@@ -68,9 +68,9 @@ def test_downstream_skip_report(tmp_path: Path) -> None:
 def test_sync_require_daemon_exit_3(tmp_path: Path, monkeypatch, capsys) -> None:
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
-    monkeypatch.setattr("taskqueue._cli_project._daemon_running", lambda h: None)
-    monkeypatch.setattr("taskqueue._cli_project._db", lambda h: home / "queue.db")
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon._cli_project._daemon_running", lambda h: None)
+    monkeypatch.setattr("tqdaemon._cli_project._db", lambda h: home / "queue.db")
     rc = cmd_sync(home, require_daemon=True)
     assert rc == 3
     err = capsys.readouterr().err
@@ -82,8 +82,8 @@ def test_sync_refuses_sqlite_when_daemon_up_but_http_fails(tmp_path: Path, monke
     """Timeout / busy master must not fall back to offline dual-write."""
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
-    monkeypatch.setattr("taskqueue._cli_project._daemon_running", lambda h: 42)
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon._cli_project._daemon_running", lambda h: 42)
     rc = cmd_sync(home, require_daemon=False)
     assert rc == 3
     err = capsys.readouterr().err

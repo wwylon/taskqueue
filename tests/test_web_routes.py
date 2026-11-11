@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from http.client import parse_headers
 from pathlib import Path
 
-from taskqueue._db_tasks import get_task
-from taskqueue.db import get_config, open_db
-from taskqueue.web import make_handler
+from tqdaemon._db_tasks import get_task
+from tqdaemon.db import get_config, open_db
+from tqdaemon.web import make_handler
 
 # ---------------------------------------------------------------------------
 # Test infrastructure
@@ -212,7 +212,7 @@ def test_get_locks_and_mutex_queue_fields(tmp_path: Path):
         "'lock(s) held by another running task: corpus')",
         (now, now, json.dumps({"locks": ["corpus"], "cpu_cores": 1, "ram_gib": 0.5})),
     )
-    from taskqueue.db import set_project_limit
+    from tqdaemon.db import set_project_limit
 
     set_project_limit(db, "proj", "max_tasks", 3.0)
     db.commit()
@@ -327,7 +327,7 @@ def test_post_config_accepts_web_save_cfg_payload(tmp_path: Path):
     }
     code, body = _make_request(HandlerClass, "POST", "/api/config", body=json.dumps(payload).encode())
     assert code == 200, body
-    from taskqueue.db import open_db as _open
+    from tqdaemon.db import open_db as _open
 
     cfg = get_config(_open(tmp_path / "q.db"))
     assert cfg["cpu_limit_pct"] == 95
@@ -341,7 +341,7 @@ def test_post_force_marks_queued_task(tmp_path: Path):
     assert code == 200
     data = json.loads(body)
     assert data.get("ok") is True
-    from taskqueue.db import open_db as _open
+    from tqdaemon.db import open_db as _open
 
     row = get_task(_open(tmp_path / "q.db"), "proj", "T1")
     assert row["force_run"] == 1
@@ -404,7 +404,7 @@ def test_post_retry_failed_task(tmp_path: Path):
     data = json.loads(body)
     assert data.get("ok") is True
     # Verify via same connection (handler uses its own rconn, so open fresh)
-    from taskqueue.db import open_db as _open
+    from tqdaemon.db import open_db as _open
 
     db2 = _open(tmp_path / "q.db")
     row = db2.execute("SELECT status FROM tasks WHERE task_id='T1'").fetchone()
@@ -460,8 +460,8 @@ def test_get_hardware_200(tmp_path: Path):
 
 
 def test_dashboard_conditional_get_returns_304_without_changes(tmp_path: Path):
-    from taskqueue.web import change_tracker
-    from taskqueue.web import routes_read as rr
+    from tqdaemon.web import change_tracker
+    from tqdaemon.web import routes_read as rr
 
     change_tracker._TRACKERS.clear()
     rr._dash_cache.clear()
@@ -487,9 +487,9 @@ def test_dashboard_coalesces_concurrent_builds(tmp_path: Path):
     import threading
     import time as _time
 
-    from taskqueue.db import open_db
-    from taskqueue.web import routes_read as rr
-    from taskqueue.web import start_web_server
+    from tqdaemon.db import open_db
+    from tqdaemon.web import routes_read as rr
+    from tqdaemon.web import start_web_server
 
     rr._dash_cache.clear()
     rr._dash_inflight.clear()
@@ -567,8 +567,8 @@ def test_index_sends_csp_and_hardening_headers(tmp_path):
     import socket
     import time as _time
 
-    from taskqueue.db import open_db
-    from taskqueue.web import start_web_server
+    from tqdaemon.db import open_db
+    from tqdaemon.web import start_web_server
 
     with socket.socket() as _s:
         _s.bind(("127.0.0.1", 0))
@@ -607,7 +607,7 @@ def test_api_errors_are_json_not_html():
     import io
     import json as _json
 
-    from taskqueue.web import handler as hmod
+    from tqdaemon.web import handler as hmod
 
     h = hmod.Handler.__new__(hmod.Handler)
     h.path = "/api/nope"
@@ -642,10 +642,10 @@ def test_project_stop_all_stops_only_that_projects_running_tasks(tmp_path):
 
 
 def test_handler_home_follows_daemon_db_not_env(tmp_path, monkeypatch):
-    """F-222: transfer/CAS/diagnose routes must use the daemon's --home, not $TASKQUEUE_HOME."""
-    from taskqueue.web.handler import make_handler
+    """F-222: transfer/CAS/diagnose routes must use the daemon's --home, not $TQDAEMON_HOME."""
+    from tqdaemon.web.handler import make_handler
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path / "elsewhere"))
     daemon_home = tmp_path / "daemon-home"
     daemon_home.mkdir()
     bound = make_handler(None, {}, {}, lambda: {}, daemon_home / "queue.db")

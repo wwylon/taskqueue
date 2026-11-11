@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue import _cli_helpers
-from taskqueue.db import open_db
 from tests.helpers.master_worker import http_request, make_handler_env, seed_queued_task
+from tqdaemon import _cli_helpers
+from tqdaemon.db import open_db
 
 
 def test_routes_pause_resume_remove_and_remove_project(tmp_path: Path) -> None:
@@ -29,24 +29,24 @@ def test_routes_pause_resume_remove_and_remove_project(tmp_path: Path) -> None:
 
 
 def test_cli_uses_master_refuses_when_unreachable_and_falls_back_offline(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue import _cli_project
+    from tqdaemon import _cli_project
 
     (tmp_path / "projects.yaml").write_text(f"projects:\n  p:\n    root: {tmp_path.as_posix()}\n", encoding="utf-8")
     open_db(tmp_path / "queue.db").close()
     calls = []
     monkeypatch.setattr(
-        "taskqueue.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True}
+        "tqdaemon.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True}
     )
     assert _cli_project.cmd_pause(tmp_path, "p") == 0 and calls == ["/api/project/pause/p"]
 
-    monkeypatch.setattr("taskqueue.master_client.via_master", lambda *a, **k: None)
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)
     monkeypatch.setattr(_cli_helpers, "_daemon_running", lambda h: 4242)
     assert _cli_project.cmd_pause(tmp_path, "p") == 3
     assert "refusing a direct SQLite write" in capsys.readouterr().err
 
     monkeypatch.setattr(_cli_helpers, "_daemon_running", lambda h: None)
     assert _cli_project.cmd_pause(tmp_path, "p") == 0  # offline: direct write is fine
-    from taskqueue.db import blocked_projects
+    from tqdaemon.db import blocked_projects
 
     db = open_db(tmp_path / "queue.db")
     assert "p" in blocked_projects(db)
@@ -54,7 +54,7 @@ def test_cli_uses_master_refuses_when_unreachable_and_falls_back_offline(tmp_pat
 
 
 def test_stop_reason_is_recorded_by_the_master(tmp_path: Path) -> None:
-    from taskqueue._db_runs import insert_run
+    from tqdaemon._db_runs import insert_run
 
     H, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, project="p", task_id="t", dispatch="local")
@@ -81,8 +81,8 @@ def test_retry_batch_accepts_task_ids_only_and_bulk_stop(tmp_path: Path) -> None
 def test_stop_records_requester_and_daemon_logs_it(tmp_path: Path, capsys) -> None:
     import json
 
-    from taskqueue import daemon
-    from taskqueue.config import control_path
+    from tqdaemon import daemon
+    from tqdaemon.config import control_path
 
     H, db, _ = make_handler_env(tmp_path)
     seed_queued_task(db, project="p", task_id="t", dispatch="local")

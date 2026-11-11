@@ -29,7 +29,7 @@ is parsed by the runner (and by the master for remote log chunks). Keys are **me
 
 - Only **numeric** keys get sparklines (last up to 60 samples per key; at most 8 keys tracked as series).
 - The number next to each sparkline is the **latest** value for that key.
-- Key **names are chosen by the task** (`loss`, `val_acc`, `etl_at_3`, …). Taskqueue does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.
+- Key **names are chosen by the task** (`loss`, `val_acc`, `etl_at_3`, …). TqDaemon does not define a standard schema for experiment metrics — ask the owning project what a given key means if it is unclear.
 
 ## Reserved keys (not task-settable)
 

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue import errors as tqerr
-from taskqueue.db import open_db, parse_task_yaml, retry_task, upsert_task
-from taskqueue.web.routes_transfer import (
+from tests.test_queue import _project, _yaml
+from tqdaemon import errors as tqerr
+from tqdaemon.db import open_db, parse_task_yaml, retry_task, upsert_task
+from tqdaemon.web.routes_transfer import (
     _resolve_allowed_upstream_ip,
     _snapshot_path_allowed,
     _upstream_host_allowed,
 )
-from tests.test_queue import _project, _yaml
 
 
 def test_sticky_preflight_survives_retry(tmp_path: Path) -> None:

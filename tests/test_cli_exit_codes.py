@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import cli
+from tqdaemon import cli
 
 
 @pytest.mark.parametrize("fn", [cli._cmd_start, cli._cmd_stop_daemon, cli._cmd_doctor])
@@ -33,21 +33,21 @@ def test_start_failure_exit_code(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_retry_project_bad_status_filter_is_usage_error(tmp_path: Path) -> None:
-    from taskqueue._cli_project import cmd_retry_project
+    from tqdaemon._cli_project import cmd_retry_project
 
     assert cmd_retry_project(tmp_path, "p", status_filter="bogus") == 2
 
 
 @pytest.mark.parametrize("name", ["cmd_pause", "cmd_resume_project", "cmd_freeze", "cmd_unfreeze"])
 def test_project_commands_unknown_project_exit_1(name, tmp_path: Path, capsys) -> None:
-    from taskqueue import _cli_project
+    from tqdaemon import _cli_project
 
     assert getattr(_cli_project, name)(tmp_path, "nope") == 1
     assert "Unknown project" in capsys.readouterr().err
 
 
 def test_stop_daemon_and_restart_refuse_while_tasks_run(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue import _cli_admin
+    from tqdaemon import _cli_admin
 
     monkeypatch.setattr(_cli_admin, "_daemon_running", lambda home: 4242)
     monkeypatch.setattr(_cli_admin, "_running_runs", lambda home, **_: ["p/a", "p/b"])
@@ -61,7 +61,7 @@ def test_stop_daemon_and_restart_refuse_while_tasks_run(tmp_path: Path, monkeypa
 def test_stop_daemon_force_signals(tmp_path: Path, monkeypatch) -> None:
     import sys
 
-    from taskqueue import _cli_admin
+    from tqdaemon import _cli_admin
 
     sent: list[int] = []
     monkeypatch.setattr(_cli_admin, "_daemon_running", lambda home: 4242)
@@ -73,14 +73,14 @@ def test_stop_daemon_force_signals(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_running_runs_missing_db(tmp_path: Path) -> None:
-    from taskqueue import _cli_admin
+    from tqdaemon import _cli_admin
 
     assert _cli_admin._running_runs(tmp_path) == []
 
 
 def test_priority_range_and_unknown_task(tmp_path, capsys):
-    from taskqueue import cli
-    from taskqueue.db import open_db
+    from tqdaemon import cli
+    from tqdaemon.db import open_db
 
     open_db(tmp_path / "queue.db").close()
     assert cli._cmd_priority(tmp_path, ["p/t", "101"]) == 2
@@ -91,7 +91,7 @@ def test_priority_range_and_unknown_task(tmp_path, capsys):
 
 
 def test_help_never_runs_the_command(tmp_path, monkeypatch, capsys):
-    from taskqueue import cli
+    from tqdaemon import cli
 
     ran = []
     monkeypatch.setitem(cli.COMMANDS, "start", lambda h, r: ran.append(r) or 0)
@@ -101,7 +101,7 @@ def test_help_never_runs_the_command(tmp_path, monkeypatch, capsys):
 
 
 def test_unknown_flag_and_command_are_usage_errors(tmp_path, monkeypatch, capsys):
-    from taskqueue import cli
+    from tqdaemon import cli
 
     ran = []
     monkeypatch.setitem(cli.COMMANDS, "status", lambda h, r: ran.append(r) or 0)
@@ -116,7 +116,7 @@ def test_uninstall_service_reports_schtasks_failure(tmp_path, monkeypatch, capsy
     import subprocess as _sp
     import sys as _sys
 
-    from taskqueue import worker
+    from tqdaemon import worker
 
     monkeypatch.setattr(_sys, "platform", "win32")
     monkeypatch.setattr(

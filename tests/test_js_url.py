@@ -41,6 +41,8 @@ console.log('RESULT:' + JSON.stringify(r));
         "tag": None,
         "doc": None,
         "section": None,
+        "projects": None,
+        "set": None,
     }
     assert out["stored"]["tab"] == "audit" and out["stored"]["project"] == "pp" and out["stored"]["status"] == "failed"
     assert out["stored"]["active"] is True and out["stored"]["tag"] == "gpu" and out["stored"]["doc"] == "cli"
@@ -55,6 +57,8 @@ console.log('RESULT:' + JSON.stringify(r));
         "tag": "t1",
         "doc": "d",
         "section": "s",
+        "projects": None,
+        "set": None,
     }
 
 

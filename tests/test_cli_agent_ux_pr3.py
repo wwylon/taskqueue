@@ -6,13 +6,13 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue._db_tasks import (
+from tqdaemon._db_tasks import (
     collect_ancestors_to_root,
     collect_downstream_task_ids,
     lock_contention_summary,
     lock_occupancy,
 )
-from taskqueue.db import open_db, set_project_limit
+from tqdaemon.db import open_db, set_project_limit
 
 
 def _now() -> str:

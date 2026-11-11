@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db, set_config
-from taskqueue.placement import (
+from tqdaemon.db import open_db, set_config
+from tqdaemon.placement import (
     claiming_worker_is_best_fit,
     clear_remote_reservation,
     get_remote_reservation,
@@ -17,8 +17,8 @@ from taskqueue.placement import (
     select_task_for_node,
     task_wait_aged,
 )
-from taskqueue.scheduler import Node
-from taskqueue.worker_api import claim_next_remote_task
+from tqdaemon.scheduler import Node
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def _insert_task(
@@ -112,7 +112,7 @@ def test_select_skips_when_peer_better():
         "requires_services": "[]",
         "enqueued_at": datetime.now(UTC).isoformat(),
     }
-    from taskqueue.scheduler import FilterContext
+    from tqdaemon.scheduler import FilterContext
 
     tight = Node(
         node_id="tight",
@@ -266,7 +266,7 @@ def test_stale_peer_ignored(tmp_path: Path):
 
 
 def test_prefer_last_worker_tie_break():
-    from taskqueue.placement import claiming_worker_is_best_fit
+    from tqdaemon.placement import claiming_worker_is_best_fit
 
     a = Node(node_id="a", ram_gib=16, ram_used_gib=0, cpu_cores=8, projects=["proj"])
     b = Node(node_id="b", ram_gib=16, ram_used_gib=0, cpu_cores=8, projects=["proj"])
@@ -292,7 +292,7 @@ def test_remote_claim_records_estimate(tmp_path: Path):
 
 
 def test_capacity_uses_live_load(tmp_path: Path):
-    from taskqueue.capacity import build_capacity
+    from tqdaemon.capacity import build_capacity
 
     db_path = tmp_path / "q.db"
     db = open_db(db_path)

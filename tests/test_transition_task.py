@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from taskqueue._db_tasks import get_task, transition_task
 from tests.helpers.master_worker import make_handler_env, seed_queued_task
+from tqdaemon._db_tasks import get_task, transition_task
 
 
 def test_guarded_move_stamps_times_and_fields(tmp_path) -> None:

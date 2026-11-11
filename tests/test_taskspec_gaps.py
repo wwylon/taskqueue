@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.taskspec import validate_task_spec
+from tqdaemon.taskspec import validate_task_spec
 
 P = Path("t.yaml")
 
@@ -21,7 +21,7 @@ def test_transfer_must_be_mappings():
 def test_drain_cursor_does_not_lose_events_beyond_limit(tmp_path):
     import json
 
-    from taskqueue.notify import NOTIFY_LOG_NAME, drain_notifications
+    from tqdaemon.notify import NOTIFY_LOG_NAME, drain_notifications
 
     lines = [json.dumps({"ts": f"2026-01-01T00:00:0{i}Z", "project": "p", "task_id": f"t{i}"}) for i in range(5)]
     (tmp_path / NOTIFY_LOG_NAME).write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue._db_tasks import bulk_prior_run_seconds
-from taskqueue.db import open_db
-from taskqueue.estimate import predict_task_resources, prefetch_exact_peaks
 from tests.test_operator_features import _insert_run, _mk_task
+from tqdaemon._db_tasks import bulk_prior_run_seconds
+from tqdaemon.db import open_db
+from tqdaemon.estimate import predict_task_resources, prefetch_exact_peaks
 
 NOW = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from taskqueue.web.responses import _QUEUE_SLIM_COLUMNS, _get_queue_response, _queue_row_dict
 from tests.helpers.master_worker import make_handler_env, seed_queued_task
+from tqdaemon.web.responses import _QUEUE_SLIM_COLUMNS, _get_queue_response, _queue_row_dict
 
 
 def test_slim_columns_exist_and_give_the_same_dashboard_rows(tmp_path) -> None:

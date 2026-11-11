@@ -1,4 +1,4 @@
-"""Tests for taskqueue.worker_api — remote task claim logic."""
+"""Tests for tqdaemon.worker_api — remote task claim logic."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.worker_api import claim_next_remote_task
+from tqdaemon.db import open_db
+from tqdaemon.worker_api import claim_next_remote_task
 
 # ---------------------------------------------------------------------------
 # Helpers

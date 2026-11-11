@@ -1,10 +1,10 @@
 [project]
-name = "taskqueue"
-version = "0.7.6"
+name = "tqdaemon"
+version = "0.8.0"
 description = "Local resource-aware task queue daemon (CLI, web UI, MCP, remote workers)"
 license = "MIT"
 readme = "README.md"
-authors = [{ name = "taskqueue contributors" }]
+authors = [{ name = "tqdaemon contributors" }]
 keywords = [
     "task-queue",
     "job-scheduler",
@@ -35,18 +35,19 @@ dependencies = [
 toast = ["winotify>=1.1.0"]
 
 [project.urls]
-Homepage = "https://github.com/wwylon/taskqueue"
-Repository = "https://github.com/wwylon/taskqueue"
-Issues = "https://github.com/wwylon/taskqueue/issues"
-Documentation = "https://github.com/wwylon/taskqueue/tree/main/docs"
+Homepage = "https://github.com/wwylon/tqdaemon"
+Repository = "https://github.com/wwylon/tqdaemon"
+Issues = "https://github.com/wwylon/tqdaemon/issues"
+Documentation = "https://github.com/wwylon/tqdaemon/tree/main/docs"
 
 [project.scripts]
-tq = "taskqueue.cli:main"
-taskqueue = "taskqueue.cli:main"
+tq = "tqdaemon.cli:main"
+tqdaemon = "tqdaemon.cli:main"
 
 [dependency-groups]
 browser = [
     "playwright>=1.64",
+    "pillow>=10.0",
 ]
 dev = [
     "pytest>=8.0",
@@ -65,38 +66,38 @@ no_implicit_optional = true
 check_untyped_defs = true
 # Gradual: worker core first (Wave 6 / F-209). Expand modules as annotations land.
 files = [
-    "taskqueue/worker_http.py",
-    "taskqueue/worker_outbox.py",
-    "taskqueue/worker_journal.py",
-    "taskqueue/daemon_clock.py",
-    "taskqueue/mutate.py",
-    "taskqueue/arg_overrides.py",
-    "taskqueue/statuses.py",
-    "taskqueue/admit_context.py",
-    "taskqueue/stop_summary.py",
-    "taskqueue/doctor_checks.py",
-    "taskqueue/lease.py",
-    "taskqueue/stop_reasons.py",
-    "taskqueue/netutil.py",
-    "taskqueue/yaml_sync.py",
-    "taskqueue/system_alerts.py",
-    "taskqueue/deprefs.py",
-    "taskqueue/errors.py",
-    "taskqueue/dt_utils.py",
-    "taskqueue/_time.py",
-    "taskqueue/jsonutil.py",
-    "taskqueue/victim.py",
-    "taskqueue/placement.py",
-    "taskqueue/why.py",
-    "taskqueue/run_diff.py",
-    "taskqueue/timeline_forecast.py",
-    "taskqueue/progress_sanity.py",
-    "taskqueue/adopt.py",
-    "taskqueue/run_wrapper.py",
-    "taskqueue/backoff.py",
-    "taskqueue/dbtxn.py",
-    "taskqueue/submit.py",
-    "taskqueue/mutations.py",
+    "tqdaemon/worker_http.py",
+    "tqdaemon/worker_outbox.py",
+    "tqdaemon/worker_journal.py",
+    "tqdaemon/daemon_clock.py",
+    "tqdaemon/mutate.py",
+    "tqdaemon/arg_overrides.py",
+    "tqdaemon/statuses.py",
+    "tqdaemon/admit_context.py",
+    "tqdaemon/stop_summary.py",
+    "tqdaemon/doctor_checks.py",
+    "tqdaemon/lease.py",
+    "tqdaemon/stop_reasons.py",
+    "tqdaemon/netutil.py",
+    "tqdaemon/yaml_sync.py",
+    "tqdaemon/system_alerts.py",
+    "tqdaemon/deprefs.py",
+    "tqdaemon/errors.py",
+    "tqdaemon/dt_utils.py",
+    "tqdaemon/_time.py",
+    "tqdaemon/jsonutil.py",
+    "tqdaemon/victim.py",
+    "tqdaemon/placement.py",
+    "tqdaemon/why.py",
+    "tqdaemon/run_diff.py",
+    "tqdaemon/timeline_forecast.py",
+    "tqdaemon/progress_sanity.py",
+    "tqdaemon/adopt.py",
+    "tqdaemon/run_wrapper.py",
+    "tqdaemon/backoff.py",
+    "tqdaemon/dbtxn.py",
+    "tqdaemon/submit.py",
+    "tqdaemon/mutations.py",
 ]
 ignore_missing_imports = true
 
@@ -105,10 +106,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["taskqueue"]
+packages = ["tqdaemon"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"docs" = "taskqueue/_docs"
+"docs" = "tqdaemon/_docs"
 
 [tool.ruff]
 line-length = 120
@@ -135,11 +136,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Intentional star imports of the _cli_* command modules.
-"taskqueue/cli.py" = ["F401", "F403", "F405", "F811"]
+"tqdaemon/cli.py" = ["F401", "F403", "F405", "F811"]
 # Re-export hubs: names are imported here so other modules (and tests) import them from one place.
-"taskqueue/db.py" = ["F401"]
-"taskqueue/web/__init__.py" = ["F401"]
-"taskqueue/web/deps.py" = ["F401"]
+"tqdaemon/db.py" = ["F401"]
+"tqdaemon/web/__init__.py" = ["F401"]
+"tqdaemon/web/deps.py" = ["F401"]
 # Tests and scripts may swallow cleanup errors in teardown.
 "tests/**" = ["S110", "BLE001"]
 "scripts/**" = ["S110", "BLE001"]

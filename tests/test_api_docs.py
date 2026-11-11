@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from taskqueue.web import _API_REGISTRY
+from tqdaemon.web import _API_REGISTRY
 
 # Exact GET/POST paths from web.py dispatch table (must appear in registry).
 REQUIRED_PATHS = [
@@ -89,7 +89,7 @@ def _dispatched_routes() -> tuple[set[str], set[str]]:
     import re
     from pathlib import Path
 
-    import taskqueue.web.handler as h
+    import tqdaemon.web.handler as h
 
     src = Path(h.__file__).read_text(encoding="utf-8")
     exact = set(re.findall(r'"(/api/[^"<>]*)":\s*(?:lambda|self\.)', src))

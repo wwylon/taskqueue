@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from taskqueue import daemon, power, sched_wake
-from taskqueue.db import open_db
+from tqdaemon import daemon, power, sched_wake
+from tqdaemon.db import open_db
 
 
 @pytest.fixture

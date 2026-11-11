@@ -6,9 +6,9 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue._cli_helpers import last_nonempty_line, read_last_lines, warn_enabled_but_terminal
-from taskqueue._cli_task import cmd_list, cmd_result, cmd_tail
-from taskqueue.db import open_db
+from tqdaemon._cli_helpers import last_nonempty_line, read_last_lines, warn_enabled_but_terminal
+from tqdaemon._cli_task import cmd_list, cmd_result, cmd_tail
+from tqdaemon.db import open_db
 
 
 def _now() -> str:
@@ -87,8 +87,8 @@ def test_list_json_includes_enabled_and_progress(tmp_path: Path, monkeypatch, ca
         log_path=str(tmp_path / "r2.log"),
     )
     conn.close()
-    monkeypatch.setattr("taskqueue._cli_task._db", lambda h: db)
-    monkeypatch.setattr("taskqueue.config.load_projects", lambda h: {})
+    monkeypatch.setattr("tqdaemon._cli_task._db", lambda h: db)
+    monkeypatch.setattr("tqdaemon.config.load_projects", lambda h: {})
     rc = cmd_list(home, None, as_json=True)
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -114,7 +114,7 @@ def test_list_human_yaml_off_and_progress(tmp_path: Path, monkeypatch, capsys) -
         log_path=str(tmp_path / "b.log"),
     )
     conn.close()
-    monkeypatch.setattr("taskqueue._cli_task._db", lambda h: db)
+    monkeypatch.setattr("tqdaemon._cli_task._db", lambda h: db)
     rc = cmd_list(home, None, as_json=False)
     assert rc == 0
     text = capsys.readouterr().out
@@ -131,7 +131,7 @@ def test_cmd_result_exit_codes(tmp_path: Path, monkeypatch, capsys) -> None:
     conn = open_db(db)
     _seed_task(conn, status="completed", log_path=str(log))
     conn.close()
-    monkeypatch.setattr("taskqueue._cli_task._db", lambda h: db)
+    monkeypatch.setattr("tqdaemon._cli_task._db", lambda h: db)
     assert cmd_result(home, "p/t1") == 0
     assert capsys.readouterr().out.strip() == '{"ok": true}'
 
@@ -152,7 +152,7 @@ def test_cmd_tail_last_exits(tmp_path: Path, monkeypatch, capsys) -> None:
     conn = open_db(db)
     _seed_task(conn, status="completed", log_path=str(log))
     conn.close()
-    monkeypatch.setattr("taskqueue._cli_task._db", lambda h: db)
+    monkeypatch.setattr("tqdaemon._cli_task._db", lambda h: db)
     assert cmd_tail(home, "p/t1", last_n=2) == 0
     assert capsys.readouterr().out.strip().splitlines() == ["l2", "l3"]
 
@@ -169,8 +169,8 @@ def test_warn_enabled_but_terminal(capsys) -> None:
 def test_warn_enabled_terminal_summary_skips_completed(tmp_path, capsys) -> None:
     from datetime import UTC, datetime
 
-    from taskqueue._cli_helpers import warn_enabled_terminal_summary
-    from taskqueue.db import open_db
+    from tqdaemon._cli_helpers import warn_enabled_terminal_summary
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()

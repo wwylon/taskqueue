@@ -64,7 +64,7 @@ const full = g._usageHtml({ run_id: 7, current_cpu_pct: 90, peak_cpu_pct: 95, cu
   peak_vram_gib: 2, current_gpu_util_pct: 40, avg_gpu_util_pct: 30 });
 r.full = ['CPU ', '3.6 cores', 'var(--warn)', '2.0 GiB', 'metrics.peakSuffix', 'VRAM', '1.5 GiB', '40%'].map(x => full.includes(x));
 const peaks = g._usageHtml({ run_id: 1, peak_cpu_pct: 50, peak_ram_gib: 1, peak_vram_gib: 2, avg_gpu_util_pct: 10 });
-r.peaks = ['CPU pk', 'RAM pk', 'VRAM pk', 'GPU avg'].map(x => peaks.includes(x));
+r.peaks = ['runmetric.cpuPeak', 'runmetric.ramPeak', 'Vrunmetric.ramPeak', 'runmetric.gpuAvg'].map(x => peaks.includes(x));
 r.vram0 = g._usageHtml({ run_id: 1, requires_gpu: true }).includes('0.0 GiB');
 r.pending = g._usageHtml({ run_id: 7 }).includes('status.usagePending');
 r.idle = g._usageHtml({ run_id: 99 }).includes('—');
@@ -110,5 +110,5 @@ S.status = { running: [] }; g._updateRunningTimes(); r.noRunning = sparks;
     assert out["text"] == ["3 / 4", "28.0 / 16 GiB", "87.5%", "3", "100 MB", "var(--fail)"]
     assert out["run"][0] == "1m01s"
     assert out["run"][1].startswith("50%") and out["run"][2] == "50%"
-    assert out["run"][3] == "hello" and out["run"][4] == "log.noOutput" and out["run"][5] == " · last output 9s ago"
+    assert out["run"][3] == "hello" and out["run"][4] == "log.noOutput" and out["run"][5] == " · task.lastOutputAgo"
     assert out["run"][6] == 1 and out["noRunning"] == 2

@@ -29,7 +29,7 @@ skip_unless_seeded = pytest.mark.skipif(not _SEEDED, reason="set LOADGEN_SEEDED=
 
 def test_runs_query_uses_index(tmp_path):
     """The runs lookup for /api/queue must use an index, not a full scan."""
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
 
@@ -44,7 +44,7 @@ def test_runs_query_uses_index(tmp_path):
 
 def test_tasks_priority_query_uses_index(tmp_path):
     """Scheduler ORDER BY priority DESC, enqueued_at ASC should use the covering index."""
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
 
@@ -64,7 +64,7 @@ def test_tasks_priority_query_uses_index(tmp_path):
 
 def test_db_size_budget(tmp_path):
     """1000 tasks + 1000 runs should produce < 5 MB of DB."""
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -90,8 +90,8 @@ def test_db_size_budget(tmp_path):
 
 def test_queue_api_paginated(tmp_path):
     """500 tasks — /api/queue response honours limit=10 and total is correct."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -117,8 +117,8 @@ def test_queue_api_paginated(tmp_path):
 
 def test_search_is_server_side(tmp_path):
     """?search= narrows the SQL result; client receives only matches."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -137,8 +137,8 @@ def test_search_is_server_side(tmp_path):
 
 def test_search_by_description(tmp_path):
     """?search= also matches on description field."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_queue_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_queue_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -161,8 +161,8 @@ def test_search_by_description(tmp_path):
 
 def test_groups_response(tmp_path):
     """_get_groups_response: returns status breakdown per group."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_groups_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_groups_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -184,8 +184,8 @@ def test_groups_response(tmp_path):
 
 def test_cost_response(tmp_path):
     """_get_cost_response: aggregates CPU-minutes from runs."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_cost_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_cost_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -207,8 +207,8 @@ def test_cost_response(tmp_path):
 
 def test_deps_response_nodes_and_edges(tmp_path):
     """_get_deps_response: nodes include all tasks, edges capture depends_on."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_deps_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -232,8 +232,8 @@ def test_deps_response_nodes_and_edges(tmp_path):
 
 def test_usage_response_empty(tmp_path):
     """_get_usage_response: no crash on empty usage_snapshot table."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_usage_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_usage_response
 
     db = open_db(tmp_path / "q.db")
     r = _get_usage_response(db, cutoff_ts=0)
@@ -243,8 +243,8 @@ def test_usage_response_empty(tmp_path):
 
 def test_history_api_paginated(tmp_path):
     """_get_history_response: total=N, pagination returns non-overlapping pages."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_history_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_history_response
 
     db = open_db(tmp_path / "q.db")
     now_start = "2026-01-01T00:00:00+00:00"
@@ -267,8 +267,8 @@ def test_history_api_paginated(tmp_path):
 
 def test_history_api_project_filter(tmp_path):
     """_get_history_response: project filter narrows total and runs."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_history_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_history_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -286,8 +286,8 @@ def test_history_api_project_filter(tmp_path):
 
 def test_history_api_search(tmp_path):
     """_get_history_response: ?search= matches task_id / project / #run_id before LIMIT."""
-    from taskqueue.db import open_db
-    from taskqueue.web import _get_history_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web import _get_history_response
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -339,13 +339,13 @@ def test_history_api_search(tmp_path):
 @skip_unless_seeded
 def test_api_queue_p95(tmp_path):
     """Measure live `_get_queue_response` against the target-profile DB."""
-    home = Path(os.environ.get("TASKQUEUE_TEST_HOME", str(Path.home() / ".taskqueue-dev")))
+    home = Path(os.environ.get("TQDAEMON_TEST_HOME", str(Path.home() / ".tqdaemon-dev")))
     db_path = home / "queue.db"
     if not db_path.exists():
         pytest.skip("Run loadgen --profile target first")
 
-    from taskqueue.db import open_db
-    from taskqueue.web.responses import _get_queue_response
+    from tqdaemon.db import open_db
+    from tqdaemon.web.responses import _get_queue_response
 
     conn = open_db(db_path, migrate=False)
     times = []
@@ -363,14 +363,14 @@ def test_api_queue_p95(tmp_path):
 @skip_unless_seeded
 def test_api_status_p95(tmp_path):
     """Measure status_counts + running/queued counts against the target-profile DB."""
-    home = Path(os.environ.get("TASKQUEUE_TEST_HOME", str(Path.home() / ".taskqueue-dev")))
+    home = Path(os.environ.get("TQDAEMON_TEST_HOME", str(Path.home() / ".tqdaemon-dev")))
     db_path = home / "queue.db"
     if not db_path.exists():
         pytest.skip("Run loadgen --profile target first")
 
-    from taskqueue._db_tasks import count_queued_tasks, get_running_tasks
-    from taskqueue.db import open_db
-    from taskqueue.queries import status_counts
+    from tqdaemon._db_tasks import count_queued_tasks, get_running_tasks
+    from tqdaemon.db import open_db
+    from tqdaemon.queries import status_counts
 
     conn = open_db(db_path, migrate=False)
     times = []
@@ -389,8 +389,8 @@ def test_api_status_p95(tmp_path):
 
 
 def test_count_queued_tasks_matches_fetch(tmp_path):
-    from taskqueue._db_tasks import count_queued_tasks, get_queued_tasks
-    from taskqueue.db import open_db
+    from tqdaemon._db_tasks import count_queued_tasks, get_queued_tasks
+    from tqdaemon.db import open_db
 
     db = open_db(tmp_path / "q.db")
     now = "2026-01-01T00:00:00+00:00"
@@ -409,7 +409,7 @@ def test_count_queued_tasks_matches_fetch(tmp_path):
 
 
 def test_slim_dto_projections():
-    from taskqueue.web import _history_row_dict, _queue_row_dict
+    from tqdaemon.web import _history_row_dict, _queue_row_dict
 
     fat_task = {
         "project": "p",

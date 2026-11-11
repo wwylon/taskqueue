@@ -219,7 +219,7 @@ r.stopped = [posts().pop(), alerts.pop()[0], doc.getElementById('proj-stopall-bt
     assert out["freeze"] == [["POST", "/api/project/freeze/p"], ["toast.projectBlocked", "ok"]]
     assert out["frozen"] == ["btn.unfreeze", "var(--ok)"]
     assert out["unfreeze"] == [["POST", "/api/project/unfreeze/p"], ["toast.projectUnblocked", "ok"]]
-    assert out["confirm"][1:] == ["btn.stopAll", True] and '"p"' in out["confirm"][0]
+    assert out["confirm"] == ["task.stopAllInProject", "btn.stopAll", True]
     assert out["stopped"] == [["POST", "/api/project/stop-all/p"], "alert.stoppedTasks", False]
 
 
@@ -241,7 +241,7 @@ await g._showProjectRoot('all');
 r.hidden = bar.style.display;
 let b = btn();
 await g.workerSync(b, 'w 1');
-r.sync = [posts().pop(), alerts.pop()[0].includes('Sync queued'), b.disabled];
+r.sync = [posts().pop(), alerts.pop()[0].includes('modal.syncQueued'), b.disabled];
 g.fetch = async () => ({ ok: true, json: async () => ({ ok: false, error: 'offline' }) });
 await g.workerSync(btn(), 'w1');
 r.syncFail = alerts.pop()[0];
@@ -252,7 +252,7 @@ r.syncFail = alerts.pop()[0];
     assert out["missing"] is True
     assert out["frozen"] == [True, "var(--warn)"] and out["hidden"] == "none"
     assert out["sync"] == [["POST", "/api/worker/sync/w%201"], True, False]
-    assert out["syncFail"] == "Sync failed: offline"
+    assert out["syncFail"] == "modal.syncFailed"
 
 
 def test_stop_waits_for_undo_window_and_undo_cancels():

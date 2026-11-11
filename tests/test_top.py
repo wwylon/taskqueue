@@ -6,7 +6,7 @@ import io
 import socket
 from pathlib import Path
 
-from taskqueue.top import iter_sse, render, run_top
+from tqdaemon.top import iter_sse, render, run_top
 
 
 def test_iter_sse_parses_named_and_default_events():
@@ -51,8 +51,8 @@ def test_render_lists_running_tasks():
 
 
 def test_run_top_once_against_live_server(tmp_path: Path, monkeypatch):
-    from taskqueue.db import open_db, set_config
-    from taskqueue.web import start_web_server
+    from tqdaemon.db import open_db, set_config
+    from tqdaemon.web import start_web_server
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -69,8 +69,8 @@ def test_run_top_once_against_live_server(tmp_path: Path, monkeypatch):
 def test_run_top_json_emits_one_ndjson_line(tmp_path: Path, monkeypatch):
     import json
 
-    from taskqueue.db import open_db, set_config
-    from taskqueue.web import start_web_server
+    from tqdaemon.db import open_db, set_config
+    from tqdaemon.web import start_web_server
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

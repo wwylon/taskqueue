@@ -6,10 +6,10 @@ import io
 import json
 from pathlib import Path
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server
-from taskqueue._db_runs import insert_run
-from taskqueue.db import open_db
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server
+from tqdaemon._db_runs import insert_run
+from tqdaemon.db import open_db
 
 
 def test_finished_run_paging_does_not_skip(tmp_path: Path, monkeypatch) -> None:

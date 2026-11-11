@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 
-from taskqueue.bundle import create_project_bundle
-from taskqueue.config import Project
-from taskqueue.project_sync import _posix, path_matches_allowlist, resolve_allowed_file
+from tqdaemon.bundle import create_project_bundle
+from tqdaemon.config import Project
+from tqdaemon.project_sync import _posix, path_matches_allowlist, resolve_allowed_file
 
 
 def test_posix_keeps_leading_dot_of_dotfiles():

@@ -8,16 +8,16 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue import errors as tqerr
-from taskqueue._db_runs import (
+from tqdaemon import errors as tqerr
+from tqdaemon._db_runs import (
     mark_stale_workers_offline,
     reclaim_expired_leases,
     renew_run_lease,
     worker_health,
 )
-from taskqueue._db_tasks import get_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import SCHEMA_VERSION, open_db, parse_task_yaml
+from tqdaemon._db_tasks import get_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import SCHEMA_VERSION, open_db, parse_task_yaml
 
 
 def test_schema_has_lease_column(tmp_path: Path) -> None:

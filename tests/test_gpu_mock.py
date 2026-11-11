@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.capacity import build_capacity
-from taskqueue.db import open_db
-from taskqueue.resources import (
+from tqdaemon.capacity import build_capacity
+from tqdaemon.db import open_db
+from tqdaemon.resources import (
     ResourceBudget,
     pack_gpu,
     remote_worker_gpu_fits,
@@ -33,8 +33,8 @@ def _fake_detect(n: int):
 
 @pytest.mark.parametrize("n", [0, 1, 3])
 def test_capacity_gpu_count(tmp_path: Path, monkeypatch, n: int) -> None:
-    monkeypatch.setattr("taskqueue.capacity.detect_system", _fake_detect(n))
-    monkeypatch.setattr("taskqueue.capacity.ram_used_gib", lambda: 4.0)
+    monkeypatch.setattr("tqdaemon.capacity.detect_system", _fake_detect(n))
+    monkeypatch.setattr("tqdaemon.capacity.ram_used_gib", lambda: 4.0)
     db = open_db(tmp_path / "q.db")
     cap = build_capacity(db, {"cpu_limit_pct": 100, "gpu_limit_pct": 100, "ram_limit_pct": 100})
     assert len(cap["master"]["gpus"]) == n

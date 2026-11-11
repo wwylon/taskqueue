@@ -8,10 +8,10 @@ from unittest import mock
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue import mcp_server, notify
-from taskqueue.db import open_db
-from taskqueue.rows import resources_dict_from_mapping
+from tqdaemon import config as tqconfig
+from tqdaemon import mcp_server, notify
+from tqdaemon.db import open_db
+from tqdaemon.rows import resources_dict_from_mapping
 
 
 def test_f145_queue_full_dead_letters(tmp_path: Path) -> None:

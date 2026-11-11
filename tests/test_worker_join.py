@@ -6,10 +6,10 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._cli_worker import cmd_worker_config_master
-from taskqueue.config import load_projects, project_config_path
-from taskqueue.db import get_config, open_db, set_config
-from taskqueue.worker_join import (
+from tqdaemon._cli_worker import cmd_worker_config_master
+from tqdaemon.config import load_projects, project_config_path
+from tqdaemon.db import get_config, open_db, set_config
+from tqdaemon.worker_join import (
     build_join_payload,
     load_join_file,
     write_join_file,
@@ -89,8 +89,8 @@ def test_config_master_writes_file(tmp_path: Path) -> None:
 
 
 def test_remote_project_omitted_dispatch_defaults_any(tmp_path: Path) -> None:
-    from taskqueue.config import Project
-    from taskqueue.db import parse_task_yaml
+    from tqdaemon.config import Project
+    from tqdaemon.db import parse_task_yaml
 
     root = tmp_path / "p"
     q = root / "experiments" / "operator_queue"

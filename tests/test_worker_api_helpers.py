@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from taskqueue import worker_api
-from taskqueue.config import PROTOCOL_VERSION
-from taskqueue.db import open_db
+from tqdaemon import worker_api
+from tqdaemon.config import PROTOCOL_VERSION
+from tqdaemon.db import open_db
 
 
 def test_svc_key_is_order_stable_and_tolerates_garbage():
@@ -13,7 +13,7 @@ def test_svc_key_is_order_stable_and_tolerates_garbage():
 
 
 def test_precheck_services_probes_each_distinct_requirement_once(tmp_path, monkeypatch):
-    import taskqueue.scheduler as scheduler
+    import tqdaemon.scheduler as scheduler
 
     conn = open_db(tmp_path / "q.db")
     rows = [{"requires_services": '[{"health_url":"http://x"}]'}] * 3 + [{"requires_services": None}]

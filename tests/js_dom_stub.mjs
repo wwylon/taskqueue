@@ -5,7 +5,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { pathToFileURL } from 'node:url';
 
-const STATIC = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'taskqueue', 'static');
+const STATIC = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'tqdaemon', 'static');
 
 class ClassList {
   constructor(el) { this.el = el; this.s = new Set(); }

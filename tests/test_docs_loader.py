@@ -1,10 +1,10 @@
-"""Tests for taskqueue.docs_loader."""
+"""Tests for tqdaemon.docs_loader."""
 
 from __future__ import annotations
 
 import json
 
-from taskqueue.docs_loader import (
+from tqdaemon.docs_loader import (
     build_help_payload,
     expand_topic_includes,
     extract_error_labels,
@@ -72,7 +72,7 @@ def test_markdown_to_html_basic():
 
 
 def test_relative_md_link_rewrites_to_docs_route():
-    from taskqueue.docs_loader import _rewrite_help_href
+    from tqdaemon.docs_loader import _rewrite_help_href
 
     assert _rewrite_help_href("../task_standards.md") == "/docs/task-standards"
     assert _rewrite_help_href("task_standards.md") == "/docs/task-standards"
@@ -101,7 +101,7 @@ def test_error_labels_contain_block_deps():
 
 
 def test_write_generated_artifacts(tmp_path, monkeypatch):
-    import taskqueue.docs_loader as dl
+    import tqdaemon.docs_loader as dl
 
     monkeypatch.setattr(dl, "static_dir", lambda: tmp_path)
     paths = write_generated_artifacts()

@@ -1,4 +1,4 @@
-from taskqueue import daemon
+from tqdaemon import daemon
 
 
 class _Conn:

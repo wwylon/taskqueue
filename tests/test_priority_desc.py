@@ -10,14 +10,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from taskqueue._db_tasks import get_queued_tasks, get_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.models import STATUS_COMPLETED
-from taskqueue.priority_migrate import invert_priority, migrate_priority_invert
-from taskqueue.resources import sort_queued_fairshare
-from taskqueue.runner import ActiveRun
 from tests.helpers.wait import wait_until
+from tqdaemon._db_tasks import get_queued_tasks, get_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.models import STATUS_COMPLETED
+from tqdaemon.priority_migrate import invert_priority, migrate_priority_invert
+from tqdaemon.resources import sort_queued_fairshare
+from tqdaemon.runner import ActiveRun
 
 
 def _project(name: str, root: Path) -> Project:

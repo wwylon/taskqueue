@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db
-from taskqueue.web.responses import _get_queue_response, _queue_order_by
+from tqdaemon.db import open_db
+from tqdaemon.web.responses import _get_queue_response, _queue_order_by
 
 
 def _seed(conn, n: int = 120) -> None:

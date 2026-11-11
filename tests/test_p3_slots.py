@@ -7,8 +7,8 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.worker_api import claim_next_remote_task
+from tqdaemon.db import open_db
+from tqdaemon.worker_api import claim_next_remote_task
 
 
 def _insert_task(

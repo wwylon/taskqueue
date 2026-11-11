@@ -1,7 +1,7 @@
 """Daemon tick admission phase: cooldown freeze, CPU gate, reap-before-admit ordering."""
 
-import taskqueue.scheduler as scheduler
-from taskqueue import daemon
+import tqdaemon.scheduler as scheduler
+from tqdaemon import daemon
 
 
 def _capture(monkeypatch):

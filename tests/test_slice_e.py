@@ -7,18 +7,18 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_runs import finish_run, insert_run
-from taskqueue._db_tasks import (
+from tqdaemon._db_runs import finish_run, insert_run
+from tqdaemon._db_tasks import (
     failed_attempt_count,
     get_task,
     retry_task,
     set_task_status,
     upsert_task,
 )
-from taskqueue.config import Project
-from taskqueue.db import is_project_paused, open_db, parse_task_yaml, set_project_paused
-from taskqueue.models import STATUS_FAILED
-from taskqueue.yaml_patch import patch_task_yaml
+from tqdaemon.config import Project
+from tqdaemon.db import is_project_paused, open_db, parse_task_yaml, set_project_paused
+from tqdaemon.models import STATUS_FAILED
+from tqdaemon.yaml_patch import patch_task_yaml
 
 
 def test_project_pause(tmp_path: Path) -> None:
@@ -32,7 +32,7 @@ def test_project_pause(tmp_path: Path) -> None:
 
 def test_max_attempts_blocks_admit_but_explicit_retry_resets(tmp_path: Path) -> None:
     """Admit uses failed_attempt_count; F-123 explicit retry resets the baseline window."""
-    from taskqueue._db_tasks import retry_skip_reason
+    from tqdaemon._db_tasks import retry_skip_reason
 
     db = open_db(tmp_path / "q.db")
     proj = Project(name="p", root=tmp_path, queue_dir=tmp_path / "q")

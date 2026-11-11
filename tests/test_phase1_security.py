@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.config import control_path, controls_dir
-from taskqueue.web.handler import _loopback_bypass_ok
+from tqdaemon.config import control_path, controls_dir
+from tqdaemon.web.handler import _loopback_bypass_ok
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1:8765", "localhost:8765", "[::1]:8765", "127.0.0.1"])
@@ -30,8 +30,8 @@ def test_no_cors_header_on_api_responses(tmp_path: Path) -> None:
     import socket
     import time as _time
 
-    from taskqueue.db import open_db
-    from taskqueue.web import start_web_server
+    from tqdaemon.db import open_db
+    from tqdaemon.web import start_web_server
 
     with socket.socket() as _s:
         _s.bind(("127.0.0.1", 0))

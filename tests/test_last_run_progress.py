@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue import config as tqconfig
-from taskqueue._fmt import shown_progress
-from taskqueue.db import open_db
-from taskqueue.web.responses import _get_queue_response
 from tests.test_health import _task
+from tqdaemon import config as tqconfig
+from tqdaemon._fmt import shown_progress
+from tqdaemon.db import open_db
+from tqdaemon.web.responses import _get_queue_response
 
 
 @pytest.mark.parametrize(
@@ -32,7 +32,7 @@ def test_shown_progress_rule(status, pct, expected) -> None:
 
 
 def test_queue_response_carries_last_run_progress(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("TASKQUEUE_HOME", str(tmp_path))
+    monkeypatch.setenv("TQDAEMON_HOME", str(tmp_path))
     conn = open_db(tqconfig.db_path(tmp_path))
     try:
         _task(conn, "boom", "failed")

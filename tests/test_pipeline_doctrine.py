@@ -10,7 +10,7 @@ import pytest
 
 
 def _open(tmp_path: Path) -> sqlite3.Connection:
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db = tmp_path / "queue.db"
     return open_db(db)
@@ -50,7 +50,7 @@ def _insert(
 
 
 def test_suite_retry_includes_completed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from taskqueue._cli_project import cmd_suite
+    from tqdaemon._cli_project import cmd_suite
 
     home = tmp_path / "home"
     home.mkdir()
@@ -59,7 +59,7 @@ def test_suite_retry_includes_completed(tmp_path: Path, monkeypatch: pytest.Monk
     _insert(conn, "p", "b", status="failed", suite="s1")
     conn.close()
 
-    monkeypatch.setenv("TASKQUEUE_HOME", str(home))
+    monkeypatch.setenv("TQDAEMON_HOME", str(home))
     # cmd_suite uses _db(home) via home arg
     rc = cmd_suite(home, "retry", "s1")
     assert rc == 0
@@ -73,7 +73,7 @@ def test_suite_retry_includes_completed(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 def test_collect_and_retry_downstream(tmp_path: Path):
-    from taskqueue.db import collect_downstream_task_ids, retry_task_with_downstream
+    from tqdaemon.db import collect_downstream_task_ids, retry_task_with_downstream
 
     home = tmp_path / "home"
     home.mkdir()
@@ -99,7 +99,7 @@ def test_collect_and_retry_downstream(tmp_path: Path):
 
 
 def test_deps_response_edge_health_and_focus(tmp_path: Path):
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -121,7 +121,7 @@ def test_deps_response_edge_health_and_focus(tmp_path: Path):
 
 
 def test_deps_response_suite_filter(tmp_path: Path):
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -155,7 +155,7 @@ def _seed_deps_mode_fixture(conn: sqlite3.Connection) -> None:
 
 
 def test_deps_mode_active(tmp_path: Path):
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -176,7 +176,7 @@ def test_deps_mode_active(tmp_path: Path):
 
 
 def test_deps_mode_attention(tmp_path: Path):
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -194,7 +194,7 @@ def test_deps_mode_attention(tmp_path: Path):
 
 
 def test_deps_mode_default_all(tmp_path: Path):
-    from taskqueue.web import _get_deps_response
+    from tqdaemon.web import _get_deps_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -208,8 +208,8 @@ def test_deps_mode_default_all(tmp_path: Path):
 
 
 def test_deps_mode_invalid(tmp_path: Path):
-    from taskqueue.web import _apply_deps_mode, _get_deps_response
     from tests.helpers.master_worker import http_request, make_handler_env
+    from tqdaemon.web import _apply_deps_mode, _get_deps_response
 
     with pytest.raises(ValueError, match="invalid deps mode"):
         _apply_deps_mode([], [], "bogus")
@@ -229,7 +229,7 @@ def test_deps_mode_invalid(tmp_path: Path):
 
 
 def test_suites_response_lists_named_suites(tmp_path: Path):
-    from taskqueue.web import _get_suites_response
+    from tqdaemon.web import _get_suites_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -246,7 +246,7 @@ def test_suites_response_lists_named_suites(tmp_path: Path):
 
 
 def test_suites_response_lists_projects_across_all(tmp_path: Path):
-    from taskqueue.web import _get_suites_response
+    from tqdaemon.web import _get_suites_response
 
     home = tmp_path / "home"
     home.mkdir()
@@ -263,7 +263,7 @@ def test_suites_response_lists_projects_across_all(tmp_path: Path):
 
 
 def test_finalize_wake_hooks_on_complete(tmp_path: Path):
-    from taskqueue.finalize_hooks import apply_finalize_wake_hooks
+    from tqdaemon.finalize_hooks import apply_finalize_wake_hooks
 
     home = tmp_path / "home"
     home.mkdir()
@@ -318,7 +318,7 @@ def test_web_suite_retry_includes_completed_group_retry_needs_explicit_restart_a
 
 
 def test_suite_disable_without_yaml_falls_back_to_db(tmp_path: Path):
-    from taskqueue._cli_project import cmd_suite
+    from tqdaemon._cli_project import cmd_suite
 
     home = tmp_path / "home"
     home.mkdir()
@@ -333,10 +333,10 @@ def test_suite_disable_without_yaml_falls_back_to_db(tmp_path: Path):
 
 
 def test_suite_disable_patches_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    import taskqueue.db as dbmod
-    import taskqueue.yaml_patch as yp
-    from taskqueue import config as cfg
-    from taskqueue._cli_project import cmd_suite
+    import tqdaemon.db as dbmod
+    import tqdaemon.yaml_patch as yp
+    from tqdaemon import config as cfg
+    from tqdaemon._cli_project import cmd_suite
 
     home = tmp_path / "home"
     home.mkdir()

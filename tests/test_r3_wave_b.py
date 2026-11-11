@@ -5,9 +5,9 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.web import make_handler
 from tests.helpers.master_worker import http_request, make_handler_env, seed_master_lease
+from tqdaemon.db import open_db
+from tqdaemon.web import make_handler
 
 
 def test_next_task_rejects_foreign_origin(tmp_path: Path) -> None:

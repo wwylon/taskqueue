@@ -99,7 +99,7 @@ def test_python_client_lines_match_runner_parsers(capsys):
 
     import tq_client
 
-    from taskqueue.runner import _PCT_RE, _TQ_METRIC_RE
+    from tqdaemon.runner import _PCT_RE, _TQ_METRIC_RE
 
     tq_client.progress(12.5, "step")
     tq_client.metric(loss=0.5, epoch=2)

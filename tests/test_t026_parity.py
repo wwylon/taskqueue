@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from taskqueue.placement import score_assignment
-from taskqueue.scheduler import (
+from tqdaemon.placement import score_assignment
+from tqdaemon.scheduler import (
     MASTER_NODE_ID,
     FilterContext,
     Node,

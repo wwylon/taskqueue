@@ -1,6 +1,6 @@
-# Task Standards and Conventions for `taskqueue`
+# Task Standards and Conventions for `tqdaemon`
 
-This document defines the requirements, standards, and best practices that tasks running in the `taskqueue` system must follow. Designing tasks to adhere to these rules ensures they can be scheduled fairly, monitored accurately, and restarted cleanly in our multi-project research environment.
+This document defines the requirements, standards, and best practices that tasks running in the `tqdaemon` system must follow. Designing tasks to adhere to these rules ensures they can be scheduled fairly, monitored accurately, and restarted cleanly in our multi-project research environment.
 
 Prefer YAML + `tq sync` for long jobs; keep short interactive work in-session. See [README](../README.md) (session work vs the queue) and [agents/recipes.md](agents/recipes.md).
 
@@ -10,7 +10,7 @@ Every execution attempt gets a numeric `run_id`. The Web UI shows it as **`#<run
 
 ### Runtime identity (dogfood)
 
-* Default state home is `~/.taskqueue` (port **8765**). Confirm with `tq doctor`.
+* Default state home is `~/.tqdaemon` (port **8765**). Confirm with `tq doctor`.
 * Run `tq doctor` before overnight leave — it prints home, schema version, pid, port, and `protocol` (`PROTOCOL_VERSION` in config).
 * Cheap validation tasks live under [`fixtures/tqdemo`](../fixtures/tqdemo/README.md); do not point experimental workers at the prod master.
 
@@ -18,7 +18,7 @@ Every execution attempt gets a numeric `run_id`. The Web UI shows it as **`#<run
 
 ## 0. YAML field reference
 
-Fields recognized by `parse_task_yaml` (see `taskqueue/db.py`). Required fields are marked.
+Fields recognized by `parse_task_yaml` (see `tqdaemon/db.py`). Required fields are marked.
 
 > **Prefer [`tq_client`](../clients/README.md) for scripts.** Progress `(N%)`, `TQ_METRIC`, cooperative suspend/hold (exit 75), and checkpoint cadence belong in the shared helpers — not hand-rolled prints. Cookbook: [agents/task-script-cookbook.md](agents/task-script-cookbook.md). Copy-paste projects: [`examples/`](../examples/).
 
@@ -125,7 +125,7 @@ A task can have both fields set. Use `suite` when you need to pause or re-arm an
 
 | Field | Default | Notes |
 |-------|---------|-------|
-| `notify_url` | unset | Opt-in end-of-task notify. When set, after a successful terminal finalize (`completed` / `failed` / `interrupted` / `suspended` / `stopped`) the master appends one JSON line to `{TASKQUEUE_HOME}/notify.jsonl` and best-effort `POST`s the same payload to this URL (4s timeout, never blocks or fails the run). **Loopback hosts only** by default (`127.0.0.1`, `localhost`, `::1`); remote hosts require `tq config set notify_allow_remote=1`. Omit the field for no notify. A global fallback URL can be set via `tq config set notify_url=http://…` — any task without its own field uses it. |
+| `notify_url` | unset | Opt-in end-of-task notify. When set, after a successful terminal finalize (`completed` / `failed` / `interrupted` / `suspended` / `stopped`) the master appends one JSON line to `{TQDAEMON_HOME}/notify.jsonl` and best-effort `POST`s the same payload to this URL (4s timeout, never blocks or fails the run). **Loopback hosts only** by default (`127.0.0.1`, `localhost`, `::1`); remote hosts require `tq config set notify_allow_remote=1`. Omit the field for no notify. A global fallback URL can be set via `tq config set notify_url=http://…` — any task without its own field uses it. |
 | `artifacts` | `[]` | Paths (relative to project root) that must exist after the run completes. Finalize checks presence; missing paths mark the run as `failed` with `tq.run.artifacts_missing`. |
 | `artifacts_required` | `false` | Set `true` to fail (not just warn) when declared artifact paths are missing after the run. |
 
@@ -242,7 +242,7 @@ Do not confuse project freeze with the idle **FROZEN** badge on a running card (
 To allow developers and the web UI to monitor running tasks, all task scripts **must** report their progress. **Use [`tq_client.progress` / `metric`](../clients/README.md)** (or the C++ twin) — see [task-script-cookbook.md](agents/task-script-cookbook.md) and [`examples/checkpointable/`](../examples/checkpointable/).
 
 ### The Progress Format
-The `taskqueue` daemon monitors the standard output (stdout) of running tasks. It looks for progress patterns formatted as `(XX.X%)` or `(XX%)` (using the regular expression `\((\d+(?:\.\d+)?)%\)`).
+The `tqdaemon` daemon monitors the standard output (stdout) of running tasks. It looks for progress patterns formatted as `(XX.X%)` or `(XX%)` (using the regular expression `\((\d+(?:\.\d+)?)%\)`).
 
 * **Requirement**: Print your current progress percentage enclosed in parentheses, followed by a percent sign, e.g., `(45.2%)` or `(70%)`.
 * **Example Output**:
@@ -402,7 +402,7 @@ If you need CPU-only tasks to run concurrently while the GPU job runs, `exclusiv
 
 - **`tq doctor` GPU diagnostics**: reports per-device VRAM (used/free), utilization, driver version, temperature, and `torch_cuda` availability. Detects driver–toolkit mismatches. Use before overnight GPU runs to confirm the stack is healthy.
 
-- **Host GPU lock file**: while any local (or same-host worker) task with `gpu_vram_gib > 0` is running, the daemon keeps `~/.taskqueue/locks/gpu.lock` (JSON with `project`, `task_id`, `run_id`, `pid`, `started`). Other tools (e.g. local pytest) can skip GPU tiers when that file exists. Stale pids are scrubbed on daemon start.
+- **Host GPU lock file**: while any local (or same-host worker) task with `gpu_vram_gib > 0` is running, the daemon keeps `~/.tqdaemon/locks/gpu.lock` (JSON with `project`, `task_id`, `run_id`, `pid`, `started`). Other tools (e.g. local pytest) can skip GPU tiers when that file exists. Stale pids are scrubbed on daemon start.
 
 **Post-exit shell (`teardown`) — flush OS page cache after mmap-heavy training:**
 
@@ -428,7 +428,7 @@ The script exits 0 even when not elevated (advisory only). On Linux it writes `3
 
 ### Real/Peak Memory Tracking and Profiling
 
-The `taskqueue` daemon dynamically monitors and records the actual resource usage of tasks:
+The `tqdaemon` daemon dynamically monitors and records the actual resource usage of tasks:
 * **RAM (CPU)**: Tracks the sum of Resident Set Size (RSS) for the main task process and all of its child processes recursively using `psutil`. Live RSS also picks the hard-limit eviction victim.
 * **VRAM (GPU)**: Queries `nvidia-smi` compute-apps. Counts CUDA memory for PIDs in the task process tree **or** whose name/cmdline matches `resources.locks` / `requires_services[].name` (sidecar runtimes such as Ollama; `ollama` also matches `llama-server`). Windows WDDM often reports per-process VRAM as `[N/A]` — then the sample falls back to device `memory.used` (same shared-device caveat as GPU %). A failed `nvidia-smi` keeps the previous reading instead of storing 0 GiB. CPU-only tasks skip this probe. Device GPU % is sampled while attributed VRAM is > 0 (two concurrent GPU tasks share the same device %).
 * **Log issue counts**: each stdout line is classified (`ERROR`/`FATAL`/`CRITICAL`/`REJECT` → errors, `WARN`/`WARNING` → warnings, `LOW SCORE` → other). Counts live in `runs.metrics_json.log` and show as chips in the UI / `tq metrics` / MCP `progress_snapshot` when non-zero. English “error” / `0 errors` is ignored. Tasks cannot overwrite the reserved `log` key via `TQ_METRIC`.
@@ -465,7 +465,7 @@ Refer to these estimated footprints for standard antigravity tasks to align your
 With Wave 1, tasks may be executed on remote worker machines. To ensure a task runs successfully on a worker node:
 
 ### 4.1. Use Portable Commands
-* **Python Scripts**: Always use `command: python`. Never hardcode absolute virtualenv paths (e.g. `d:\antigravity\taskqueue\.venv\Scripts\python.exe`). The task runner automatically resolves `python` to the project's own `.venv` Python executable if it exists.
+* **Python Scripts**: Always use `command: python`. Never hardcode absolute virtualenv paths (e.g. `d:\antigravity\tqdaemon\.venv\Scripts\python.exe`). The task runner automatically resolves `python` to the project's own `.venv` Python executable if it exists.
 * **Compiled Binaries**: Use project-relative paths and omit the `.exe` extension (e.g. `command: bin/agents/my_tool`). The runner automatically appends the correct extension depending on the worker's operating system.
 * **Directory Separators**: Use forward slashes `/` for paths in arguments and commands. The Python path libraries handle conversions.
 
@@ -613,7 +613,7 @@ Calling `tq` from inside a queued task:
 
 ### End-of-task events (`notify.jsonl`) and the opt-in webhook (`notify_url`)
 
-* On every terminal finalize the master appends one JSON object to `{TASKQUEUE_HOME}/notify.jsonl` — **no YAML field needed** (config `notify_default`, default `1`; `tq config set notify_default=0` restores the old opt-in behaviour). Agents read it with MCP `drain_notifications`.
+* On every terminal finalize the master appends one JSON object to `{TQDAEMON_HOME}/notify.jsonl` — **no YAML field needed** (config `notify_default`, default `1`; `tq config set notify_default=0` restores the old opt-in behaviour). Agents read it with MCP `drain_notifications`.
 * `notify_url` (YAML or global config) only adds a best-effort `POST` of the same payload (4s timeout; failures are logged, never fail the run).
 * Payload fields: `ts`, `project`, `task_id`, `status`, `run_id`, `exit_code`, `last_error_code`, `started_by`, `notify_url`. Optional enriched fields when set: `submitted_by`, `submitted_via` (task provenance), `description`, `suite`, `elapsed_sec`, `peak_ram_gib`, `progress_pct`, `block_reason`, `stop_reason`.
 * Hosts must be loopback unless `tq config set notify_allow_remote=1`.
@@ -660,6 +660,6 @@ The queue has no result store — output is written by the task script to files.
 
 ### Validation errors
 
-Task YAML is validated in one place (`validate_task_spec` in `taskqueue/db.py`) before it is queued. An empty file, a non-mapping document, a missing or blank `command`, a `task_id` containing `\`, `..` or control characters, or negative `wall_clock_cap_sec` / `max_attempts` / `resources.*` values are rejected with a message naming the file and field. A missing `task_id` is reported as a missing-field error.
+Task YAML is validated in one place (`validate_task_spec` in `tqdaemon/db.py`) before it is queued. An empty file, a non-mapping document, a missing or blank `command`, a `task_id` containing `\`, `..` or control characters, or negative `wall_clock_cap_sec` / `max_attempts` / `resources.*` values are rejected with a message naming the file and field. A missing `task_id` is reported as a missing-field error.
 
 To check YAML without queueing it, `POST /api/validate` with `{"project": ..., "yaml_text": ...}`. It runs the same parser in a scratch directory and returns `{"ok": true, "valid": true, "task_ids": [...]}` or `{"ok": true, "valid": false, "error": "..."}`; nothing is written to the queue.

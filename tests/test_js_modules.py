@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-JS = Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js"
+JS = Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js"
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node not installed")
 
@@ -470,7 +470,7 @@ def test_latest_drops_stale_responses():
 def test_every_state_field_assigned_by_modules_is_declared_in_state_js():
     import re
 
-    static = Path(__file__).resolve().parent.parent / "taskqueue" / "static"
+    static = Path(__file__).resolve().parent.parent / "tqdaemon" / "static"
     state = (static / "js" / "core" / "state.js").read_text(encoding="utf-8")
     declared = set(re.findall(r"^\s*([A-Za-z_]\w*)\s*:", state, re.M))
     assigned = set()
@@ -640,7 +640,7 @@ def test_why_need_free_lines_format_declared_resources_only():
 
 
 def test_classify_log_line_matches_python_classifier():
-    from taskqueue.log_issues import classify_log_line
+    from tqdaemon.log_issues import classify_log_line
 
     lines = [
         "[ERROR] boom",

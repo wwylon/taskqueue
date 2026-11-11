@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from taskqueue.web.handler import _dispatch_get_prefix
+from tqdaemon.web.handler import _dispatch_get_prefix
 
 
 class Rec:

@@ -1,7 +1,7 @@
 import io
 import json
 
-from taskqueue import scheduler
+from tqdaemon import scheduler
 
 
 def test_ps_fetch_cached(monkeypatch):
@@ -13,7 +13,7 @@ def test_ps_fetch_cached(monkeypatch):
         return io.BytesIO(json.dumps({"models": [{"name": "m"}]}).encode())
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: fake(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: fake(req, timeout=timeout)
     )
     a = scheduler._fetch_ollama_ps_models("http://127.0.0.1:11434/api/ps")
     b = scheduler._fetch_ollama_ps_models("http://127.0.0.1:11434/api/ps")
@@ -30,7 +30,7 @@ def test_ps_failure_cached(monkeypatch):
         raise OSError("down")
 
     monkeypatch.setattr(
-        "taskqueue.netutil._open", lambda req, timeout=None, allow_remote=False: boom(req, timeout=timeout)
+        "tqdaemon.netutil._open", lambda req, timeout=None, allow_remote=False: boom(req, timeout=timeout)
     )
     assert scheduler._fetch_ollama_ps_models("http://127.0.0.2:11434/api/ps") is None
     assert scheduler._fetch_ollama_ps_models("http://127.0.0.2:11434/api/ps") is None

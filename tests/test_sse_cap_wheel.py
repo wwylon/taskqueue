@@ -8,8 +8,8 @@ from urllib.error import URLError
 
 import pytest
 
-from taskqueue import notify
-from taskqueue.web import responses
+from tqdaemon import notify
+from tqdaemon.web import responses
 
 
 def test_sse_cap_is_quarter_of_pool() -> None:
@@ -18,7 +18,7 @@ def test_sse_cap_is_quarter_of_pool() -> None:
 
 
 def test_docs_root_resolves_to_manifest() -> None:
-    from taskqueue import docs_loader
+    from tqdaemon import docs_loader
 
     assert (docs_loader.docs_root() / "manifest.json").is_file()
 
@@ -29,7 +29,7 @@ def test_pyproject_force_includes_docs() -> None:
 
     cfg = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text(encoding="utf-8"))
     fi = cfg["tool"]["hatch"]["build"]["targets"]["wheel"]["force-include"]
-    assert fi["docs"] == "taskqueue/_docs"
+    assert fi["docs"] == "tqdaemon/_docs"
 
 
 def test_webhook_redirect_to_remote_host_is_blocked_before_request() -> None:

@@ -1,6 +1,6 @@
 #pragma once
 
-// Minimal taskqueue client helpers for C++ task scripts.
+// Minimal tqdaemon client helpers for C++ task scripts.
 // Zero external dependencies — copy this single header into any project.
 //
 // Quick-start:

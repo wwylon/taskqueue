@@ -8,18 +8,18 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_runs import reclaim_expired_leases
-from taskqueue._db_tasks import retry_task, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.fencing import (
+from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon._db_runs import reclaim_expired_leases
+from tqdaemon._db_tasks import retry_task, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.fencing import (
     lost_attempt_task_status,
     may_auto_requeue,
     resolve_execution_semantics,
     session_id_mismatch,
     should_stop_for_lost_lease,
 )
-from tests.helpers.master_worker import http_request, make_handler_env
 
 
 def test_resolve_execution_semantics() -> None:

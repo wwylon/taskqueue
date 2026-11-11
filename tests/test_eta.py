@@ -9,13 +9,13 @@ from pathlib import Path
 
 import yaml
 
-from taskqueue._db_tasks import upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml
-from taskqueue.eta import build_eta, remaining, task_eta
-from taskqueue.metrics_snapshot import build_run_metrics
-from taskqueue.waiting import wait_for
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon._db_tasks import upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml
+from tqdaemon.eta import build_eta, remaining, task_eta
+from tqdaemon.metrics_snapshot import build_run_metrics
+from tqdaemon.waiting import wait_for
 
 NOW = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)
 
@@ -144,7 +144,7 @@ def test_api_stop_returns_the_eta_at_the_moment_of_the_stop(tmp_path: Path) -> N
 def test_ui_eta_text_and_task_detail_api(tmp_path: Path) -> None:
     from tests.test_js_modules import _run
 
-    fmt_js = (Path(__file__).resolve().parent.parent / "taskqueue" / "static" / "js" / "util" / "format.js").as_uri()
+    fmt_js = (Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js" / "util" / "format.js").as_uri()
     out = _run(
         "globalThis.i18n = { t: (k, v) => k + (v ? JSON.stringify(v) : '') };\n"
         f"import {{ etaText }} from {json.dumps(fmt_js)};\n"

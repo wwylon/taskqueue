@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from taskqueue.db import open_db
-from taskqueue.operator_features import run_detail
+from tqdaemon.db import open_db
+from tqdaemon.operator_features import run_detail
 
 
 def _run(db, rid, ram, wall=100, status="completed", vram=None):

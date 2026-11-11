@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from taskqueue.archive import archive_tasks
-from taskqueue.config import Project
-from taskqueue.db import open_db
-from taskqueue.hygiene import build_hygiene_report
+from tqdaemon.archive import archive_tasks
+from tqdaemon.config import Project
+from tqdaemon.db import open_db
+from tqdaemon.hygiene import build_hygiene_report
 
 
 def _conn(tmp_path: Path):
@@ -103,7 +103,7 @@ def test_archive_max_completed_runs(tmp_path: Path) -> None:
 
 
 def test_run_counts_maintained_on_insert_finalize(tmp_path: Path) -> None:
-    from taskqueue.db import finalize_run_and_task, insert_run
+    from tqdaemon.db import finalize_run_and_task, insert_run
 
     conn, _ = _conn(tmp_path)
     conn.execute(
@@ -125,7 +125,7 @@ def test_run_counts_maintained_on_insert_finalize(tmp_path: Path) -> None:
 
 
 def test_tq_list_uses_total_run_count_column(tmp_path: Path) -> None:
-    from taskqueue._cli_task import _list_fetch_rows
+    from tqdaemon._cli_task import _list_fetch_rows
 
     conn, _home = _conn(tmp_path)
     conn.execute(

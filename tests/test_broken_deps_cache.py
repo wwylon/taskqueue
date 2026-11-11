@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue import queries
-from taskqueue.db import open_db
+from tqdaemon import queries
+from tqdaemon.db import open_db
 
 
 def _ins(conn, tid: str, status: str = "queued", deps: str = "[]", upd: str = "2026-10-23T00:00:00") -> None:
@@ -64,7 +64,7 @@ def test_tasks_cached_invalidates_on_change(tmp_path: Path) -> None:
 
 
 def test_deps_graph_is_capped_unless_focused(tmp_path: Path) -> None:
-    from taskqueue.web.responses import DEPS_MAX_NODES, _get_deps_response
+    from tqdaemon.web.responses import DEPS_MAX_NODES, _get_deps_response
 
     conn = open_db(tmp_path / "tq.db")
     n = DEPS_MAX_NODES + 50

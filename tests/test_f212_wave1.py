@@ -12,14 +12,14 @@ from tests.helpers.master_worker import seed_queued_task
 
 
 def test_get_sys_info_keeps_driver_and_cuda_distinct(monkeypatch) -> None:
-    from taskqueue import worker
+    from tqdaemon import worker
 
     class _R:
         returncode = 0
         stdout = "GPU0, 8192, 4096, 8.9, 560.94, 12.6\n"
         stderr = ""
 
-    import taskqueue.resources as resources
+    import tqdaemon.resources as resources
 
     monkeypatch.setattr(resources, "_detect_gpus", lambda: [])
     monkeypatch.setattr(worker.subprocess, "run", lambda *a, **k: _R())
@@ -35,7 +35,7 @@ def test_get_sys_info_keeps_driver_and_cuda_distinct(monkeypatch) -> None:
 
 
 def test_reject_leftover_stop_and_status(tmp_path: Path, monkeypatch, capsys) -> None:
-    from taskqueue import cli
+    from tqdaemon import cli
 
     monkeypatch.setattr(cli, "cmd_stop", lambda *a, **k: pytest.fail("must not act"))
     monkeypatch.setattr(cli, "cmd_status", lambda *a, **k: pytest.fail("must not act"))
@@ -46,8 +46,8 @@ def test_reject_leftover_stop_and_status(tmp_path: Path, monkeypatch, capsys) ->
 
 
 def test_load_fairshare_candidates_orders_by_age_bonus(tmp_path: Path) -> None:
-    from taskqueue.admit_context import load_fairshare_candidates
-    from taskqueue.db import open_db
+    from tqdaemon.admit_context import load_fairshare_candidates
+    from tqdaemon.db import open_db
 
     conn = open_db(tmp_path / "queue.db")
     seed_queued_task(conn, project="p", task_id="low_old", dispatch="local")

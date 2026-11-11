@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.auth import check_token, extract_request_token
-from taskqueue.export_import import export_home, import_home
-from taskqueue.safetar import assert_safe_member, safe_extract
+from tqdaemon.auth import check_token, extract_request_token
+from tqdaemon.export_import import export_home, import_home
+from tqdaemon.safetar import assert_safe_member, safe_extract
 
 
 def test_auth_optional_when_empty() -> None:
@@ -46,7 +46,7 @@ def test_safe_member_allows_normal(tmp_path: Path) -> None:
 
 
 def test_export_import_roundtrip(tmp_path: Path) -> None:
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     home = tmp_path / "home"
     home.mkdir()
@@ -74,7 +74,7 @@ def test_import_clears_stale_wal_at_destination(tmp_path: Path) -> None:
     it, corrupting or reverting the import."""
     from datetime import UTC, datetime
 
-    from taskqueue.db import get_task, open_db
+    from tqdaemon.db import get_task, open_db
 
     # Source home: has a real task in it, exported.
     src_home = tmp_path / "src"
@@ -112,7 +112,7 @@ def test_import_clears_stale_wal_at_destination(tmp_path: Path) -> None:
 
 
 def test_export_refuses_running_daemon(tmp_path: Path) -> None:
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     home = tmp_path / "home"
     home.mkdir()
@@ -123,8 +123,8 @@ def test_export_refuses_running_daemon(tmp_path: Path) -> None:
 
 
 def test_bind_host_and_auth_config_defaults(tmp_path: Path) -> None:
-    from taskqueue.config import validate_config
-    from taskqueue.db import get_config, open_db
+    from tqdaemon.config import validate_config
+    from tqdaemon.db import get_config, open_db
 
     assert validate_config("bind_host", "127.0.0.1") is None
     assert validate_config("auth_token", "x" * 10) is None

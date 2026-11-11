@@ -1,4 +1,4 @@
-"""Minimal helpers for taskqueue task scripts (cooperative control + progress).
+"""Minimal helpers for tqdaemon task scripts (cooperative control + progress).
 
 Zero external dependencies — copy this single file into any project and import it:
 
@@ -33,7 +33,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Generator, Iterable, TypeVar
 
-# Match taskqueue.models.EXIT_SUSPENDED
+# Match tqdaemon.models.EXIT_SUSPENDED
 EXIT_SUSPENDED = 75
 
 _T = TypeVar("_T")

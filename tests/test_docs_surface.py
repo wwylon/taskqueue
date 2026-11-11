@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from taskqueue import mcp_server
+from tqdaemon import mcp_server
 
 _SPEC = importlib.util.spec_from_file_location(
     "check_docs", Path(__file__).resolve().parent.parent / "scripts" / "check_docs.py"

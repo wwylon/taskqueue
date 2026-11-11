@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from taskqueue.web import sse
 from tests.helpers.master_worker import http_request, make_handler_env
+from tqdaemon.web import sse
 
 
 class _DyingWfile:

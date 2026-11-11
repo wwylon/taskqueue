@@ -1,5 +1,5 @@
-from taskqueue import errors as tqerr
-from taskqueue.scheduler import _OccupancyState, _p6_annotate_hold, _resource_block
+from tqdaemon import errors as tqerr
+from tqdaemon.scheduler import _OccupancyState, _p6_annotate_hold, _resource_block
 
 
 def test_p6_annotate_hold_names_the_reserved_task():

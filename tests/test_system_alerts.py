@@ -9,8 +9,8 @@ from http.client import parse_headers
 from pathlib import Path
 from unittest.mock import patch
 
-from taskqueue.db import open_db
-from taskqueue.system_alerts import (
+from tqdaemon.db import open_db
+from tqdaemon.system_alerts import (
     SYSTEM_ALERT_KEYS,
     evaluate_all_done,
     format_tq_stop_why,
@@ -21,7 +21,7 @@ from taskqueue.system_alerts import (
     toast_title_from_counts,
     update_system_alert,
 )
-from taskqueue.web import make_handler
+from tqdaemon.web import make_handler
 
 
 def _iso(dt: datetime) -> str:
@@ -40,7 +40,7 @@ def test_toast_title_format():
 
 def test_format_tq_stop_why():
     assert "RAM" in format_tq_stop_why("ram_hard", "tq.stop.ram")
-    assert format_tq_stop_why(None, None) == "stopped by TaskQueue"
+    assert format_tq_stop_why(None, None) == "stopped by TqDaemon"
 
 
 def test_update_system_alert_toggles(tmp_path: Path):
@@ -55,7 +55,7 @@ def test_update_system_alert_toggles(tmp_path: Path):
 def test_on_run_terminal_any_failure(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     update_system_alert(db, "any_failure", {"windows_toast": 0})
-    with patch("taskqueue.notify._send_toast") as toast:
+    with patch("tqdaemon.notify._send_toast") as toast:
         on_run_terminal(
             db,
             tmp_path,
@@ -131,7 +131,7 @@ def test_windows_toast_uses_triplet_title(tmp_path: Path):
     )
     db.commit()
     assert queue_status_triplet(db) == (1, 1, 2)
-    with patch("taskqueue.notify._send_toast") as toast:
+    with patch("tqdaemon.notify._send_toast") as toast:
         maybe_emit_system_alert(db, tmp_path, "any_failure", "body")
         toast.assert_called_once()
         assert toast.call_args[0][0] == "tq 1/1/2"
@@ -146,11 +146,11 @@ def test_disabled_alert_does_not_emit(tmp_path: Path):
 
 def test_emit_appends_notify_jsonl_without_winotify(tmp_path: Path):
     """Emit updates fire_count and notify.jsonl even when toast cannot show."""
-    from taskqueue.notify import notify_log_path
+    from tqdaemon.notify import notify_log_path
 
     db = open_db(tmp_path / "q.db")
     update_system_alert(db, "any_failure", {"windows_toast": 1})
-    with patch("taskqueue.notify._send_toast") as toast:
+    with patch("tqdaemon.notify._send_toast") as toast:
         assert maybe_emit_system_alert(db, tmp_path, "any_failure", "p/t failed") is True
         toast.assert_called_once()
     row = db.execute("SELECT fire_count, last_fired_at FROM system_alerts WHERE key='any_failure'").fetchone()
@@ -168,14 +168,14 @@ def test_emit_appends_notify_jsonl_without_winotify(tmp_path: Path):
 def test_send_toast_logs_missing_winotify_once(caplog):
     import logging
 
-    import taskqueue.notify as notify_mod
+    import tqdaemon.notify as notify_mod
 
     notify_mod._winotify_missing_logged = False
     notify_mod._toast_fail_logged = False
     with (
         patch.dict("sys.modules", {"winotify": None}),
         patch("builtins.__import__", side_effect=ImportError("no winotify")),
-        caplog.at_level(logging.WARNING, logger="taskqueue.notify"),
+        caplog.at_level(logging.WARNING, logger="tqdaemon.notify"),
     ):
         # Force ImportError inside _send_toast's from winotify import
         real_import = __import__
@@ -283,7 +283,7 @@ def test_api_system_alerts_get_patch(tmp_path: Path):
 
 
 def _events(home: Path):
-    from taskqueue.notify import iter_notify_events, notify_log_path
+    from tqdaemon.notify import iter_notify_events, notify_log_path
 
     return iter_notify_events(notify_log_path(home), limit=50)
 
@@ -323,7 +323,7 @@ def test_failure_alert_carries_detail_and_log_tail(tmp_path: Path, capsys):
 def test_toast_uses_event_title_and_triplet_in_body(tmp_path: Path):
     db = open_db(tmp_path / "q.db")
     update_system_alert(db, "any_failure", {"windows_toast": 1})
-    with patch("taskqueue.notify._send_toast") as toast:
+    with patch("tqdaemon.notify._send_toast") as toast:
         on_run_terminal(db, tmp_path, project="p", task_id="t1", status="failed", exit_code=1)
         toast.assert_called_once()
         title, body = toast.call_args[0][:2]
@@ -332,7 +332,7 @@ def test_toast_uses_event_title_and_triplet_in_body(tmp_path: Path):
 
 
 def test_unknown_error_code_uses_registry_description(tmp_path: Path):
-    from taskqueue.system_alerts import error_label
+    from tqdaemon.system_alerts import error_label
 
     assert error_label("tq.stop.scavenger") != "tq.stop.scavenger"
     assert error_label("tq.nope.unknown") == "tq.nope.unknown"

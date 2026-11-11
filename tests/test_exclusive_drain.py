@@ -1,4 +1,4 @@
-from taskqueue.scheduler import exclusive_drain_target
+from tqdaemon.scheduler import exclusive_drain_target
 
 
 def _row(excl=False, excl_proj=False):

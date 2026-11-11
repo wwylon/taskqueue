@@ -5,8 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-import taskqueue.db as dbmod
-from taskqueue.db import clear_config_cache, get_config, open_db, set_config
+import tqdaemon.db as dbmod
+from tqdaemon.db import clear_config_cache, get_config, open_db, set_config
 
 
 def test_other_connection_write_visible_after_ttl(tmp_path: Path, monkeypatch) -> None:

@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from taskqueue.db import open_db
-from taskqueue.resources import sort_queued_fairshare
+from tqdaemon.db import open_db
+from tqdaemon.resources import sort_queued_fairshare
 
 
 def test_fairshare_age_bonus_handles_naive_timestamp() -> None:

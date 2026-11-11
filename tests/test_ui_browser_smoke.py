@@ -14,14 +14,14 @@ import pytest
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
-from taskqueue.web import make_handler  # noqa: E402
-from taskqueue.web.responses import BoundedThreadingHTTPServer  # noqa: E402
 from tests.helpers.master_worker import seed_master_lease, seed_queued_task  # noqa: E402
+from tqdaemon.web import make_handler  # noqa: E402
+from tqdaemon.web.responses import BoundedThreadingHTTPServer  # noqa: E402
 
 
 @pytest.fixture
 def ui_url(tmp_path: Path):
-    from taskqueue.db import open_db
+    from tqdaemon.db import open_db
 
     db_path = tmp_path / "queue.db"
     db = open_db(db_path)

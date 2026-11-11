@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from taskqueue.db import open_db
-from taskqueue.resources import ResourceBudget, cpu_cores_from_load
+from tqdaemon.db import open_db
+from tqdaemon.resources import ResourceBudget, cpu_cores_from_load
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -160,9 +160,9 @@ def test_host_cpu_gate_records_block_reason_without_starting(tmp_path: Path) -> 
     """
     from datetime import UTC, datetime
 
-    from taskqueue.config import Project
-    from taskqueue.db import get_task, open_db
-    from taskqueue.scheduler import _local_admit_queued
+    from tqdaemon.config import Project
+    from tqdaemon.db import get_task, open_db
+    from tqdaemon.scheduler import _local_admit_queued
 
     conn = open_db(tmp_path / "q.db")
     now = datetime.now(UTC).isoformat()
@@ -218,7 +218,7 @@ def test_vram_budget_fits_respects_hard_limit() -> None:
 
 def test_vram_pressure_victim_picked_for_relief() -> None:
     """When VRAM is exhausted the task with the most VRAM is the primary relief candidate."""
-    from taskqueue.victim import score_victim
+    from tqdaemon.victim import score_victim
 
     # Task A: 6 GiB VRAM, idempotent, 10% progress
     score_a = score_victim(

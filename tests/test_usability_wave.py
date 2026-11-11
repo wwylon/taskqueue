@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from taskqueue._db_runs import force_task
-from taskqueue._db_tasks import get_task, request_stop, set_task_status, upsert_task
-from taskqueue.config import Project
-from taskqueue.db import open_db, parse_task_yaml, set_project_frozen
-from taskqueue.health import compute_health
-from taskqueue.models import STATUS_QUEUED, STATUS_STOPPED
-from taskqueue.web import _UNGROUPED, _get_queue_response
+from tqdaemon._db_runs import force_task
+from tqdaemon._db_tasks import get_task, request_stop, set_task_status, upsert_task
+from tqdaemon.config import Project
+from tqdaemon.db import open_db, parse_task_yaml, set_project_frozen
+from tqdaemon.health import compute_health
+from tqdaemon.models import STATUS_QUEUED, STATUS_STOPPED
+from tqdaemon.web import _UNGROUPED, _get_queue_response
 
 
 def _project(name: str, tmp: Path) -> Project:
@@ -133,7 +133,7 @@ def test_acknowledged_failure_without_run_stays_acknowledged(tmp_path: Path) -> 
 
 
 def test_prior_run_seconds_sums_runs_since_last_completion(tmp_path: Path) -> None:
-    from taskqueue._db_tasks import prior_run_seconds
+    from tqdaemon._db_tasks import prior_run_seconds
 
     db = open_db(tmp_path / "queue.db")
     rows = [
@@ -153,7 +153,7 @@ def test_prior_run_seconds_sums_runs_since_last_completion(tmp_path: Path) -> No
 
 
 def test_history_active_skips_frozen_projects(tmp_path: Path) -> None:
-    from taskqueue.web import _get_history_response
+    from tqdaemon.web import _get_history_response
 
     db = open_db(tmp_path / "queue.db")
     now = "2026-10-17T08:00:00+00:00"
@@ -184,8 +184,8 @@ def test_queue_deps_sort_promotes_blockers(tmp_path: Path) -> None:
 
 
 def test_set_task_error_fills_describe(tmp_path: Path) -> None:
-    from taskqueue import errors as tqerr
-    from taskqueue.db import set_task_error
+    from tqdaemon import errors as tqerr
+    from tqdaemon.db import set_task_error
 
     db = open_db(tmp_path / "queue.db")
     proj = _project("p", tmp_path)
