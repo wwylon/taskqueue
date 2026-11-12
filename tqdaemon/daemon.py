@@ -17,14 +17,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from tqdaemon import config as tqconfig
 from tqdaemon import errors as tqerr
 from tqdaemon._db_runs import finish_run, mark_stale_workers_offline, reclaim_expired_leases
-from tqdaemon._db_tasks import get_task, set_task_error, set_task_status, transition_task
+from tqdaemon._db_tasks import get_task, set_task_status, transition_task
 from tqdaemon._fmt import fmt_duration as _fmt_duration  # H1: shared helper
 from tqdaemon._time import (
     _now,
@@ -62,10 +61,10 @@ from tqdaemon.models import (
     STATUS_SUSPENDED,
     task_key,
 )
-from tqdaemon.resources import detect_system, gpu_refresh_interval, ram_used_gib
+from tqdaemon.resources import detect_system, gpu_refresh_interval
+from tqdaemon.rows import has_col
 from tqdaemon.runner import ActiveRun, build_process_children_map
 from tqdaemon.scheduler import _note_block
-from tqdaemon.victim import pick_victim
 from tqdaemon.web import start_web_server
 
 # YAML cache + queue-definition sync live in yaml_sync; re-exported for existing callers.
@@ -90,7 +89,7 @@ def is_negative_exit(row, code: int | None) -> bool:
     if row is None or code in (None, 0):
         return False
     try:
-        raw = row["negative_exit_codes"] if "negative_exit_codes" in row.keys() else "[]"
+        raw = row["negative_exit_codes"] if has_col(row, "negative_exit_codes") else "[]"
         return int(code) in {int(c) for c in json.loads(raw or "[]")}
     except (TypeError, ValueError, KeyError, IndexError):
         return False
@@ -111,9 +110,14 @@ def _control_requester(home: Path, project: str, task_id: str) -> str | None:
 def _replace_registry(current: dict, fresh: dict) -> None:
     """Swap the project registry contents in place: the web server holds a reference to this
     dict (projects_ref), so a new projects.yaml entry reaches `tq add` / `tq sync` / worker
-    claims without a daemon restart."""
-    current.clear()
+    claims without a daemon restart.
+
+    Update first, then drop stale keys: HTTP threads read this dict concurrently and must
+    never observe it empty (clear() + update() made every project "unknown" for a moment).
+    """
     current.update(fresh)
+    for name in [k for k in current if k not in fresh]:
+        current.pop(name, None)
 
 
 DAEMON_LOG_MAX_BYTES = 50 * 1024 * 1024
@@ -158,311 +162,23 @@ def rotate_own_log(home: Path, max_bytes: int = DAEMON_LOG_MAX_BYTES) -> bool:
 
 # F-208: pure helpers live in daemon_clock (re-exported for existing imports/tests).
 from tqdaemon.daemon_clock import clock_jump_threshold, is_clock_jump  # noqa: E402
-
-
-def _count_recent_clock_jump_runs(
-    conn,
-    project: str,
-    task_id: str,
-    window_sec: int,
-) -> int:
-    """Runs finalized with tq.infra.clock_jump within the rolling window."""
-    # finished_at is ISO-8601 with 'T'; compare against an ISO cutoff, not datetime('now').
-    cutoff = (datetime.now(UTC) - timedelta(seconds=int(window_sec))).isoformat()
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM runs "
-        "WHERE project = ? AND task_id = ? "
-        "AND last_error_code = ? "
-        "AND finished_at IS NOT NULL "
-        "AND finished_at >= ?",
-        (project, task_id, tqerr.INFRA_CLOCK_JUMP, cutoff),
-    ).fetchone()
-    return int(row["n"] or 0)
-
-
-@dataclass
-class BootClass:
-    """Result of classifying the previous daemon incarnation at boot."""
-
-    dirty: bool
-    prev_pid: int | None
-    prev_alive: bool
-    had_clean: bool
-    last_kind: str | None
-
-
-def classify_daemon_boot(home: Path, conn) -> BootClass:
-    """Decide whether the previous master exit was unclean.
-
-    See plan: stale ``daemon.pid`` without ``daemon.clean``, or missing pid
-    when the last event was not ``clean_shutdown``.
-    """
-    from tqdaemon.db import (
-        DAEMON_EVENT_CLEAN_SHUTDOWN,
-        latest_daemon_event,
-    )
-
-    pid_file = tqconfig.pid_path(home)
-    clean_file = tqconfig.clean_shutdown_path(home)
-    prev_pid: int | None = None
-    prev_alive = False
-    if pid_file.exists():
-        try:
-            raw = pid_file.read_text(encoding="utf-8").strip()
-            import psutil as _psutil
-
-            if ":" in raw:
-                # F-103: PID:create_time format
-                pid_str, ct_str = raw.split(":", 1)
-                prev_pid = int(pid_str)
-                expected_ct = float(ct_str)
-                if _psutil.pid_exists(prev_pid):
-                    actual_ct = _psutil.Process(prev_pid).create_time()
-                    prev_alive = abs(actual_ct - expected_ct) <= 1.0
-            else:
-                prev_pid = int(raw)
-                prev_alive = bool(_psutil.pid_exists(prev_pid))
-        except (OSError, ValueError, _psutil.Error):
-            prev_pid = None
-            prev_alive = False
-    had_clean = clean_file.exists()
-    last = latest_daemon_event(conn)
-    last_kind = str(last["kind"]) if last else None
-
-    dirty = False
-    if (
-        prev_pid is not None
-        and not prev_alive
-        and not had_clean
-        or prev_pid is None
-        and not had_clean
-        and last_kind is not None
-        and last_kind != DAEMON_EVENT_CLEAN_SHUTDOWN
-    ):
-        dirty = True
-    return BootClass(
-        dirty=dirty,
-        prev_pid=prev_pid,
-        prev_alive=prev_alive,
-        had_clean=had_clean,
-        last_kind=last_kind,
-    )
-
-
-def adopt_live_runs(conn, home: Path, projects: dict, *, graceful_sec: float = 30.0) -> dict:
-    """Wave 7: keep supervising wrapper-started runs a previous daemon left behind.
-
-    A local ``running`` run is adopted when its wrapper is still alive (same pid and create time,
-    ``tqdaemon.run_wrapper`` on the command line) or already wrote its exit file (it finished
-    during the restart); it then finalizes through the normal collect path with its real exit code.
-    Everything else is left to requeue_orphaned_running. Returns {(project, task_id): ActiveRun}.
-    """
-    from tqdaemon.adopt import exit_file_for, live_wrapper
-
-    adopted: dict = {}
-    rows = conn.execute(
-        "SELECT run_id, project, task_id, pid, pid_create_time, log_path, started_at, progress_pct FROM runs "
-        "WHERE status = 'running' AND worker_id IS NULL AND pid IS NOT NULL AND log_path IS NOT NULL"
-    ).fetchall()
-    for row in rows:
-        key = (str(row["project"]), str(row["task_id"]))
-        alive = live_wrapper(row["pid"], row["pid_create_time"])
-        if not alive and not exit_file_for(row["log_path"]).exists():
-            continue
-        task_row = get_task(conn, *key)
-        if task_row is None or key in adopted:
-            continue
-        proj = projects.get(key[0])
-        try:
-            run = ActiveRun.adopt(
-                conn,
-                task_row,
-                row,
-                log_dir=tqconfig.logs_dir(home, key[0]),
-                cwd=proj.root if proj is not None else Path(row["log_path"]).parent,
-                graceful_stop_sec=int(graceful_sec),
-                db_path=tqconfig.db_path(home),
-            )
-        except (OSError, ValueError, TypeError, KeyError) as exc:  # unreadable log, bad row: orphan handling
-            print(f"[queue] {_ts()} could not adopt {task_key(*key)} run {row['run_id']}: {exc}", flush=True)
-            continue
-        adopted[key] = run
-        state = "running" if alive else "finished during the restart"
-        print(f"[queue] {_ts()} adopted {task_key(*key)} run {row['run_id']} pid={row['pid']} ({state})", flush=True)
-    return adopted
-
-
-def requeue_orphaned_running(
-    conn,
-    *,
-    reason: str = "orphan",
-    graceful_sec: float = 5.0,
-    gap_sec: float | None = None,
-    keep_run_ids: frozenset[int] = frozenset(),
-) -> int:
-    """Reap local orphan OS processes, then re-queue local ghosts.
-
-    Local-only (``worker_id IS NULL``). Remotes use lease reclaim. ``keep_run_ids`` (adopted
-    runs) are left alone, and so are their tasks.
-    F-080: flip DB status to ``interrupted`` **before** killing process trees
-    so a slow graceful kill cannot leave ``running`` rows if the daemon dies
-    mid-reap (create_time still guards against PID reuse on kill).
-    """
-    from tqdaemon.reap import kill_process_tree
-
-    rows = [
-        r
-        for r in conn.execute(
-            "SELECT run_id, project, task_id, pid, pid_create_time, sleep_tier FROM runs "
-            "WHERE status = 'running' AND worker_id IS NULL AND pid IS NOT NULL"
-        ).fetchall()
-        if int(r["run_id"]) not in keep_run_ids
-    ]
-    keep_sql = ""
-    keep_args: tuple = ()
-    if keep_run_ids:
-        keep_sql = f" AND run_id NOT IN ({','.join('?' * len(keep_run_ids))})"
-        keep_args = tuple(sorted(keep_run_ids))
-
-    now_iso = _now()
-    err_code = tqerr.INFRA_CLOCK_JUMP if reason == "clock-jump" else tqerr.INFRA_ORPHAN
-    # W6.3: attribute clock-jump interrupts to "host-sleep"
-    _stopped_by = "host-sleep" if reason == "clock-jump" else "tq"
-    _stop_reason: str | None = None
-    if reason == "clock-jump":
-        if gap_sec is not None and gap_sec > 0:
-            _stop_reason = f"clock-jump:gap={int(gap_sec)}s"
-        else:
-            _stop_reason = "clock-jump"
-    else:
-        _stop_reason = "orphan"
-    cfg = get_config(conn) if reason == "clock-jump" else {}
-    _max_requeue = int(cfg.get("clock_jump_max_requeue", 3) or 0) if reason == "clock-jump" else 0
-    _requeue_window = int(cfg.get("clock_jump_requeue_window_sec", 3600)) if reason == "clock-jump" else 0
-    # Broad UPDATE still covers pid-less local running rows (stop() / clock-jump).
-    conn.execute(
-        "UPDATE runs SET status = 'interrupted', finished_at = ?, exit_code = -1, "
-        "wall_sec = CAST(ROUND((julianday(?) - julianday(started_at)) * 86400) AS INTEGER), "
-        "last_error_code = COALESCE(?, last_error_code), stopped_by = ?, "
-        "stop_reason = COALESCE(?, stop_reason), error_category = ?, lease_expires_at = NULL "
-        "WHERE status = 'running' AND worker_id IS NULL" + keep_sql,
-        (
-            now_iso,
-            now_iso,
-            err_code,
-            _stopped_by,
-            _stop_reason,
-            tqerr.classify_error(err_code, -1, _stopped_by),
-            *keep_args,
-        ),
-    )
-    try:
-        conn.commit()
-    except sqlite3.Error:
-        pass
-
-    # F-152: track kill failures so we do not re-queue while the OS process may still live.
-    kill_failed: set[tuple[str, str]] = set()
-    for row in rows:
-        pid = int(row["pid"])
-        ct = row["pid_create_time"]
-        create_time = float(ct) if ct is not None else None
-        # F-010: resume Tier-2 (NtSuspendProcess) frozen processes before kill so
-        # graceful SIGTERM can be delivered — a suspended process cannot be woken by kill.
-        if row["sleep_tier"] == 2 and sys.platform == "win32":
-            try:
-                import ctypes
-
-                _SUSPEND_RESUME = 0x0800
-                _handle = ctypes.windll.kernel32.OpenProcess(_SUSPEND_RESUME, False, pid)
-                if _handle:
-                    ctypes.windll.ntdll.NtResumeProcess(_handle)
-                    ctypes.windll.kernel32.CloseHandle(_handle)
-            except (AttributeError, OSError) as _re:
-                print(f"[queue] {_ts()} warn: NtResumeProcess pid={pid}: {_re}", file=sys.stderr)
-        result = kill_process_tree(pid, create_time=create_time, graceful_sec=graceful_sec)
-        print(
-            f"[queue] {_ts()} reap orphan pid={pid} {task_key(row['project'], row['task_id'])} → {result}",
-            flush=True,
-        )
-        if result in ("denied", "skipped_reuse"):
-            kill_failed.add((str(row["project"]), str(row["task_id"])))
-    orphaned = conn.execute(
-        "SELECT DISTINCT t.project, t.task_id FROM tasks t "
-        "WHERE t.status = 'running' AND NOT EXISTS ("
-        "  SELECT 1 FROM runs r WHERE r.project = t.project AND r.task_id = t.task_id "
-        "  AND r.status = 'running' AND (r.worker_id IS NOT NULL"
-        + (f" OR r.run_id IN ({','.join('?' * len(keep_args))})" if keep_args else "")
-        + ")"
-        ")",
-        keep_args,
-    ).fetchall()
-    n = 0
-    for row in orphaned:
-        task_row = conn.execute(
-            "SELECT stop_requested FROM tasks WHERE project = ? AND task_id = ? AND status = 'running'",
-            (row["project"], row["task_id"]),
-        ).fetchone()
-        if task_row is None:
-            continue
-        stop_req = bool(task_row["stop_requested"])
-        task_status = STATUS_INTERRUPTED
-        task_err = err_code
-        task_block: str | None = tqerr.describe(err_code) if err_code else None
-        alive_key = (str(row["project"]), str(row["task_id"]))
-        if not stop_req and alive_key in kill_failed:
-            task_status = STATUS_INTERRUPTED
-            task_err = tqerr.INFRA_ORPHAN_ALIVE
-            task_block = tqerr.describe(tqerr.INFRA_ORPHAN_ALIVE)
-        elif not stop_req:
-            if reason == "clock-jump" and _max_requeue > 0:
-                recent = _count_recent_clock_jump_runs(conn, row["project"], row["task_id"], _requeue_window)
-                if recent > _max_requeue:
-                    task_err = tqerr.INFRA_CLOCK_JUMP_FLAP
-                    task_block = (
-                        f"clock-jump flap: {recent} interrupts in {_requeue_window}s — tq retry when host is stable"
-                    )
-                else:
-                    task_status = STATUS_QUEUED
-            else:
-                task_status = STATUS_QUEUED
-        if not transition_task(
-            conn, row["project"], row["task_id"], to=task_status, from_="running", now=now_iso, stop_requested=0
-        ):
-            continue
-        n += 1
-        if task_err:
-            set_task_error(
-                conn,
-                row["project"],
-                row["task_id"],
-                task_err,
-                block_reason=task_block,
-            )
-        action = "re-queued" if task_status == STATUS_QUEUED else "left interrupted"
-        print(
-            f"[queue] {_ts()} {action} {reason} task: {task_key(row['project'], row['task_id'])}",
-            flush=True,
-        )
-    conn.commit()
-    return n
-
-
-def _split_dying(active_runs: dict, attr: str) -> tuple[dict, float]:
-    """Split runs already being stopped from live eviction candidates.
-
-    A run with ``stop_reason`` set is on its way out: re-picking it burns the
-    per-tick stop budget without freeing anything new, so it is excluded and its
-    reading (*attr*) is returned as already-pending relief.
-    """
-    live: dict = {}
-    pending = 0.0
-    for k, r in active_runs.items():
-        if getattr(r, "stop_reason", None):
-            pending += float(getattr(r, attr, 0.0) or 0.0)
-        else:
-            live[k] = r
-    return live, pending
+from tqdaemon.lifecycle import (  # noqa: E402,F401 - re-exported for existing callers
+    BootClass,
+    _count_recent_clock_jump_runs,
+    adopt_live_runs,
+    classify_daemon_boot,
+    requeue_orphaned_running,
+)
+from tqdaemon.pressure import (  # noqa: E402,F401 - re-exported for existing callers
+    RAM_PRESSURE,
+    VRAM_PRESSURE,
+    PressureSpec,
+    _enforce_hard_pressure,
+    _pressure_limits,
+    _pressure_used,
+    _split_dying,
+    _stop_pressure_victims,
+)
 
 
 def _evict_one_suspend(
@@ -635,7 +351,7 @@ def _detect_hung_remote(
             if count < hung_k:
                 continue
             raw_sem = ""
-            if "execution_semantics" in row.keys():
+            if has_col(row, "execution_semantics"):
                 raw_sem = row["execution_semantics"] or ""
             semantics = resolve_execution_semantics(raw_sem, idempotent=bool(int(row["idempotent"] or 0)))
             if not may_auto_requeue(semantics):
@@ -994,9 +710,22 @@ class _UsageAccumulator:
         self.last_decay = 0.0
         self.last_flush = 0.0
         self.op_since: float | None = None  # wall time of the oldest unflushed op_usage sample
+        self._last_mono: float | None = None  # previous accumulate() call (monotonic)
+
+    def _measured_interval(self, interval: float) -> float:
+        """Seconds since the previous sample, not the configured tick: a tick that itself takes
+        time would otherwise undercount GPU-seconds. Clamped so a stall or gap never bills a burst."""
+        now = time.monotonic()
+        last, self._last_mono = self._last_mono, now
+        if last is None:
+            return interval
+        return max(0.0, min(now - last, 3.0 * interval))
 
     def accumulate(self, active_runs: dict, interval: float, *, host_sleeping: bool = False) -> None:
+        if not active_runs or host_sleeping:
+            self._last_mono = None
         if active_runs and not host_sleeping:
+            interval = self._measured_interval(interval)
             if self.op_since is None:
                 self.op_since = time.time()
             for key, run in active_runs.items():
@@ -1237,151 +966,6 @@ def _enforce_stops_and_caps(conn, active_runs: dict, home: Path, suspend_grace: 
                 )
 
 
-@dataclass(frozen=True)
-class PressureSpec:
-    """One hard-pressure resource (host RAM or GPU VRAM) and how its stops are worded."""
-
-    resource: str  # pick_victim resource
-    attr: str  # ActiveRun reading
-    stop_reason: str
-    err_code: str
-    label: str  # "RAM" / "VRAM"
-    used_prefix: str  # "host" / "VRAM" (log line)
-    block_prefix: str  # "RAM: host" / "VRAM: device" (block_reason)
-    held_word: str  # "RSS" / "VRAM"
-
-
-RAM_PRESSURE = PressureSpec("ram", "current_ram_gib", "ram_hard", tqerr.STOP_RAM, "RAM", "host", "RAM: host", "RSS")
-VRAM_PRESSURE = PressureSpec(
-    "vram", "current_vram_gib", "vram_hard", tqerr.STOP_VRAM, "VRAM", "VRAM", "VRAM: device", "VRAM"
-)
-
-
-def _stop_pressure_victims(
-    conn,
-    remaining: dict,
-    spec: PressureSpec,
-    *,
-    used: float,
-    projected: float,
-    soft_limit: float,
-    hard_limit: float,
-    total: float,
-    stop_cap: int,
-) -> int:
-    """Stop victims (cheapest to kill first) until ``projected`` drops under ``soft_limit``.
-
-    Shared by the hard-RAM and hard-VRAM paths. ``remaining`` holds runs not already dying and
-    is consumed. Reclaim is asynchronous, so usage is projected rather than re-read. Returns
-    how many runs were stopped (at most ``stop_cap``).
-    """
-    stopped = 0
-    while projected > soft_limit and remaining and stopped < stop_cap:
-        # D7: pick by cost-of-killing, not just biggest RSS, so an idempotent task dies
-        # before a non-idempotent one that is nearly finished.
-        victim_key, scored = pick_victim(
-            conn,
-            list(remaining.items()),
-            needed_gib=max(0.0, projected - soft_limit),
-            resource=spec.resource,
-        )
-        if victim_key is None:
-            break
-        victim = remaining.pop(victim_key)
-        held = float(getattr(victim, spec.attr) or 0.0)
-        runner_up = f"; runner-up {task_key(*scored[1][0])} score={scored[1][1]:.2f}" if len(scored) > 1 else ""
-        victim.stop_reason = spec.stop_reason
-        print(
-            f"[queue] {_ts()} {spec.label} hard limit: stopping {task_key(*victim_key)} "
-            f"({spec.used_prefix} {used:.1f} > hard {hard_limit:.1f}; "
-            f"task {spec.held_word} {held:.2f} GiB; "
-            f"score={scored[0][1]:.2f}{runner_up})",
-            flush=True,
-        )
-        set_task_error(
-            conn,
-            victim_key[0],
-            victim_key[1],
-            spec.err_code,
-            block_reason=(
-                f"{spec.block_prefix} {used:.1f} > hard {hard_limit:.1f} "
-                f"(soft {soft_limit:.1f}, total {total:.1f}); "
-                f"victim {spec.held_word} {held:.2f} GiB"
-            ),
-        )
-        victim.stop()
-        projected -= held
-        stopped += 1
-    return stopped
-
-
-def _pressure_used(spec: PressureSpec, system_info: dict, active_runs: dict, *, refreshed: bool) -> float:
-    """Current usage for *spec*: host RAM, or device VRAM (task sum as fallback / after refresh)."""
-    if spec is RAM_PRESSURE:
-        return ram_used_gib()
-    if refreshed:
-        return sum(float(r.current_vram_gib or 0.0) for r in active_runs.values())
-    # F-143: prefer host-wide GPU usage (includes non-task CUDA) over task-only sum.
-    used = sum(float(g.get("vram_used_gib") or 0.0) for g in (system_info.get("gpus") or []))
-    return used if used > 0 else sum(float(r.current_vram_gib or 0.0) for r in active_runs.values())
-
-
-def _pressure_limits(spec: PressureSpec, cfg: dict, system_info: dict) -> tuple[float, float, float]:
-    """(total, hard_limit, soft_limit) GiB for *spec*; total 0 disables the check."""
-    if spec is RAM_PRESSURE:
-        total = float(system_info.get("ram_total_gib") or 0.0)
-        soft_pct = float(cfg.get("ram_limit_pct", 80))
-        hard_pct = max(float(cfg.get("ram_hard_limit_pct", 95)), soft_pct)
-    else:
-        hard_pct = float(cfg.get("vram_hard_limit_pct", 95))
-        total = float(system_info.get("gpu_vram_total_gib") or 0.0) if hard_pct > 0 else 0.0
-        soft_pct = float(cfg.get("gpu_limit_pct", 100))
-    return total, total * hard_pct / 100.0, total * soft_pct / 100.0
-
-
-def _enforce_hard_pressure(conn, cfg: dict, system_info: dict, active_runs: dict, now: float) -> float | None:
-    """Hard RAM / VRAM response: stop victims among local runs.
-
-    Local processes consume host memory regardless of master-lease or sleep
-    state, so this is also called while the lease is lost.  Returns the new
-    ``admit_frozen_until`` (monotonic) when a victim was stopped, else None.
-    """
-    admit_frozen_until: float | None = None
-    for spec in (RAM_PRESSURE, VRAM_PRESSURE):
-        if not active_runs:
-            break
-        total, hard_limit, soft_limit = _pressure_limits(spec, cfg, system_info)
-        if total <= 0 or hard_limit <= 0:
-            continue
-        used = _pressure_used(spec, system_info, active_runs, refreshed=False)
-        if used <= hard_limit:
-            continue
-        # Refresh readings before choosing victims (VRAM: only under pressure, nvidia-smi is slow).
-        for run in list(active_runs.values()):
-            run.update_resources()
-        if spec is VRAM_PRESSURE:
-            used = _pressure_used(spec, system_info, active_runs, refreshed=True)
-        # D9: stop until projected usage is back under the SOFT limit, not merely under
-        # hard — stopping just enough to clear hard leaves the host one allocation away
-        # from thrashing again.
-        remaining, dying = _split_dying(active_runs, spec.attr)
-        if _stop_pressure_victims(
-            conn,
-            remaining,
-            spec,
-            used=used,
-            projected=used - dying,
-            soft_limit=soft_limit,
-            hard_limit=hard_limit,
-            total=total,
-            stop_cap=int(cfg.get("stop_max_per_tick", 2)),
-        ):
-            # D9: freeze admission while the OS reclaims, or admit later in this tick
-            # sizes the next task against memory the victim has not released (F7).
-            admit_frozen_until = now + float(cfg.get("recovery_cooldown_sec", 30))
-    return admit_frozen_until
-
-
 def _heartbeat_and_sanity(
     conn, home: Path, cfg: dict, active_runs: dict, frozen_threshold: float, frozen_alerted: set
 ) -> None:
@@ -1575,11 +1159,7 @@ class _QueueDirWatches:
         return project_name in self._released
 
     def update(self, projects: dict) -> int:
-        want = {
-            str(p.queue_dir)
-            for name, p in projects.items()
-            if name not in self._released and p.queue_dir.is_dir()
-        }
+        want = {str(p.queue_dir) for name, p in projects.items() if name not in self._released and p.queue_dir.is_dir()}
         for d in set(self._watches) - want:
             try:
                 self._observer.unschedule(self._watches.pop(d))
@@ -1793,7 +1373,7 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
         reclaimed_row = get_task(conn, proj, tid)
         code = (
             reclaimed_row["last_error_code"]
-            if reclaimed_row and "last_error_code" in reclaimed_row.keys()
+            if reclaimed_row and has_col(reclaimed_row, "last_error_code")
             else tqerr.INFRA_WORKER_LOST
         )
         print(
@@ -1927,9 +1507,10 @@ def daemon_tick(env: TickEnv, st: TickState) -> bool:
     _check_cron_schedule(conn, st.cron_state)
 
     try:
-        from tqdaemon.system_alerts import evaluate_all_done
+        from tqdaemon.system_alerts import evaluate_all_done, evaluate_gpu_idle
 
         evaluate_all_done(conn, home)
+        evaluate_gpu_idle(conn, home)
     except Exception as exc:  # noqa: BLE001 - system alerts must not stop the tick
         print(f"[queue] {_ts()} warn: system alert evaluation failed: {exc}", file=sys.stderr)
 
@@ -2131,14 +1712,23 @@ def _stop_and_finalize_all(active_runs: dict[RunKey, ActiveRun]) -> None:
         except Exception as _e:  # noqa: BLE001 - shutdown continues with the other runs
             print(f"[queue] {_ts()} warn: shutdown stop failed: {_e}", file=sys.stderr)
 
-    def _shutdown_one(key, run) -> None:
+    def _exited_before_stop(run) -> int | None:
+        """Exit code of a run that finished on its own before shutdown signalled it, else None."""
+        proc = getattr(run, "proc", None)
+        try:
+            return proc.poll() if proc is not None else None
+        except Exception:  # noqa: BLE001 - a broken handle just means "still ours to stop"
+            return None
+
+    def _shutdown_one(key, run, pre_exit: int | None) -> None:
         # run.stop() already happened (in parallel); finalize uses the shared
         # DB connection so it must stay on this thread.
-        # F-043: don't overwrite completed status — subprocess may have finished between
-        # the collect pass and now; use its actual exit code if available.
-        _ec = run._exit_code
-        if _ec is not None:
-            _final_status = STATUS_COMPLETED if _ec == 0 else STATUS_INTERRUPTED
+        # F-043: don't overwrite completed status when the subprocess finished on its own
+        # between the collect pass and shutdown. Only an exit observed *before* we sent the
+        # stop counts: a task that traps SIGTERM and exits 0 was still killed by us, so it is
+        # interrupted, never completed (that would wrongly release its dependents).
+        if pre_exit is not None:
+            _final_status = STATUS_COMPLETED if pre_exit == 0 else STATUS_INTERRUPTED
         else:
             _final_status = STATUS_INTERRUPTED
         run.stop_reason = run.stop_reason or "daemon_shutdown"
@@ -2161,6 +1751,7 @@ def _stop_and_finalize_all(active_runs: dict[RunKey, ActiveRun]) -> None:
 
     # Stop process trees in parallel so N runs do not cost N x graceful_stop_sec.
     _items = list(active_runs.items())
+    _pre_exit = {_k: _exited_before_stop(_r) for _k, _r in _items}
     if len(_items) > 1:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -2169,7 +1760,7 @@ def _stop_and_finalize_all(active_runs: dict[RunKey, ActiveRun]) -> None:
     elif _items:
         _safe_stop(_items[0][1])
     for _k, _r in _items:
-        _shutdown_one(_k, _r)
+        _shutdown_one(_k, _r, _pre_exit[_k])
 
 
 def run_daemon(home: Path, *, claim_master: bool = False) -> None:
@@ -2376,14 +1967,24 @@ def run_daemon(home: Path, *, claim_master: bool = False) -> None:
 
     def _relocate_project_cb(name: str, new_root_s: str) -> dict:
         """F-240: release → rewrite root/yaml_source → re-watch → sync; compare states."""
+
+        if name not in projects and name not in load_projects(home):
+            return {"ok": False, "error": f"project {name!r} not registered"}
+        # Runs on an HTTP worker thread: never touch the tick's connection (a rollback in
+        # tick recovery could discard these writes, or these commits could split a tick).
+        cb_conn = open_db(tqconfig.db_path(home))
+        try:
+            return _relocate_with_conn(cb_conn, name, new_root_s)
+        finally:
+            cb_conn.close()
+
+    def _relocate_with_conn(conn, name: str, new_root_s: str) -> dict:
         from tqdaemon.project_relocate import (
             count_running,
             relocate_project_files,
             status_histogram,
         )
 
-        if name not in projects and name not in load_projects(home):
-            return {"ok": False, "error": f"project {name!r} not registered"}
         n_run = count_running(conn, name)
         if n_run:
             return {"ok": False, "error": f"{n_run} task(s) running in {name}; stop them first"}

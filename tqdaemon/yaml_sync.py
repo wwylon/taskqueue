@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
 from tqdaemon._db_tasks import _upsert_task_no_commit, stamp_provenance
@@ -67,7 +68,18 @@ def _in_queue_dir(key: str, qdir_str: str, qdir_resolved: Path) -> bool:
     return Path(key).resolve().parent == qdir_resolved
 
 
-def _sync_project(
+# The tick and HTTP threads (/api/sync, relocate) both sync projects: serialize them so the
+# module caches above and the existing-vs-scanned reconcile never interleave (audit 2026-11).
+_SYNC_LOCK = threading.RLock()
+
+
+def _sync_project(*args, **kwargs) -> dict:
+    """Thread-safe entry point; see ``_sync_project_unlocked`` for the reconcile itself."""
+    with _SYNC_LOCK:
+        return _sync_project_unlocked(*args, **kwargs)
+
+
+def _sync_project_unlocked(
     conn,
     project: Project,
     *,

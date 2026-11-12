@@ -14,6 +14,7 @@ from typing import Any
 
 from tqdaemon._db_tasks import get_task_status
 from tqdaemon._time import _now  # noqa: F401  # canonical ISO timestamp helper
+from tqdaemon.rows import has_col
 
 # --- run records ---
 
@@ -582,10 +583,7 @@ def _history_order_by(sort: str, sort_dir: str) -> str:
             f"{direction}, run_id DESC"
         )
     if field == "duration":
-        return (
-            f"(julianday(COALESCE(finished_at, started_at)) - julianday(started_at)) "
-            f"{direction}, run_id DESC"
-        )
+        return f"(julianday(COALESCE(finished_at, started_at)) - julianday(started_at)) {direction}, run_id DESC"
     return f"run_id {direction}"
 
 
@@ -671,7 +669,7 @@ def count_runs_for_task(conn: sqlite3.Connection, project: str, task_id: str) ->
         "SELECT COUNT(*) AS n FROM runs WHERE project = ? AND task_id = ?",
         (project, task_id),
     ).fetchone()
-    return int(row["n"] if row and "n" in row.keys() else (row[0] if row else 0))
+    return int(row["n"] if row and has_col(row, "n") else (row[0] if row else 0))
 
 
 def gpu_hours_today(conn: sqlite3.Connection, project: str) -> float:
@@ -690,6 +688,20 @@ def gpu_hours_today(conn: sqlite3.Connection, project: str) -> float:
         (midnight, project, midnight),
     ).fetchone()
     return round(float(row["h"] or 0.0), 3)
+
+
+def gpu_hours_today_by_project(conn: sqlite3.Connection) -> dict[str, float]:
+    """``gpu_hours_today`` for every project in one query (set views sum members)."""
+    midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    rows = conn.execute(
+        "SELECT r.project AS project, SUM((julianday(COALESCE(r.finished_at, 'now')) "
+        "          - MAX(julianday(r.started_at), julianday(?))) * 24.0) AS h "
+        "FROM runs r JOIN tasks t ON t.project = r.project AND t.task_id = r.task_id "
+        "WHERE COALESCE(r.finished_at, '9999') >= ? "
+        "AND COALESCE(json_extract(t.resources, '$.gpu_vram_gib'), 0) > 0 GROUP BY r.project",
+        (midnight, midnight),
+    ).fetchall()
+    return {str(r["project"]): round(float(r["h"] or 0.0), 3) for r in rows}
 
 
 def get_last_run_for_task(conn: sqlite3.Connection, project: str, task_id: str) -> sqlite3.Row | None:

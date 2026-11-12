@@ -568,7 +568,8 @@ class WorkerSlot:
             argv = [str(command_path), *argv_tail]
 
             print(f"[worker] Executing: {' '.join(argv)}")
-            task_start_time = time.time()
+            task_start_time = time.time()  # wall time: output mtimes, run 'started'
+            task_start_mono = time.monotonic()  # wall-clock cap: immune to clock steps / sleep resume
             wall_cap = task.get("wall_clock_cap_sec")
             try:
                 wall_cap_sec = float(wall_cap) if wall_cap else 0.0
@@ -724,7 +725,7 @@ class WorkerSlot:
                         except Exception:  # noqa: BLE001 - VRAM sampling is best-effort
                             _log.debug("VRAM sample failed", exc_info=True)
 
-                    if wall_cap_sec > 0 and (time.time() - task_start_time) >= wall_cap_sec:
+                    if wall_cap_sec > 0 and (time.monotonic() - task_start_mono) >= wall_cap_sec:
                         print(
                             f"[worker] wall_clock_cap_sec={wall_cap_sec} exceeded; terminating",
                             flush=True,

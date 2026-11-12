@@ -1,3 +1,4 @@
+// @ts-check
 // Alerts tab: system alert toggles plus alert history. Uses app.js globals at call time: tqAct, TQ_THIS,
 // i18n, showToast, refresh, tqAlertDetailHtml, _sendJson, _showPageEmpty.
 import { S } from '../core/state.js';
@@ -77,7 +78,7 @@ export async function loadAlerts() {
   if (hb) {
     // Keep expanded history rows expanded across the periodic re-render.
     const openTs = new Set([...(hb.querySelectorAll ? hb.querySelectorAll('tr[data-ts]') : [])]
-      .filter(tr => { const d = tr.querySelector('.alert-detail'); return d && !d.hidden; })
+      .filter(tr => { const d = /** @type {HTMLElement | null} */ (tr.querySelector('.alert-detail')); return d && !d.hidden; })
       .map(tr => tr.getAttribute('data-ts')));
     _showPageEmpty('alerts-hist-empty', 'alerts-hist-wrap', hist.length === 0);
     hb.innerHTML = hist.map(ev => {

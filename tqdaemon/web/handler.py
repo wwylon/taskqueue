@@ -336,175 +336,106 @@ class Handler(
             route(self)
             return
 
-        # Prefix-match dispatch
-        if path.startswith("/api/groups/") and path.endswith("/stop"):
-            self._bulk(lambda: self._group_stop(unquote(path[len("/api/groups/") : -len("/stop")]), qs))
-        elif path.startswith("/api/groups/") and path.endswith("/retry"):
-            self._bulk(lambda: self._group_retry(unquote(path[len("/api/groups/") : -len("/retry")]), qs))
-        elif path.startswith("/api/suites/") and path.endswith("/retry"):
-            self._bulk(lambda: self._suite_retry(unquote(path[len("/api/suites/") : -len("/retry")]), qs))
-        elif path.startswith("/api/notify/dead/") and path.endswith("/retry"):
-            try:
-                self._retry_dead_notify(int(path[len("/api/notify/dead/") : -len("/retry")]))
-            except ValueError:
-                self._json({"ok": False, "error": "bad id"}, status=400)
-        elif path.startswith("/api/stop/"):
-            self._post_stop(path, qs)
-        elif path.startswith("/api/hold/"):
-            self._post_hold(path, qs)
-        elif path.startswith("/api/unhold/"):
-            self._post_unhold(path, qs)
-        elif path.startswith("/api/retry/"):
-            # Wave E: thin-wrap legacy path onto the full /api/tasks/.../retry handler.
-            proj, task_id = self._split2(path[len("/api/retry/") :])
-            self.path = f"/api/tasks/{proj}/{task_id}/retry"
-            self._task_retry(proj, task_id)
-            return
-        elif path.startswith("/api/force/"):
-            proj, task_id = self._split2(path[len("/api/force/") :])
-            err = force_task(self._rconn(), proj, task_id)
-            if err is None:
-                self._audit("force", proj, task_id)
-            self._json({"ok": err is None, "error": err})
-        elif path.startswith("/api/mark-processed/"):
-            self._post_mark_processed(path)
-        elif path.startswith("/api/enable/"):
-            proj, task_id = self._split2(path[len("/api/enable/") :])
-            enabled_q = (qs.get("enabled", ["1"])[0] or "1").strip().lower()
-            if enabled_q in ("0", "false", "no"):
-                ok, err = pause_task(self._rconn(), proj, task_id)
-                detail = "enabled=0"
-            else:
-                ok, err = enable_task(self._rconn(), proj, task_id)
-                detail = "enabled=1"
-            if ok:
-                self._audit("enable", proj, task_id, detail)
-            body: dict[str, Any] = {"ok": ok}
-            if err:
-                body["error"] = err
-            self._json(body, status=(404 if err == "task not found" else 409) if not ok else 200)
-        elif path.startswith("/api/priority/"):
-            self._post_priority(path, qs)
-        elif path.startswith("/api/project-limits/"):
-            self._post_project_limits(path[len("/api/project-limits/") :])
-        elif path.startswith("/api/worker/sync/"):
-            self._worker_sync(path[len("/api/worker/sync/") :])
-        elif path.startswith("/api/worker/file-sync/"):
-            self._worker_file_sync(path[len("/api/worker/file-sync/") :])
-        elif path.startswith("/api/transfer/put/"):
-            rest_t = path[len("/api/transfer/put/") :]
-            proj_name_t, sep_t, rel_t = rest_t.partition("/")
-            if sep_t:
-                self._receive_transfer_file(proj_name_t, rel_t)
-            else:
-                self._send_error_json(400, "Missing path")
-        elif path.startswith("/api/data/upload/"):
-            self._handle_data_upload(path[len("/api/data/upload/") :])
-        elif path.startswith("/api/data/push/"):
-            # D1: CAS blob upload — /api/data/push/<run_id>/<rel_path>
-            rest_push = path[len("/api/data/push/") :]
-            push_run_id, push_sep, push_rel = rest_push.partition("/")
-            if push_sep:
-                self._receive_cas_blob(push_run_id, push_rel)
-            else:
-                self._send_error_json(400, "Missing rel_path")
-        elif path.startswith("/api/service/"):
-            # D3: HTTP-proxy service broker (POST) — /api/service/<name>/<subpath>
-            rest_svc = path[len("/api/service/") :]
-            svc_name, svc_sep, svc_sub = rest_svc.partition("/")
-            if svc_name:
-                self._proxy_service_request(svc_name, svc_sub)
-            else:
-                self._send_error_json(400, "Missing service name")
-        elif path.startswith("/api/audit/") and path.endswith("/rollback"):
-            self._post_audit_rollback(path[len("/api/audit/") : -len("/rollback")])
-        elif path.startswith("/api/runs/") and path.endswith("/rerun"):
-            self._post_run_rerun(path[len("/api/runs/") : -len("/rerun")])
-        elif path == "/api/tasks/bulk":
-            self._post_tasks_bulk(qs)
-        elif path == "/api/tasks/retry-batch":
-            self._task_retry_batch()
-        elif path.startswith("/api/tasks/") and path.endswith("/retry"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/retry")].partition("/")
-            if sep:
-                self._task_retry(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/patch"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/patch")].partition("/")
-            if sep:
-                self._task_patch(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/tasks/") and path.endswith("/priority"):
-            proj, sep, tid = path[len("/api/tasks/") : -len("/priority")].partition("/")
-            if sep:
-                self._task_set_priority(proj, tid)
-            else:
-                self.send_error(400)
-        elif path.startswith("/api/project/freeze/"):
-            proj_name = path[len("/api/project/freeze/") :]
-            if not proj_name:
-                self.send_error(400)
+        # Prefix/suffix dispatch (ordered: first match wins; see _POST_PREFIX).
+        for prefix, suffix, handler in _POST_PREFIX:
+            if path.startswith(prefix) and path.endswith(suffix) and len(path) >= len(prefix) + len(suffix):
+                handler(self, path[len(prefix) : len(path) - len(suffix)], path, qs)
                 return
-            set_project_frozen(self._rconn(), proj_name, True)
-            self._audit("freeze", proj_name, proj_name)
-            self._json({"ok": True})
-        elif path.startswith("/api/project/unfreeze/"):
-            proj_name = path[len("/api/project/unfreeze/") :]
-            if not proj_name:
-                self.send_error(400)
-                return
-            set_project_frozen(self._rconn(), proj_name, False)
-            self._audit("unfreeze", proj_name, proj_name)
-            self._json({"ok": True})
-        elif path.startswith("/api/project/pause/") or path.startswith("/api/project/resume/"):
-            pause = path.startswith("/api/project/pause/")
-            proj_name = path[len("/api/project/pause/" if pause else "/api/project/resume/") :]
-            if not proj_name:
-                self.send_error(400)
-                return
-            from tqdaemon.db import set_project_paused
+        self.send_error(404)
 
-            set_project_paused(self._wconn(), proj_name, pause)
-            self._audit("pause" if pause else "resume", proj_name, proj_name)
-            self._json({"ok": True})
-        elif path.startswith("/api/project/release/"):
-            proj_name = path[len("/api/project/release/") :]
-            if not proj_name:
-                self.send_error(400)
-                return
-            self._post_release_project(proj_name)
-        elif path.startswith("/api/project/relocate/"):
-            proj_name = path[len("/api/project/relocate/") :]
-            if not proj_name:
-                self.send_error(400)
-                return
-            self._post_relocate_project(proj_name)
-        elif path.startswith("/api/remove/"):
-            self._post_remove_task(path, qs)
-        elif path.startswith("/api/project/remove/"):
-            self._post_remove_project(path[len("/api/project/remove/") :], qs)
-        elif path.startswith("/api/project/stop-all/"):
-            proj_name = path[len("/api/project/stop-all/") :]
-            if not proj_name:
-                self.send_error(400)
-                return
-            stopped = 0
-            for row in get_running_tasks(self._rconn()):
-                if row["project"] == proj_name:
-                    request_stop_with_control(self._wconn(), Path(self._db_path).parent, proj_name, row["task_id"])
-                    stopped += 1
-            self._audit("stop_all", proj_name, proj_name, str(stopped))
-            self._json({"ok": True, "stopped": stopped})
-        elif path.startswith("/api/project/") and path.endswith("/set"):
-            proj_name = path[len("/api/project/") : -len("/set")].strip("/")
-            if not proj_name or "/" in proj_name:
-                self.send_error(400)
-                return
-            self._post_project_assign_set(unquote(proj_name))
+    # --- POST handlers that used to be inline in do_POST ---------------------------------
+    def _post_retry_dead_notify(self, mid: str) -> None:
+        try:
+            self._retry_dead_notify(int(mid))
+        except ValueError:
+            self._json({"ok": False, "error": "bad id"}, status=400)
+
+    def _post_legacy_retry(self, mid: str) -> None:
+        # Wave E: thin-wrap legacy path onto the full /api/tasks/.../retry handler.
+        proj, task_id = self._split2(mid)
+        self.path = f"/api/tasks/{proj}/{task_id}/retry"
+        self._task_retry(proj, task_id)
+
+    def _post_force(self, mid: str) -> None:
+        proj, task_id = self._split2(mid)
+        err = force_task(self._wconn(), proj, task_id)
+        if err is None:
+            self._audit("force", proj, task_id)
+        self._json({"ok": err is None, "error": err})
+
+    def _post_enable(self, mid: str, qs: dict) -> None:
+        proj, task_id = self._split2(mid)
+        enabled_q = (qs.get("enabled", ["1"])[0] or "1").strip().lower()
+        if enabled_q in ("0", "false", "no"):
+            ok, err = pause_task(self._wconn(), proj, task_id)
+            detail = "enabled=0"
         else:
-            self.send_error(404)
+            ok, err = enable_task(self._wconn(), proj, task_id)
+            detail = "enabled=1"
+        if ok:
+            self._audit("enable", proj, task_id, detail)
+        body: dict[str, Any] = {"ok": ok}
+        if err:
+            body["error"] = err
+        self._json(body, status=(404 if err == "task not found" else 409) if not ok else 200)
+
+    def _post_split_path(
+        self, mid: str, fn: Callable[[str, str], None], missing: str, *, need_rest: bool = True
+    ) -> None:
+        """``<a>/<rest>`` routes (transfer put, CAS push, service proxy)."""
+        first, sep, rest = mid.partition("/")
+        if first and (sep or not need_rest):
+            fn(first, rest)
+        else:
+            self._send_error_json(400, missing)
+
+    def _post_task_pair(self, mid: str, fn: Callable[[str, str], None]) -> None:
+        proj, sep, tid = mid.partition("/")
+        if sep:
+            fn(proj, tid)
+        else:
+            self.send_error(400)
+
+    def _post_project_flag(self, mid: str, flag: str, on: bool) -> None:
+        """freeze / unfreeze / pause / resume one project."""
+        proj_name = unquote(mid)
+        if not proj_name:
+            self.send_error(400)
+            return
+        from tqdaemon.db import set_project_paused
+
+        setter = set_project_frozen if flag == "frozen" else set_project_paused
+        setter(self._wconn(), proj_name, on)
+        action = {("frozen", True): "freeze", ("frozen", False): "unfreeze", ("paused", True): "pause"}.get(
+            (flag, on), "resume"
+        )
+        self._audit(action, proj_name, proj_name)
+        self._json({"ok": True})
+
+    def _post_project_named(self, mid: str, fn: Callable[[str], None]) -> None:
+        if not mid:
+            self.send_error(400)
+            return
+        fn(mid)
+
+    def _post_project_stop_all(self, proj_name: str) -> None:
+        if not proj_name:
+            self.send_error(400)
+            return
+        stopped = 0
+        for row in get_running_tasks(self._rconn()):
+            if row["project"] == proj_name:
+                request_stop_with_control(self._wconn(), Path(self._db_path).parent, proj_name, row["task_id"])
+                stopped += 1
+        self._audit("stop_all", proj_name, proj_name, str(stopped))
+        self._json({"ok": True, "stopped": stopped})
+
+    def _post_project_set_route(self, mid: str) -> None:
+        proj_name = mid.strip("/")
+        if not proj_name or "/" in proj_name:
+            self.send_error(400)
+            return
+        self._post_project_assign_set(unquote(proj_name))
 
     def do_PUT(self) -> None:
         """W9.10: PUT /api/tasks/<project>/<task_id>/yaml — save edited YAML."""
@@ -939,6 +870,7 @@ _POST_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/project-set/resume": lambda h: h._post_project_set_action("resume"),
     "/api/project-set/stop-all": lambda h: h._post_project_set_action("stop-all"),
     "/api/project-sets/rename": lambda h: h._post_project_sets_rename(),
+    "/api/project-sets/node": lambda h: h._post_set_node(),
     "/api/set-limits": lambda h: h._post_set_limits(),
     "/api/projects/bulk": lambda h: h._post_projects_bulk(),
     "/api/worker/register": lambda h: h._worker_register(),
@@ -951,12 +883,56 @@ _POST_EXACT: dict[str, Callable[[Any], None]] = {
     "/api/health/ack": lambda h: h._post_health_ack(),
     "/api/tokens": lambda h: h._post_token(),
     "/api/sse-ticket": lambda h: h._post_sse_ticket(),
-    "/api/yield-master": lambda h: (
-        h._rconn().execute("DELETE FROM master_lease WHERE singleton=1"),
-        h._rconn().commit(),
-        h._json({"ok": True, "message": "master lease yielded"}),
-    ),
+    "/api/yield-master": lambda h: h._post_yield_master(),
 }
+
+
+# Ordered prefix/suffix POST routes: (prefix, suffix, handler(h, middle, path, qs)).
+# First match wins, so specific routes come first (e.g. /api/project/freeze/ before /api/project/<p>/set).
+_POST_PREFIX: list[tuple[str, str, Callable[..., None]]] = [
+    ("/api/groups/", "/stop", lambda h, m, p, q: h._bulk(lambda: h._group_stop(unquote(m), q))),
+    ("/api/groups/", "/retry", lambda h, m, p, q: h._bulk(lambda: h._group_retry(unquote(m), q))),
+    ("/api/suites/", "/retry", lambda h, m, p, q: h._bulk(lambda: h._suite_retry(unquote(m), q))),
+    ("/api/notify/dead/", "/retry", lambda h, m, p, q: h._post_retry_dead_notify(m)),
+    ("/api/stop/", "", lambda h, m, p, q: h._post_stop(p, q)),
+    ("/api/hold/", "", lambda h, m, p, q: h._post_hold(p, q)),
+    ("/api/unhold/", "", lambda h, m, p, q: h._post_unhold(p, q)),
+    ("/api/retry/", "", lambda h, m, p, q: h._post_legacy_retry(m)),
+    ("/api/force/", "", lambda h, m, p, q: h._post_force(m)),
+    ("/api/mark-processed/", "", lambda h, m, p, q: h._post_mark_processed(p)),
+    ("/api/enable/", "", lambda h, m, p, q: h._post_enable(m, q)),
+    ("/api/priority/", "", lambda h, m, p, q: h._post_priority(p, q)),
+    ("/api/project-limits/", "", lambda h, m, p, q: h._post_project_limits(m)),
+    ("/api/worker/sync/", "", lambda h, m, p, q: h._worker_sync(m)),
+    ("/api/worker/file-sync/", "", lambda h, m, p, q: h._worker_file_sync(m)),
+    ("/api/transfer/put/", "", lambda h, m, p, q: h._post_split_path(m, h._receive_transfer_file, "Missing path")),
+    ("/api/data/upload/", "", lambda h, m, p, q: h._handle_data_upload(m)),
+    # D1: CAS blob upload — /api/data/push/<run_id>/<rel_path>
+    ("/api/data/push/", "", lambda h, m, p, q: h._post_split_path(m, h._receive_cas_blob, "Missing rel_path")),
+    # D3: HTTP-proxy service broker — /api/service/<name>/<subpath>
+    (
+        "/api/service/",
+        "",
+        lambda h, m, p, q: h._post_split_path(m, h._proxy_service_request, "Missing service name", need_rest=False),
+    ),
+    ("/api/audit/", "/rollback", lambda h, m, p, q: h._post_audit_rollback(m)),
+    ("/api/runs/", "/rerun", lambda h, m, p, q: h._post_run_rerun(m)),
+    ("/api/tasks/bulk", "", lambda h, m, p, q: h.send_error(404) if m else h._post_tasks_bulk(q)),
+    ("/api/tasks/retry-batch", "", lambda h, m, p, q: h.send_error(404) if m else h._task_retry_batch()),
+    ("/api/tasks/", "/retry", lambda h, m, p, q: h._post_task_pair(m, h._task_retry)),
+    ("/api/tasks/", "/patch", lambda h, m, p, q: h._post_task_pair(m, h._task_patch)),
+    ("/api/tasks/", "/priority", lambda h, m, p, q: h._post_task_pair(m, h._task_set_priority)),
+    ("/api/project/freeze/", "", lambda h, m, p, q: h._post_project_flag(m, "frozen", True)),
+    ("/api/project/unfreeze/", "", lambda h, m, p, q: h._post_project_flag(m, "frozen", False)),
+    ("/api/project/pause/", "", lambda h, m, p, q: h._post_project_flag(m, "paused", True)),
+    ("/api/project/resume/", "", lambda h, m, p, q: h._post_project_flag(m, "paused", False)),
+    ("/api/project/release/", "", lambda h, m, p, q: h._post_project_named(m, h._post_release_project)),
+    ("/api/project/relocate/", "", lambda h, m, p, q: h._post_project_named(m, h._post_relocate_project)),
+    ("/api/remove/", "", lambda h, m, p, q: h._post_remove_task(p, q)),
+    ("/api/project/remove/", "", lambda h, m, p, q: h._post_remove_project(m, q)),
+    ("/api/project/stop-all/", "", lambda h, m, p, q: h._post_project_stop_all(m)),
+    ("/api/project/", "/set", lambda h, m, p, q: h._post_project_set_route(m)),
+]
 
 
 class BadRequest(ValueError):

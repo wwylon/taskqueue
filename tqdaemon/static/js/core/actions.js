@@ -57,9 +57,9 @@ function _runOne(el, ev, type) {
     if (typeof fn !== 'function') { console.error('[tq] unknown action', call[0]); continue; }
     let r;
     try { r = fn.apply(window, call.slice(1).map(a => _resolve(a, el, ev))); }
-    catch (e) { console.error('[tq] action failed', call[0], e); }
+    catch (e) { _actionFailed(call[0], e); }
     if (r === false) ev.preventDefault();
-    if (r && typeof r.catch === 'function') r.catch(e => console.error('[tq] action failed', call[0], e));
+    if (r && typeof r.catch === 'function') r.catch(e => _actionFailed(call[0], e));
   }
   if (el.hasAttribute(`data-${type}-prevent`)) ev.preventDefault();
   return el.hasAttribute(`data-${type}-stop`);
@@ -81,4 +81,16 @@ export function dispatch(ev) {
 
 export function installActions(doc) {
   for (const t of EVENTS) doc.addEventListener(t, dispatch, DIRECT.has(t));
+}
+
+
+/** A click handler threw: log it and tell the user (was console-only). */
+function _actionFailed(name, e) {
+  console.error('[tq] action failed', name, e);
+  try {
+    const msg = String((e && e.message) || e || '');
+    if (typeof window.showToast === 'function') {
+      window.showToast(window.i18n ? window.i18n.t('toast.actionFailed', { error: msg }) : msg, 'err');
+    }
+  } catch (_) { /* toasts are best-effort */ }
 }

@@ -64,7 +64,7 @@ const full = g._usageHtml({ run_id: 7, current_cpu_pct: 90, peak_cpu_pct: 95, cu
   peak_vram_gib: 2, current_gpu_util_pct: 40, avg_gpu_util_pct: 30 });
 r.full = ['CPU ', '3.6 cores', 'var(--warn)', '2.0 GiB', 'metrics.peakSuffix', 'VRAM', '1.5 GiB', '40%'].map(x => full.includes(x));
 const peaks = g._usageHtml({ run_id: 1, peak_cpu_pct: 50, peak_ram_gib: 1, peak_vram_gib: 2, avg_gpu_util_pct: 10 });
-r.peaks = ['runmetric.cpuPeak', 'runmetric.ramPeak', 'Vrunmetric.ramPeak', 'runmetric.gpuAvg'].map(x => peaks.includes(x));
+r.peaks = ['runmetric.cpuPeak', 'runmetric.ramPeak', 'runmetric.vramPeak', 'runmetric.gpuAvg'].map(x => peaks.includes(x));
 r.vram0 = g._usageHtml({ run_id: 1, requires_gpu: true }).includes('0.0 GiB');
 r.pending = g._usageHtml({ run_id: 7 }).includes('status.usagePending');
 r.idle = g._usageHtml({ run_id: 99 }).includes('—');

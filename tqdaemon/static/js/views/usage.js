@@ -1,3 +1,4 @@
+// @ts-check
 // Usage tab: GPU/CPU hours chart (canvas), legend toggles and per-project summary.
 // Uses app.js globals at call time: tqAct, i18n.
 import { S } from '../core/state.js';
@@ -222,7 +223,7 @@ function _setupUsageHover(canvas) {
 }
 
 export function loadUsage() {
-  const projSel = document.getElementById('usage-project-select');
+  const projSel = /** @type {HTMLSelectElement | null} */ (document.getElementById('usage-project-select'));
   const proj = projSel ? projSel.value : '';
   const url = '/api/usage?days=' + S.usageDays + (proj ? '&project=' + encodeURIComponent(proj) : '');
   const live = latest('usage');

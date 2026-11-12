@@ -41,6 +41,7 @@ def env_home_value() -> str | None:
     """``$TQDAEMON_HOME`` if set, else the legacy ``$TASKQUEUE_HOME``."""
     return os.environ.get(ENV_HOME) or os.environ.get(ENV_HOME_LEGACY) or None
 
+
 # Master↔worker / client control protocol major version (bump on breaking changes).
 PROTOCOL_VERSION = 1
 MIN_SUPPORTED_PROTOCOL = 1
@@ -76,6 +77,7 @@ VALID_CONFIG_KEYS = {
     "bind_host": (str, 1, 253),  # length bounds
     "auth_token": (str, 0, 256),
     "prevent_sleep": (int, 0, 1),
+    "gpu_first": (int, 0, 1),
     "suspend_grace_sec": (int, 0, 600),
     "notify_allow_remote": (int, 0, 1),
     "max_running_tasks": (int, 0, 256),

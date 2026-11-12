@@ -1,3 +1,4 @@
+// @ts-check
 // Schedule tab. Uses app.js globals at call time: tqAct, TQ_THIS, i18n, badge, showToast, openYamlModal,
 // tqProjectQuery, _postJson, _showPageEmpty.
 import { S } from '../core/state.js';

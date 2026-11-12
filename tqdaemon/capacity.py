@@ -8,7 +8,7 @@ from typing import Any
 
 from tqdaemon.config import PROTOCOL_VERSION
 from tqdaemon.resources import ResourceBudget, detect_system, ram_used_gib
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 
 
 def build_capacity(
@@ -132,7 +132,7 @@ def build_capacity(
         vram_total = float(w["gpu_vram_gib"] or 0)
         # Build per-device GPU entries from gpus_json; fall back to aggregate total.
         try:
-            gpus_devices = json.loads(w["gpus_json"] if "gpus_json" in w.keys() else "[]") or []
+            gpus_devices = json.loads(w["gpus_json"] if has_col(w, "gpus_json") else "[]") or []
         except (TypeError, ValueError):
             gpus_devices = []
         if gpus_devices and online:

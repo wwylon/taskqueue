@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from tqdaemon.archive import _movable
+from tqdaemon.rows import has_col
 
 MULTI_USE_MIN_COMPLETED = 5
 MULTI_USE_SPAN_DAYS = 7
@@ -382,7 +383,7 @@ def _project_ranks(
         if key in multi_keys or crc > 1:
             bucket["skipped_multi_use_count"] += 1
             continue
-        src = row["yaml_source"] if "yaml_source" in row.keys() else None
+        src = row["yaml_source"] if has_col(row, "yaml_source") else None
         if not _movable(src):
             bucket["skipped_shared_yaml_count"] += 1
             continue

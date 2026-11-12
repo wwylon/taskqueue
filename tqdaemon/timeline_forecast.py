@@ -7,7 +7,6 @@ duration estimates and concurrency limits. Advisory only — not a second schedu
 from __future__ import annotations
 
 import heapq
-import json
 import math
 import re
 import sqlite3
@@ -77,28 +76,8 @@ def _next_cron_fire(expr: str, now: datetime, *, hours: int) -> datetime | None:
     return None
 
 
-def _parse_json_list(raw: Any) -> list[Any]:
-    if raw is None or raw == "":
-        return []
-    if isinstance(raw, list):
-        return raw
-    try:
-        val = json.loads(raw)
-    except (TypeError, ValueError):
-        return []
-    return val if isinstance(val, list) else []
-
-
-def _parse_json_dict(raw: Any) -> dict[str, Any]:
-    if raw is None or raw == "":
-        return {}
-    if isinstance(raw, dict):
-        return raw
-    try:
-        val = json.loads(raw)
-    except (TypeError, ValueError):
-        return {}
-    return val if isinstance(val, dict) else {}
+from tqdaemon.jsonutil import parse_json_list as _parse_json_list  # noqa: E402
+from tqdaemon.jsonutil import parse_json_obj as _parse_json_dict  # noqa: E402
 
 
 def normalize_task_id(task_id: str) -> str:

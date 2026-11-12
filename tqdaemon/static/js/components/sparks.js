@@ -1,3 +1,4 @@
+// @ts-check
 // Dashboard gauge sparklines (rolling in-memory history persisted to localStorage) and the run-metrics canvas chart.
 // Uses app.js globals at call time: _computeGaugeModel. History state is module-local.
 import { S } from '../core/state.js';

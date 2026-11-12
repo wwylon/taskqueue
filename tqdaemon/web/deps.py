@@ -75,7 +75,7 @@ from tqdaemon.operator_features import (
 from tqdaemon.operator_features import (
     schedules as list_schedules,
 )
-from tqdaemon.queries import list_attention, status_counts
+from tqdaemon.queries import list_attention, project_states, status_counts
 from tqdaemon.reports import build_report
 from tqdaemon.resources import ram_used_gib, task_requires_gpu
 from tqdaemon.system_alerts import (

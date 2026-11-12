@@ -1,3 +1,4 @@
+// @ts-check
 // Generic modal, YAML modal, metrics/compare modal and toasts. Uses app.js globals at call time: i18n,
 // _usageHtml, _etaRemainingSec, _drawSparklineOnCanvas.
 import { S } from '../core/state.js';
@@ -28,11 +29,11 @@ if (typeof document !== 'undefined' && document.addEventListener) document.addEv
     const top = shown[shown.length - 1];
     if (!top) return;
     const f = [...top.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
-      .filter(n => !n.disabled && n.offsetParent !== null);
+      .filter(n => !/** @type {HTMLInputElement} */ (n).disabled && /** @type {HTMLElement} */ (n).offsetParent !== null);
     if (f.length) {
       const i = f.indexOf(document.activeElement);
       const next = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i === -1 || i === f.length - 1 ? 0 : i + 1);
-      f[next].focus();
+      /** @type {HTMLElement} */ (f[next]).focus();
       e.preventDefault();
     }
     return;
@@ -47,6 +48,9 @@ if (typeof document !== 'undefined' && document.addEventListener) document.addEv
 /**
  * openModal({title, body, actions: [{label, primary, onClick}], onDismiss})
  * Returns a close function. Async onClick is awaited; confirm stays disabled until done.
+ */
+/**
+ * @param {{title?: string, body?: string | Node, actions?: any[], onDismiss?: (() => void) | null}} [opts]
  */
 export function openModal({ title = '', body = '', actions = [], onDismiss = null } = {}) {
   const bg = document.getElementById('gen-modal');
@@ -93,7 +97,7 @@ export function openModal({ title = '', body = '', actions = [], onDismiss = nul
     footer.appendChild(btn);
   });
   bg.classList.add('open');
-  const first = footer.querySelector('.btn-primary') || footer.querySelector('button');
+  const first = /** @type {HTMLElement | null} */ (footer.querySelector('.btn-primary') || footer.querySelector('button'));
   if (first && typeof first.focus === 'function') { try { first.focus(); } catch (_) {} }
   return _closeGenModal;
 }
@@ -165,7 +169,7 @@ export function closeYamlModal() {
 // W9.10: toggle edit mode in YAML modal
 export function yamlModalToggleEdit() {
   const pre = document.getElementById('yaml-modal-pre');
-  const ta = document.getElementById('yaml-modal-edit');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('yaml-modal-edit'));
   const btn = document.getElementById('yaml-edit-btn');
   const saveBtn = document.getElementById('yaml-save-btn');
   const checkBtn = document.getElementById('yaml-check-btn');
@@ -190,7 +194,7 @@ export function yamlModalToggleEdit() {
 /** Dry-run parse of the edited text (POST /api/validate): show the error, or the task ids the file would define. */
 export async function yamlModalCheck() {
   if (!_yamlModalProject) return;
-  const ta = document.getElementById('yaml-modal-edit');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('yaml-modal-edit'));
   const err = document.getElementById('yaml-modal-error');
   const ok = document.getElementById('yaml-modal-ok');
   err.style.display = 'none'; if (ok) ok.style.display = 'none';
@@ -217,9 +221,9 @@ export async function yamlModalCheck() {
 
 export async function yamlModalSave() {
   if (!_yamlModalProject || !_yamlModalTaskId) return;
-  const ta = document.getElementById('yaml-modal-edit');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('yaml-modal-edit'));
   const err = document.getElementById('yaml-modal-error');
-  const saveBtn = document.getElementById('yaml-save-btn');
+  const saveBtn = /** @type {HTMLInputElement | null} */ (document.getElementById('yaml-save-btn'));
   err.style.display = 'none';
   saveBtn.disabled = true; saveBtn.textContent = i18n.t('btn.saving');
   try {

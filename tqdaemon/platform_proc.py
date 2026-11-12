@@ -90,6 +90,8 @@ if sys.platform == "win32":
 
 
 _log = logging.getLogger(__name__)
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_CTRL_BREAK_EVENT = 1
 
 
 def spawn_with_guard(
@@ -105,6 +107,8 @@ def spawn_with_guard(
     if sys.platform == "win32":
         job = _create_job_object(kill_on_close)
         proc = subprocess.Popen(args, **popen_kwargs)
+        # Console ctrl events can only be aimed at a process *group*; remember whether the child leads one.
+        proc._tq_own_group = bool(int(popen_kwargs.get("creationflags", 0) or 0) & _CREATE_NEW_PROCESS_GROUP)  # type: ignore[attr-defined]
         try:
             _assign_to_job(job, proc)
         except Exception:  # noqa: BLE001 - job assignment is best-effort; the child still runs
@@ -125,17 +129,20 @@ def terminate_guarded(
 ) -> None:
     """Terminate the process tree started with spawn_with_guard.
 
-    On Windows: sends Ctrl+C first, waits, then closes the Job Object (kills tree).
+    On Windows: sends Ctrl+Break to the child's own process group (only when it was spawned with
+    CREATE_NEW_PROCESS_GROUP), waits, then terminates the Job Object (kills tree).
     On Linux/macOS: sends SIGTERM to the process group, waits, then SIGKILL.
     """
     if sys.platform == "win32":
-        # Try graceful first
-        try:
-            import ctypes as _ctypes
+        # Never send CTRL_C_EVENT: Windows cannot limit it to one group and delivers it to *every*
+        # process on the console (it killed pytest / the publish run sharing the terminal).
+        if getattr(proc, "_tq_own_group", False):
+            try:
+                import ctypes as _ctypes
 
-            _ctypes.windll.kernel32.GenerateConsoleCtrlEvent(0, proc.pid)  # CTRL_C_EVENT
-        except (AttributeError, OSError):
-            pass
+                _ctypes.windll.kernel32.GenerateConsoleCtrlEvent(_CTRL_BREAK_EVENT, proc.pid)
+            except (AttributeError, OSError):
+                pass
         deadline = time.monotonic() + graceful_sec
         while time.monotonic() < deadline:
             if proc.poll() is not None:

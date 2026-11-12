@@ -18,6 +18,7 @@ from tqdaemon._time import _now  # noqa: F401  # canonical ISO timestamp helper
 from tqdaemon.deprefs import row_dep_refs
 from tqdaemon.models import STATUS_QUEUED, QueueTask, TaskResources  # noqa: F401
 from tqdaemon.project_limits import get_all_project_limits
+from tqdaemon.rows import has_col
 
 SUBMIT_CHANNELS = frozenset({"cli", "mcp", "web", "api", "yaml", "daemon"})
 
@@ -868,7 +869,7 @@ def retry_skip_reason(conn: sqlite3.Connection, project: str, task_id: str) -> s
     status = str(row["status"] or "")
     if status not in RETRYABLE_STATUSES:
         return f"status={status}"
-    max_a = int(row["max_attempts"] or 0) if "max_attempts" in row.keys() else 0
+    max_a = int(row["max_attempts"] or 0) if has_col(row, "max_attempts") else 0
     if max_a > 0 and failed_attempt_count(conn, project, task_id) >= max_a:
         return "max_attempts"
     return None

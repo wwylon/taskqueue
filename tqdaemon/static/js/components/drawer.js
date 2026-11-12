@@ -1,3 +1,4 @@
+// @ts-check
 // Task drawer (info / YAML / history tabs, retry/force/stop/log actions). State lives in S.drawerTask, S.drawerTab,
 // S.drawerYamlMtime. Uses app.js globals at call time: tqAct, i18n, badge, res, _fetchJson, _isRestartStatus,
 // _progressPct, _lastRunProgressHtml, tqSetPriority, tqSetEnabled, retryTaskNew, forceTask, stopTask, tqQueueActive,
@@ -114,9 +115,9 @@ export function tqPaintDrawerHead() {
   document.querySelectorAll('.tq-drawer-tabs button').forEach(b => {
     b.classList.toggle('active', b.getAttribute('data-dtab') === S.drawerTab);
   });
-  const retry = document.getElementById('tq-drawer-retry');
-  const force = document.getElementById('tq-drawer-force');
-  const stop = document.getElementById('tq-drawer-stop');
+  const retry = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-retry'));
+  const force = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-force'));
+  const stop = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-stop'));
   if (retry) {
     retry.disabled = !(_isRestartStatus(t.status) || ['failed','completed'].includes(t.status));
     retry.textContent = _isRestartStatus(t.status) ? i18n.t('drawer.restart') : i18n.t('drawer.retry');
@@ -127,11 +128,11 @@ export function tqPaintDrawerHead() {
     force.textContent = starting ? i18n.t('btn.starting') : i18n.t('drawer.force');
   }
   if (stop) stop.disabled = !(t.status === 'running' || t.status === 'queued');
-  const hold = document.getElementById('tq-drawer-hold');
-  const unhold = document.getElementById('tq-drawer-unhold');
+  const hold = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-hold'));
+  const unhold = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-unhold'));
   if (hold) hold.disabled = t.status !== 'running';
   if (unhold) unhold.disabled = t.status !== 'running';
-  const en = document.getElementById('tq-drawer-enable');
+  const en = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-enable'));
   if (en) {
     en.disabled = !t.status || t.status === 'running';
     en.textContent = t.status === 'disabled' ? (i18n.t('ctx.enable')) : (i18n.t('ctx.disable'));
@@ -140,7 +141,7 @@ export function tqPaintDrawerHead() {
 export function tqDrawerPrio(delta, absolute) {
   const t = S.drawerTask;
   if (!t) return;
-  const inp = document.getElementById('tq-drawer-prio');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-prio'));
   const cur = inp ? parseInt(inp.value, 10) || 0 : (Number(t.priority) || 0);
   const next = absolute ? cur : (Number(t.priority) || 0) + delta;
   tqSetPriority(t.project, t.task_id, next);
@@ -164,7 +165,7 @@ export function tqPaintDrawerBody() {
   if (!body || !t) return;
   if (S.drawerTab === 'info') {
     // Live sync repaints this card; keep a priority the user is still typing.
-    const _prioEl = document.getElementById('tq-drawer-prio');
+    const _prioEl = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-prio'));
     const _prioTyping = _prioEl && document.activeElement === _prioEl ? _prioEl.value : null;
     const drawerPct = _progressPct(t);
     const prog = drawerPct == null ? '' : (t.status === 'running'
@@ -214,7 +215,7 @@ export function tqPaintDrawerBody() {
         }).join('')}</div>` : ''}
     </div>`;
     if (_prioTyping !== null) {
-      const el = document.getElementById('tq-drawer-prio');
+      const el = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-drawer-prio'));
       if (el) { el.value = _prioTyping; el.focus(); }
     }
     return;
@@ -259,7 +260,7 @@ export async function tqDrawerLoadYaml() {
 }
 export function tqDrawerToggleYaml() {
   const pre = document.getElementById('tq-yaml-pre');
-  const ta = document.getElementById('tq-yaml-editbox');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-yaml-editbox'));
   const edit = document.getElementById('tq-yaml-edit');
   const save = document.getElementById('tq-yaml-save');
   if (!pre || !ta) return;
@@ -279,9 +280,9 @@ export function tqDrawerToggleYaml() {
 }
 export async function tqDrawerSaveYaml() {
   const t = S.drawerTask;
-  const ta = document.getElementById('tq-yaml-editbox');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-yaml-editbox'));
   const err = document.getElementById('tq-yaml-err');
-  const save = document.getElementById('tq-yaml-save');
+  const save = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-yaml-save'));
   if (!t || !ta) return;
   if (err) err.style.display = 'none';
   if (save) { save.disabled = true; save.textContent = i18n.t('btn.saving'); }
@@ -310,7 +311,7 @@ export async function tqDrawerSaveYaml() {
 }
 export async function tqDrawerCopyYaml() {
   const pre = document.getElementById('tq-yaml-pre');
-  const ta = document.getElementById('tq-yaml-editbox');
+  const ta = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-yaml-editbox'));
   const text = (ta && ta.style.display !== 'none') ? ta.value : (pre ? pre.textContent : '');
   try {
     await navigator.clipboard.writeText(text);

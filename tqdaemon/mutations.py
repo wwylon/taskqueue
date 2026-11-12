@@ -175,7 +175,7 @@ def hold_op(
 ) -> dict[str, Any]:
     from tqdaemon.mutate import mutate
 
-    reason = ((reason or "").strip()[:200] or None)
+    reason = (reason or "").strip()[:200] or None
     q: dict[str, Any] = {"duration_sec": duration_sec}
     if reason:
         q["reason"] = reason
@@ -283,7 +283,11 @@ def patch_op(
         force=force,
     )
     if mode == "unreachable" or resp is None:
-        return resp if isinstance(resp, dict) else {"ok": False, "applied": [], "error": "unreachable", "unreachable": True}
+        return (
+            resp
+            if isinstance(resp, dict)
+            else {"ok": False, "applied": [], "error": "unreachable", "unreachable": True}
+        )
     if mode == "master" and isinstance(resp, dict):
         return {
             "ok": bool(resp.get("ok")),

@@ -55,8 +55,20 @@ _CPU_COUNT: int = psutil.cpu_count(logical=True) or 1
 
 
 def build_process_children_map() -> dict[int, list[int]]:
-    """F-081: one ``process_iter`` → parent→children map for shared tree walks."""
+    """F-081: one parent→children map for shared tree walks.
+
+    Uses psutil's single-snapshot ``ppid_map()`` (Windows/Linux): ``process_iter`` opens every
+    process and took ~50 s for 700 processes on a busy Windows host, stalling the tick.
+    """
     children: dict[int, list[int]] = {}
+    fast = getattr(getattr(psutil, "_psplatform", None), "ppid_map", None)
+    if fast is not None:
+        try:
+            for pid, ppid in fast().items():
+                children.setdefault(int(ppid), []).append(int(pid))
+            return children
+        except Exception:  # noqa: BLE001 - private API: fall back to the portable scan
+            children = {}
     try:
         for p in psutil.process_iter(["pid", "ppid"]):
             try:
@@ -101,6 +113,9 @@ def preflight(command: Path, requires_paths: tuple[Path, ...]) -> str | None:
         if not req.exists():
             return f"missing required path: {req}"
     return None
+
+
+MAX_METRIC_KEYS = 64  # distinct TQ_METRIC keys kept per run
 
 
 class ActiveRun:
@@ -618,11 +633,18 @@ class ActiveRun:
                 if isinstance(new_metrics, dict):
                     new_metrics.pop("log", None)
                     new_metrics.pop("_series", None)
-                    self.last_metrics.update(new_metrics)
+                    self._merge_metrics(new_metrics)
                     record_metric_samples(self.metric_series, new_metrics, time.time())
                     self._flush_metrics_json()
             except Exception:  # noqa: BLE001 - the reader thread must not die on a task-printed TQ_METRIC line
                 _log.debug("TQ_METRIC line ignored", exc_info=True)
+
+    def _merge_metrics(self, new_metrics: dict) -> None:
+        """Merge TQ_METRIC fields, capping distinct keys: the dict is re-serialised to the DB
+        every heartbeat, and a task printing ever-new keys must not grow it without bound."""
+        for key, value in new_metrics.items():
+            if key in self.last_metrics or len(self.last_metrics) < MAX_METRIC_KEYS:
+                self.last_metrics[key] = value
 
     def note_cap_reached(self) -> None:
         """Write the wall-clock-cap notice into the task log (daemon calls this once per cap stop)."""
@@ -1242,6 +1264,7 @@ class ActiveRun:
             import sqlite3
 
             rc = self._reader_conn = sqlite3.connect(str(self.db_path), timeout=10)
+            rc.execute("PRAGMA synchronous=NORMAL")  # progress writes ~2/s: no fsync each (WAL-safe)
         return rc
 
     def _close_reader_db(self) -> None:

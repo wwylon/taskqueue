@@ -1,3 +1,4 @@
+// @ts-check
 // Queue tab: task table, mobile cards, search, filters, pagination, row flash and dependency jumps.
 // Uses app.js globals at call time (i18n, badge, refresh, _syncUrl, _pageSize, _stripLive helpers, etc.).
 import { S } from '../core/state.js';
@@ -28,7 +29,7 @@ export function onQueueSearchInput() {
 }
 
 export function _syncQueueSearchClear() {
-  const inp = document.getElementById('queue-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   const btn = document.getElementById('queue-search-clear');
   if (!btn) return;
   const has = !!(inp && inp.value);
@@ -40,7 +41,7 @@ export function _resetQueueSearchForFilter() {
     clearTimeout(S.queueSearchDebounce);
     S.queueSearchDebounce = null;
   }
-  const inp = document.getElementById('queue-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   if (inp) {
     inp.value = '';
     inp.classList.remove('tq-searching');
@@ -49,7 +50,7 @@ export function _resetQueueSearchForFilter() {
 }
 
 export function clearQueueSearch() {
-  const inp = document.getElementById('queue-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   if (!inp) return;
   if (!inp.value) {
     _syncQueueSearchClear();
@@ -140,7 +141,7 @@ export function renderQueue() {
 
   _updateSortTh('q', S.queueSort.field, S.queueSort.dir);
 
-  const tableWrap = document.querySelector('#queue .table-responsive');
+  const tableWrap = /** @type {HTMLElement | null} */ (document.querySelector('#queue .table-responsive'));
   const emptyEl = document.getElementById('queue-empty');
   const mobileCards = document.getElementById('queue-mobile-cards');
   if (!rows.length) {
@@ -149,8 +150,8 @@ export function renderQueue() {
     if (tableWrap) tableWrap.style.display = 'none';
     if (mobileCards) { mobileCards.innerHTML = ''; mobileCards.style.display = 'none'; }
     if (emptyEl) emptyEl.hidden = false;
-    const tbodyEmpty = document.getElementById('queue-tbody');
-    if (tbodyEmpty) { tbodyEmpty.innerHTML = ''; tbodyEmpty._rowsSig = null; }
+    const tbodyEmpty = /** @type {HTMLElement | null} */ (document.getElementById('queue-tbody'));
+    if (tbodyEmpty) { tbodyEmpty.innerHTML = ''; /** @type {any} */ (tbodyEmpty)._rowsSig = null; }
     _renderQueuePagination();
     tqSyncSelectAll(rows);
     return;
@@ -159,7 +160,7 @@ export function renderQueue() {
   if (mobileCards) mobileCards.style.display = '';
   if (emptyEl) emptyEl.hidden = true;
 
-  const tbody = document.getElementById('queue-tbody');
+  const tbody = /** @type {HTMLElement | null} */ (document.getElementById('queue-tbody'));
   const statusMap = {};
   (S.queue || []).forEach(t => { statusMap[`${t.project}/${t.task_id}`] = t.status; });
   (S.status.running || []).forEach(r => { statusMap[taskKey(r.project, r.task_id)] = 'running'; });
@@ -168,10 +169,10 @@ export function renderQueue() {
   const mobile = isMobileLayout();
   // Identical markup => keep the existing rows (no teardown, keeps selection/scroll/focus).
   const rowsHtml = mobile ? '' : rows.map(t => _buildQueueRow(t, statusMap)).join('');
-  if (tbody._rowsSig !== rowsHtml || !tbody.firstChild) {
+  if (/** @type {any} */ (tbody)._rowsSig !== rowsHtml || !tbody.firstChild) {
     tbody.innerHTML = '';
     if (rowsHtml) tbody.insertAdjacentHTML('beforeend', rowsHtml);
-    tbody._rowsSig = rowsHtml;
+    /** @type {any} */ (tbody)._rowsSig = rowsHtml;
   }
 
   // Mobile card view (liveMap carries running progress fields)
@@ -616,7 +617,7 @@ export function gotoQueueDep(project, depTaskId) {
     depProj = parts[0];
     depId = parts.slice(1).join('/');
   }
-  const search = document.getElementById('queue-search');
+  const search = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   if (search) search.value = depId;
   S.queueStatusFilter = 'all';
   S.savedToday = false;

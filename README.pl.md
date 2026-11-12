@@ -17,6 +17,7 @@ lub przez agenta AI (**MCP**).
 
 To nie Celery, Kubernetes ani CI. To też nie stary projekt AMQP/Debian
 [rojkov/taskqueue](https://github.com/rojkov/taskqueue) (simpletaskqueue).
+Porównanie z cron, Celery, Slurm, Ray i innymi (po angielsku): [docs/comparison.md](docs/comparison.md).
 
 ## Po co
 

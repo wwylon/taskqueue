@@ -1,3 +1,4 @@
+// @ts-check
 // Dashboard "What fits now" strip: free CPU / RAM / VRAM after running tasks, and the queued task
 // the scheduler would start next (or why the head of the queue is blocked). Data: GET /api/plan
 // (a read-only dry run; approximate, see docs/scheduler.md). Uses the i18n global at call time.

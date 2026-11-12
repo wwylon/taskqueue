@@ -36,6 +36,7 @@ _CORE_CONFIG_KEYS = (
     "bind_host",
     "auth_token",
     "prevent_sleep",
+    "gpu_first",
     "suspend_grace_sec",
     "schema_version",
     "priority_higher_wins",
@@ -347,6 +348,8 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "bind_host": "127.0.0.1",
     "auth_token": "",
     "prevent_sleep": 1,
+    # Start GPU tasks before equal-priority CPU tasks while the GPU is idle (no GPU task running).
+    "gpu_first": 1,
     # Wall-clock window between the cooperative-suspend control-file write
     # and SIGTERM, so a task actually has time to checkpoint before being
     # killed. 0 = old behavior (SIGTERM immediately, best-effort only).
@@ -486,11 +489,43 @@ def open_db(db_path: Path, *, migrate: bool = True) -> sqlite3.Connection:
     if db_path.exists():
         conn = _open_if_current(db_path)
         if conn is not None:
-            return conn
+            return _tune(conn)
+        _refuse_newer_schema(db_path)
     # Outdated / missing version: always take the lock, even for migrate=False
     # callers (CLI/MCP reads) so concurrent ALTER probes cannot corrupt the DB.
     with _migration_lock(db_path):
-        return _open_db_impl(db_path, migrate=True)
+        return _tune(_open_db_impl(db_path, migrate=True))
+
+
+def _tune(conn: sqlite3.Connection) -> sqlite3.Connection:
+    """Per-connection pragmas. In WAL mode ``synchronous=NORMAL`` cannot corrupt the DB; it only
+    risks the last commits on power loss, and avoids an fsync on every commit (progress writes
+    run ~2/s per task)."""
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+class SchemaTooNewError(RuntimeError):
+    """The DB was written by a newer tqdaemon; migrating it down would drop its settings."""
+
+
+def _refuse_newer_schema(db_path: Path) -> None:
+    """Never 'migrate' a DB whose schema is newer than this code: _seed_config would prune
+    config keys this version does not know and write schema_version back down."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True, timeout=30)
+        try:
+            row = conn.execute("SELECT value FROM config WHERE key='schema_version'").fetchone()
+        finally:
+            conn.close()
+        stored = json.loads(row[0]) if row else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return  # missing table / unreadable value: the normal migrate path handles it
+    if isinstance(stored, int) and stored > SCHEMA_VERSION:
+        raise SchemaTooNewError(
+            f"{db_path} has schema {stored}, newer than this tqdaemon ({SCHEMA_VERSION}). "
+            "Upgrade tqdaemon (pip install -U tqdaemon) instead of opening it with an older version."
+        )
 
 
 def _open_if_current(db_path: Path) -> sqlite3.Connection | None:

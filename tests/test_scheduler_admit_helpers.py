@@ -8,7 +8,9 @@ def _patch_limits(monkeypatch, limits=None):
     import tqdaemon.project_limits as pl
 
     monkeypatch.setattr(pl, "get_all_set_limits", lambda conn: {})
-    monkeypatch.setattr(pl, "get_effective_project_limits", lambda conn, pn, path, all_set_limits=None: dict(limits or {}))
+    monkeypatch.setattr(
+        pl, "get_effective_project_limits", lambda conn, pn, path, all_set_limits=None: dict(limits or {})
+    )
 
 
 def _rows(*pairs):

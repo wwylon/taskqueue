@@ -1,4 +1,4 @@
-from tqdaemon import scheduler
+from tqdaemon import filters, scheduler
 
 
 def _row(task_id, deps=(), project="p"):
@@ -8,7 +8,7 @@ def _row(task_id, deps=(), project="p"):
 
 
 def test_blocked_top_task_is_skipped(monkeypatch) -> None:
-    monkeypatch.setattr(scheduler, "is_project_paused", lambda c, p: p == "paused")
+    monkeypatch.setattr(filters, "is_project_paused", lambda c, p: p == "paused")
     status = {("p", "dep"): "queued"}
     rows = [_row("a", ["dep"]), _row("b", project="paused"), _row("c")]
     top = scheduler.pick_reservation_top(None, rows, lambda p, t: status.get((p, t)))
@@ -16,6 +16,6 @@ def test_blocked_top_task_is_skipped(monkeypatch) -> None:
 
 
 def test_none_when_everything_blocked(monkeypatch) -> None:
-    monkeypatch.setattr(scheduler, "is_project_paused", lambda c, p: False)
+    monkeypatch.setattr(filters, "is_project_paused", lambda c, p: False)
     rows = [_row("a", ["missing"])]
     assert scheduler.pick_reservation_top(None, rows, lambda p, t: None) is None

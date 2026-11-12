@@ -81,9 +81,7 @@ def rewrite_yaml_source_prefix(conn: sqlite3.Connection, old_root: Path, new_roo
     new_slash = new_s.replace("\\", "/")
     new_back = new_s.replace("/", "\\")
     updated = 0
-    rows = conn.execute(
-        "SELECT project, task_id, yaml_source FROM tasks WHERE yaml_source != ''"
-    ).fetchall()
+    rows = conn.execute("SELECT project, task_id, yaml_source FROM tasks WHERE yaml_source != ''").fetchall()
     for row in rows:
         src = row["yaml_source"]
         if not src:

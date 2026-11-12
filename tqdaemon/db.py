@@ -41,6 +41,7 @@ def open_write_conn(db_path: Path, timeout: float = 10.0) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path), timeout=timeout)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")  # WAL: safe, no fsync per commit
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -261,58 +262,52 @@ def _freeze_key(project: str) -> str:
     return f"project_frozen_{project}"
 
 
-def set_project_frozen(conn: sqlite3.Connection, project: str, frozen: bool) -> None:
-    """W6.1: Freeze/unfreeze a project. Frozen projects are completely skipped by the scheduler."""
-    key = _freeze_key(project)
-    if frozen:
+def _set_flag(conn: sqlite3.Connection, key: str, on: bool) -> None:
+    """Boolean config flag: stored as 1, absent when off."""
+    if on:
         set_config(conn, key, 1)
     else:
         conn.execute("DELETE FROM config WHERE key = ?", (key,))
         conn.commit()
         clear_config_cache()
+
+
+def _flag_value(raw: Any) -> bool:
+    try:
+        return bool(json.loads(raw))
+    except (TypeError, ValueError):
+        return False
+
+
+def _get_flag(conn: sqlite3.Connection, key: str) -> bool:
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+    return row is not None and _flag_value(row["value"])
+
+
+def set_project_frozen(conn: sqlite3.Connection, project: str, frozen: bool) -> None:
+    """W6.1: Freeze/unfreeze a project. Frozen projects are completely skipped by the scheduler."""
+    _set_flag(conn, _freeze_key(project), frozen)
 
 
 def is_project_frozen(conn: sqlite3.Connection, project: str) -> bool:
-    row = conn.execute("SELECT value FROM config WHERE key = ?", (_freeze_key(project),)).fetchone()
-    if row is None:
-        return False
-    try:
-        return bool(json.loads(row["value"]))
-    except (TypeError, ValueError):
-        return False
+    return _get_flag(conn, _freeze_key(project))
 
 
 def set_project_paused(conn: sqlite3.Connection, project: str, paused: bool) -> None:
-    key = pause_key(project)
-    if paused:
-        set_config(conn, key, 1)
-    else:
-        conn.execute("DELETE FROM config WHERE key = ?", (key,))
-        conn.commit()
-        clear_config_cache()
+    _set_flag(conn, pause_key(project), paused)
 
 
 def is_project_paused(conn: sqlite3.Connection, project: str) -> bool:
-    row = conn.execute("SELECT value FROM config WHERE key = ?", (pause_key(project),)).fetchone()
-    if row is None:
-        return False
-    try:
-        return bool(json.loads(row["value"]))
-    except (TypeError, ValueError):
-        return False
+    return _get_flag(conn, pause_key(project))
 
 
 def blocked_projects(conn: sqlite3.Connection) -> list[str]:
     """Frozen or paused projects. The scheduler skips their tasks without a tq.block.* code."""
-    names: set[str] = set()
     rows = conn.execute(
-        "SELECT key FROM config WHERE key GLOB 'project_frozen_*' OR key GLOB 'project_paused_*'"
+        "SELECT key, value FROM config WHERE key GLOB 'project_frozen_*' OR key GLOB 'project_paused_*'"
     ).fetchall()
-    for (key,) in rows:
-        name = key.split("_", 2)[2]
-        if is_project_frozen(conn, name) or is_project_paused(conn, name):
-            names.add(name)
-    return sorted(names)
+    # One query: the values are already here (was 2 extra lookups per key).
+    return sorted({key.split("_", 2)[2] for key, value in rows if _flag_value(value)})
 
 
 from tqdaemon.project_limits import (  # noqa: E402,F401
@@ -350,6 +345,7 @@ def set_project_limit(
         )
     if commit:
         conn.commit()
+    clear_config_cache()  # limits are config keys: apply now, not after the cache TTL
 
 
 def get_project_limits(conn: sqlite3.Connection, project: str) -> dict[str, float]:

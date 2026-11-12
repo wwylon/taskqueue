@@ -1,3 +1,4 @@
+// @ts-check
 // In-UI notification bell: unseen badge, panel, alert toasts and alert detail html. Uses app.js globals at call
 // time: tqAct, TQ_THIS, i18n, friendlyErrorText, tab.
 import { tqInQuietHours } from './prefs.js';
@@ -203,7 +204,7 @@ if (typeof document !== 'undefined' && document.addEventListener) document.addEv
   if (!_notifPanelOpen) return;
   const panel = document.getElementById('notif-panel');
   const bell = document.getElementById('notif-bell');
-  if (panel && !panel.contains(e.target) && bell && !bell.contains(e.target)) {
+  if (panel && !panel.contains(/** @type {Node} */ (e.target)) && bell && !bell.contains(/** @type {Node} */ (e.target))) {
     _notifPanelOpen = false;
     panel.style.display = 'none';
   }

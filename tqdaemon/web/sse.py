@@ -187,10 +187,10 @@ class SSEMixin:
                             with open(log_path, "rb") as f:
                                 f.seek(offset)
                                 chunk_bytes = f.read(_cap)
+                            # Advance by what was actually read: the file may have grown since
+                            # stat(), and clamping to the stale size re-sent those bytes.
                             offset += len(chunk_bytes)
                             pending += decoder.decode(chunk_bytes)
-                            if offset > size:
-                                offset = size
                             nl = pending.rfind("\n")
                             if nl != -1:
                                 chunk, pending = pending[:nl], pending[nl + 1 :]
@@ -203,6 +203,12 @@ class SSEMixin:
                             last_mtime = mtime
                         except OSError:
                             pass
+                    elif size < offset:
+                        # Truncated or replaced (log rotation): restart from the new beginning.
+                        offset = 0
+                        decoder.reset()
+                        pending = ""
+                        continue
                     elif not run_still_active:
                         if no_new_bytes_since is None:
                             no_new_bytes_since = _time.monotonic()

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from tests.test_t026_parity import _ctx, _decide, _task, _twin_nodes
+from tests.test_local_remote_filter_parity import _ctx, _decide, _task, _twin_nodes
 from tqdaemon import errors as tqerr
 from tqdaemon._db_tasks import get_task, upsert_task
 from tqdaemon.backoff import MAX_DELAY_SEC, backoff_delay, backoff_left
@@ -87,7 +87,7 @@ def test_yaml_field_validation(tmp_path: Path) -> None:
 
 
 def test_local_admission_holds_a_backing_off_task(tmp_path: Path) -> None:
-    from tests.test_t204_scavenger import _admit, _project
+    from tests.test_scavenger_class import _admit, _project
 
     proj = _project(tmp_path)
     p = proj.queue_dir / "t.yaml"

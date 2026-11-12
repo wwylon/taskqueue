@@ -10,13 +10,13 @@ from collections.abc import Callable
 from typing import Any
 
 from tqdaemon.backoff import backoff_left_sec as _backoff_left
-from tqdaemon.rows import row_resources, row_value
+from tqdaemon.rows import has_col, row_resources, row_value
 
 
 class AdmitProjectCaches:
     """Mutable caches keyed by project / (project, task) / services JSON."""
 
-    __slots__ = ("frozen", "paused", "limits", "est", "svc", "set_paths", "_all_set_limits")
+    __slots__ = ("frozen", "paused", "limits", "est", "svc", "set_paths", "_all_set_limits", "_set_checker")
 
     def __init__(self, set_paths: dict[str, str | None] | None = None) -> None:
         self.frozen: dict[str, bool] = {}
@@ -26,6 +26,15 @@ class AdmitProjectCaches:
         self.svc: dict[str, str | None] = {}
         self.set_paths: dict[str, str | None] = dict(set_paths or {})
         self._all_set_limits: dict[str, dict] | None = None
+        self._set_checker: Any = None
+
+    def set_checker(self, conn: Any) -> Any:
+        """Lazily built SetCapChecker (subtree totals of project sets) for this claim/tick."""
+        if self._set_checker is None:
+            from tqdaemon.scheduler import build_set_checker
+
+            self._set_checker = build_set_checker(conn, self.set_paths)
+        return self._set_checker
 
     def project_state(self, conn: Any, proj_name: str) -> tuple[bool, bool, dict]:
         from tqdaemon.db import (
@@ -147,7 +156,15 @@ def load_fairshare_candidates(
     usage_rows = conn.execute("SELECT project, gpu_seconds FROM project_usage").fetchall()
     usage_by_proj = {r["project"]: float(r["gpu_seconds"]) for r in usage_rows}
     fairshare_weight = float(cfg.get("fairshare_weight", 1e-6))
-    queued = sort_queued_fairshare(queued, occ["gpu_running_by_proj"], usage_by_proj, fairshare_weight)
+    # GPU-first only while the GPU is idle: then a GPU task should take it before CPU work.
+    gpu_idle = sum(int(v or 0) for v in (occ.get("gpu_running_by_proj") or {}).values()) == 0
+    queued = sort_queued_fairshare(
+        queued,
+        occ["gpu_running_by_proj"],
+        usage_by_proj,
+        fairshare_weight,
+        gpu_first=bool(int(cfg.get("gpu_first", 1) or 0)) and gpu_idle,
+    )
     return queued, occ, usage_by_proj, status_map, running
 
 
@@ -182,8 +199,8 @@ def build_admit_context(
     proj = str(row["project"])
     task_id = str(row["task_id"])
     frozen, paused, limits = caches.project_state(conn, proj)
-    force = bool(row["force_run"]) if "force_run" in row.keys() else False
-    max_a = int(row["max_attempts"] or 0) if "max_attempts" in row.keys() else 0
+    force = bool(row["force_run"]) if has_col(row, "force_run") else False
+    max_a = int(row["max_attempts"] or 0) if has_col(row, "max_attempts") else 0
     if max_a > 0:
         if attempt_counts is not None:
             attempts = int(attempt_counts.get((proj, task_id), 0))
@@ -209,9 +226,7 @@ def build_admit_context(
         svc_raw, allow_remote=allow_remote, probe_on_miss=True, system_info=system_info
     )
     if backoff_left_sec is None:
-        backoff_left_sec = (
-            _backoff_left(conn, row) if row_value(row, "retry_backoff_sec", 0) else 0.0
-        )
+        backoff_left_sec = _backoff_left(conn, row) if row_value(row, "retry_backoff_sec", 0) else 0.0
     ctx = build_filter_context(
         occupancy,
         config,
@@ -227,5 +242,21 @@ def build_admit_context(
         running_locks=running_locks or set(),
         min_reserved_others=min_reserved_others,
         backoff_left_sec=float(backoff_left_sec or 0.0),
+        set_block=_set_block(caches.set_checker(conn), proj, occupancy, cpu, ram, gpu),
     )
     return ctx, cpu, ram, gpu, attempts
+
+
+def _set_block(checker: Any, proj: str, occupancy: dict, cpu: float, ram: float, gpu: float) -> str | None:
+    if not checker:
+        return None
+    return checker.check(
+        proj,
+        occupancy["n_running_by_proj"],
+        occupancy["cpu_by_proj"],
+        occupancy["ram_by_proj"],
+        occupancy["gpu_by_proj"],
+        cpu=cpu,
+        ram=ram,
+        gpu=gpu,
+    )

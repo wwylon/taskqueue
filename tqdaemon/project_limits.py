@@ -3,7 +3,9 @@
 Project overrides: ``project_limit_<project>_<field>``.
 Set defaults: ``set_limit_<path_with_/→\\x1f>_<field>``.
 
-Effective limit for a project walks override → nearest set ancestor → 0 (unlimited).
+Effective *per-project* limits = the project's own override. Set limits are subtree
+totals enforced by ``set_caps.SetCapChecker`` (bots max_tasks=4 means 4 across all bots),
+except ``min_tasks``, a per-project floor that members still inherit from the nearest set.
 Leaf module: db and _db_tasks both import it.
 """
 
@@ -24,6 +26,9 @@ _PROJECT_LIMIT_FIELDS = (
 )
 
 _SET_PATH_SEP = "\x1f"  # encode slash paths inside config keys
+
+# Only these set fields are per-member defaults; the others are subtree totals (set_caps).
+_INHERITED_FROM_SET = ("min_tasks",)
 
 
 def empty_limits() -> dict[str, float]:
@@ -124,6 +129,63 @@ def set_set_limit(
         conn.commit()
 
 
+# Config key families that are keyed by an encoded set path (limits, explicit tree nodes).
+SET_KEY_PREFIXES = ("set_limit_", "set_node_")
+
+
+def move_set_config(conn: sqlite3.Connection, old: str, new: str, *, commit: bool = True) -> int:
+    """Re-key every set-path config row of ``old`` and its descendants to ``new``
+    (``tq set rename`` must carry the set's limits and tree node along). Returns rows moved."""
+    old_e, new_e = encode_set_path(old), encode_set_path(new)
+    moved = 0
+    for fam in SET_KEY_PREFIXES:
+        rows = conn.execute(
+            "SELECT key, value FROM config WHERE substr(key, 1, ?) = ?",
+            (len(fam), fam),
+        ).fetchall()
+        for r in rows:
+            rest = r["key"][len(fam) :]
+            own = rest == old_e or rest in {f"{old_e}_{f}" for f in _PROJECT_LIMIT_FIELDS}
+            if own or rest.startswith(old_e + _SET_PATH_SEP):  # the set itself or a descendant
+                new_key = fam + new_e + rest[len(old_e) :]
+                conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (new_key, r["value"]))
+                conn.execute("DELETE FROM config WHERE key = ?", (r["key"],))
+                moved += 1
+    if commit:
+        conn.commit()
+    if moved:
+        from tqdaemon.db import clear_config_cache
+
+        clear_config_cache()
+    return moved
+
+
+def explicit_set_nodes(conn: sqlite3.Connection) -> set[str]:
+    """Set paths that exist without members: created nodes (``set_node_*``) or nodes with limits."""
+    rows = conn.execute("SELECT key FROM config WHERE substr(key, 1, 9) = 'set_node_'").fetchall()
+    out = {decode_set_path(r["key"][len("set_node_") :]) for r in rows}
+    out |= set(get_all_set_limits(conn))
+    return out
+
+
+def add_set_node(conn: sqlite3.Connection, path: str, *, commit: bool = True) -> None:
+    conn.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, '1')", (f"set_node_{encode_set_path(path)}",))
+    if commit:
+        conn.commit()
+
+
+def remove_set_node(conn: sqlite3.Connection, path: str, *, commit: bool = True) -> None:
+    """Forget an explicit node and its limits (members keep their ``set:`` until reassigned)."""
+    conn.execute("DELETE FROM config WHERE key = ?", (f"set_node_{encode_set_path(path)}",))
+    for f in _PROJECT_LIMIT_FIELDS:
+        conn.execute("DELETE FROM config WHERE key = ?", (_set_limit_key(path, f),))
+    if commit:
+        conn.commit()
+    from tqdaemon.db import clear_config_cache
+
+    clear_config_cache()
+
+
 def set_path_prefixes(set_path: str | None) -> list[str]:
     """Nearest-first prefixes of a set path: ``a/b/c`` → ``[a/b/c, a/b, a]``."""
     if not set_path:
@@ -157,6 +219,8 @@ def resolve_effective_limits(
             effective[field] = ov_val
             inherited_from[field] = "project"
             continue
+        if field not in _INHERITED_FROM_SET:
+            continue  # set value is a subtree total, not a per-member default
         for prefix in set_path_prefixes(set_path):
             sv = float((set_map.get(prefix) or {}).get(field, 0) or 0)
             if sv != 0:

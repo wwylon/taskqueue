@@ -17,6 +17,7 @@ CLI, or from an **AI coding agent** (MCP).
 
 Not Celery, Kubernetes, or CI. Not the 2011 AMQP/Debian
 [rojkov/taskqueue](https://github.com/rojkov/taskqueue) (simpletaskqueue).
+How it compares with cron, Celery, Slurm, Ray and others: [docs/comparison.md](docs/comparison.md).
 
 ## Why use it
 
@@ -34,6 +35,8 @@ blocking the chat. Setup: **[docs/mcp.md](docs/mcp.md)**.
 ## Install
 
 **Need:** Python **3.12+**, [Git](https://git-scm.com/), [`uv`](https://docs.astral.sh/uv/).
+
+**Platforms:** developed and tested on Windows 11; also verified on Linux (Ubuntu 24.04, daemon + task run, with and without an NVIDIA GPU path). On macOS the dependencies resolve (all wheels, including `nvidia-ml-py`, which is pure Python and only needs an NVIDIA driver when you actually have a GPU), but the daemon has not been run there yet; reports welcome.
 
 **From PyPI:** `uvx --from tqdaemon tq doctor` (or `pipx install tqdaemon`). From source:
 

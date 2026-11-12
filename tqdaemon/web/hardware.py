@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+import os
 import threading
+import time
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 _hw_cache: dict = {"ts": 0.0, "data": None}
 _hw_lock = threading.Lock()
@@ -33,6 +38,144 @@ def gpu_fit_summary(hw: dict, vram_gib: float, ram_gib: float = 0.0) -> dict:
         "gpus": gpus,
         "fits_now": ram_ok and (bool(fitting) or vram_gib <= 0),
         "best_gpu": min((g for g in gpus if g["fits"]), key=lambda g: g["free_gib"], default={}).get("index"),
+    }
+
+
+def _proc_info(pid: int) -> dict[str, Any]:
+    """Name, short command line and whether the process belongs to a tqdaemon run."""
+    info: dict[str, Any] = {"name": f"pid {pid}", "cmd": "", "tq": False}
+    try:
+        import psutil
+
+        proc = psutil.Process(pid)
+        with proc.oneshot():
+            info["name"] = proc.name()
+            try:
+                info["cmd"] = " ".join(proc.cmdline())[:200]
+            except (psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+        me = os.getpid()
+        try:
+            for parent in proc.parents():
+                if parent.pid == me:
+                    info["tq"] = True
+                    break
+                try:
+                    if "run_wrapper" in " ".join(parent.cmdline()):
+                        info["tq"] = True
+                        break
+                except (psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+        except (psutil.AccessDenied, psutil.ZombieProcess):
+            pass
+    except Exception:  # noqa: BLE001, S110 - other users' / exited processes: keep the pid only
+        pass
+    return info
+
+
+_WIN_COUNTER_TTL_SEC = 15.0
+_win_counter_cache: dict[str, Any] = {"ts": 0.0, "data": {}}
+
+
+def _windows_gpu_process_memory() -> dict[str, dict[int, int]]:
+    """``{adapter_luid: {pid: dedicated_bytes}}`` from the Windows "GPU Process Memory"
+    performance counters (the source Task Manager uses). Cached: one typeperf call ~1-2 s."""
+    now = time.monotonic()
+    if now - float(_win_counter_cache["ts"]) < _WIN_COUNTER_TTL_SEC:
+        return _win_counter_cache["data"]
+    import csv
+    import io
+    import re
+    import subprocess
+
+    out: dict[str, dict[int, int]] = {}
+    try:
+        proc = subprocess.run(
+            ["typeperf", r"\GPU Process Memory(*)\Dedicated Usage", "-sc", "1"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        rows = [r for r in csv.reader(io.StringIO(proc.stdout)) if r]
+        if len(rows) >= 2:
+            header, values = rows[0], rows[1]
+            pat = re.compile(r"pid_(\d+)_luid_(0x[0-9a-fA-F]+_0x[0-9a-fA-F]+)", re.IGNORECASE)
+            for name, val in zip(header[1:], values[1:], strict=False):
+                m = pat.search(name)
+                if not m:
+                    continue
+                try:
+                    used = int(float(val))
+                except ValueError:
+                    continue
+                luid = m.group(2).lower()
+                pid = int(m.group(1))
+                out.setdefault(luid, {})[pid] = out.get(luid, {}).get(pid, 0) + used
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.debug("GPU process counters unavailable: %s", exc)
+    _win_counter_cache["ts"] = now
+    _win_counter_cache["data"] = out
+    return out
+
+
+def _fill_from_windows_counters(by_pid: dict[int, dict[str, Any]], mem_used_gib: float) -> None:
+    """WDDM: NVML reports no per-process memory. Use the adapter whose counter total is closest
+    to this device's used memory, fill in the known processes and add programs NVML missed."""
+    adapters = _windows_gpu_process_memory()
+    if not adapters:
+        return
+    target = float(mem_used_gib or 0.0) * (1024**3)
+    luid = min(adapters, key=lambda k: abs(sum(adapters[k].values()) - target))
+    for pid, used in adapters[luid].items():
+        if used <= 0 or pid <= 4:  # pid 0/4: idle/System kernel allocations
+            continue
+        entry = by_pid.setdefault(pid, {"pid": pid, "kinds": ["wddm"], "vram_gib": None})
+        entry["vram_gib"] = round(used / (1024**3), 2)
+
+
+def gpu_processes_for_device(pynvml: Any, handle: Any, mem_used_gib: float) -> dict[str, Any]:
+    """Which programs hold VRAM on one device: compute (CUDA) and graphics (browsers, games,
+    desktop) processes from NVML. ``vram_gib`` is None when the driver does not report it
+    (Windows WDDM usually does not); ``other_gib`` is device memory not attributed to any
+    listed process."""
+    by_pid: dict[int, dict[str, Any]] = {}
+    for kind, fn_name in (
+        ("compute", "nvmlDeviceGetComputeRunningProcesses"),
+        ("graphics", "nvmlDeviceGetGraphicsRunningProcesses"),
+    ):
+        fn = getattr(pynvml, fn_name, None)
+        if fn is None:
+            continue
+        try:
+            procs = fn(handle) or []
+        except Exception:  # noqa: BLE001 - NVMLError / not supported on this driver
+            continue
+        for p in procs:
+            pid = int(getattr(p, "pid", 0) or 0)
+            if pid <= 0:
+                continue
+            used = getattr(p, "usedGpuMemory", None)
+            gib = round(used / (1024**3), 2) if isinstance(used, int) and used >= 0 else None
+            entry = by_pid.setdefault(pid, {"pid": pid, "kinds": [], "vram_gib": None})
+            if kind not in entry["kinds"]:
+                entry["kinds"].append(kind)
+            if gib is not None:
+                entry["vram_gib"] = max(gib, entry["vram_gib"] or 0.0)
+    if os.name == "nt" and (not by_pid or any(e["vram_gib"] is None for e in by_pid.values())):
+        _fill_from_windows_counters(by_pid, mem_used_gib)
+    rows = []
+    for entry in by_pid.values():
+        entry.update(_proc_info(entry["pid"]))
+        rows.append(entry)
+    rows.sort(key=lambda r: (r["vram_gib"] is None, -(r["vram_gib"] or 0.0), r["name"]))
+    known = sum(r["vram_gib"] or 0.0 for r in rows)
+    unknown = sum(1 for r in rows if r["vram_gib"] is None)
+    return {
+        "list": rows,
+        "attributed_gib": round(known, 2),
+        "other_gib": round(max(0.0, float(mem_used_gib or 0.0) - known), 2),
+        "per_process_unknown": unknown,
     }
 
 
@@ -181,6 +324,7 @@ def _get_hardware_data() -> dict:
                 gpu_entry["cuda_version"] = f"{cuda_ver // 1000}.{(cuda_ver % 1000) // 10}"
             except (pynvml.NVMLError, AttributeError):
                 pass
+            gpu_entry["processes"] = gpu_processes_for_device(pynvml, handle, gpu_entry["mem_used_gib"])
             result["gpu"].append(gpu_entry)
     except ImportError:
         pass

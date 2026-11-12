@@ -180,7 +180,6 @@ export function setProject(val, opts) {
   _syncProjSelect();
   try { localStorage.setItem('tq_project', S.selectedProject); } catch(e) {}
   try { localStorage.setItem('tq_queue_active', S.queueActiveOnly ? '1' : '0'); } catch(e) {}
-  const multi = false;
   const isSpecific = S.selectedProject !== 'all';
   const fb = document.getElementById('proj-freeze-btn');
   const sb = document.getElementById('proj-stopall-btn');
@@ -268,6 +267,10 @@ export function _syncProjSelect() {
   if (Array.isArray(S.selectedProjects) && S.selectedProjects.length > 1) {
     sel.value = '';
     return;
+  }
+  if (!S.queueActiveOnly && S.selectedProject === 'all' && S.setFilter && S.setFilter !== '__unset__') {
+    sel.value = 'set:' + S.setFilter;
+    if (sel.value) return;
   }
   sel.value = S.queueActiveOnly ? 'active' : (S.selectedProject === 'all' ? '' : S.selectedProject);
 }

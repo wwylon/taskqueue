@@ -1,3 +1,4 @@
+// @ts-check
 // Running-task metrics: ETA, CPU formatting, usage/log-issue chips and in-place live patching of the dashboard gauges
 // and run cards. Uses app.js globals at call time (i18n, tqAct, dur, tqRecordSparks, getResourceModalRunId, ...).
 import { S } from '../core/state.js';
@@ -117,7 +118,7 @@ export function _usageHtml(t, ctx) {
     if (vram != null)
       parts.push(chip('VRAM', `${vram.toFixed(1)} GiB`, (peakVram != null && peakVram > 0) ? peakVram.toFixed(1) + ' GiB' : null, '#a855f7'));
     else if (peakVram != null && peakVram > 0)
-      parts.push(chip('V' + i18n.t('runmetric.ramPeak') + '', `${peakVram.toFixed(1)} GiB`, null, '#a855f7'));
+      parts.push(chip(i18n.t('runmetric.vramPeak'), `${peakVram.toFixed(1)} GiB`, null, '#a855f7'));
     else
       parts.push(chip('VRAM', '0.0 GiB', null, '#a855f7'));
   }
@@ -206,7 +207,7 @@ export function _patchDashboardLive() {
       etaEl.textContent = `${pct.toFixed(0)}%${eta}`;
     }
 
-    const pbar = document.querySelector(`[data-pbar-run-id="${t.run_id}"]`);
+    const pbar = /** @type {HTMLElement | null} */ (document.querySelector(`[data-pbar-run-id="${t.run_id}"]`));
     if (pbar && t.progress_pct != null) pbar.style.width = t.progress_pct + '%';
 
     const logEl = document.querySelector(`[data-log-run-id="${t.run_id}"]`);

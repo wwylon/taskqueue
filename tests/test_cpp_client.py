@@ -68,7 +68,7 @@ def test_save_and_load_checkpoint(tmp_path):
         f'  tq::save_checkpoint(R"({ckpt.as_posix()})", "{{\\"step\\":7}}");\n'
         f'  auto s = tq::load_checkpoint(R"({ckpt.as_posix()})");\n'
         "  if (!s) return 2;\n"
-        '  std::cout << *s;\n'
+        "  std::cout << *s;\n"
         "  return 0;\n"
         "}\n"
     )

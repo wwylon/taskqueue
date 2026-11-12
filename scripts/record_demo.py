@@ -6,6 +6,7 @@ with headless Chromium and writes the GIF. Re-records only when its inputs chang
 
     uv run --group browser python scripts/record_demo.py [--force | --check]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,7 +50,11 @@ TOUR = [("queue", 12), ("dashboard", 8), ("deps", 6), ("timeline", 8), ("queue",
 
 def _inputs_hash() -> str:
     h = hashlib.sha256()
-    files = sorted((ROOT / "tqdaemon" / "static").rglob("*")) + sorted((ROOT / "fixtures" / "demo").rglob("*.py")) + [Path(__file__)]
+    files = (
+        sorted((ROOT / "tqdaemon" / "static").rglob("*"))
+        + sorted((ROOT / "fixtures" / "demo").rglob("*.py"))
+        + [Path(__file__)]
+    )
     for p in files:
         if p.is_file() and "__pycache__" not in p.parts:
             h.update(p.relative_to(ROOT).as_posix().encode())

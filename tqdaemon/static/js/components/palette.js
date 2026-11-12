@@ -1,3 +1,4 @@
+// @ts-check
 // Command palette (Ctrl+K / Cmd+K): type to jump to a page, open a task's drawer, or run a
 // common action. Items are built on open from the sidebar's data-tab buttons and the loaded queue.
 // Uses app.js globals at call time: i18n, tab, tqOpenDrawer, refresh, tqToggleShortcuts.
@@ -24,11 +25,11 @@ function _el() {
     <ul id="tq-palette-list" role="listbox"></ul></div>`;
   document.body.appendChild(root);
   root.addEventListener('click', e => { if (e.target === root) tqClosePalette(); });
-  const input = root.querySelector('#tq-palette-input');
+  const input = /** @type {HTMLInputElement | null} */ (root.querySelector('#tq-palette-input'));
   input.addEventListener('input', () => { _sel = 0; _render(input.value); });
   input.addEventListener('keydown', _onKey);
   root.querySelector('#tq-palette-list').addEventListener('click', e => {
-    const li = e.target.closest && e.target.closest('li[data-idx]');
+    const li = /** @type {HTMLElement} */ (e.target).closest && /** @type {HTMLElement} */ (e.target).closest('li[data-idx]');
     if (li) _run(_filtered(input.value)[Number(li.getAttribute('data-idx'))]);
   });
   return root;
@@ -130,7 +131,7 @@ export function tqOpenPalette() {
   _items = tqPaletteItems();
   _sel = 0;
   root.hidden = false;
-  const input = root.querySelector('#tq-palette-input');
+  const input = /** @type {HTMLInputElement | null} */ (root.querySelector('#tq-palette-input'));
   input.value = '';
   input.placeholder = i18n.t('palette.placeholder');
   _render('');

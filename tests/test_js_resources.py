@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from tests.test_js_app import run_js
 
 CAP = {"cpu_cores_total": 16, "cpu_cores_limit": 8, "ram_gib_limit": 32, "gpu_vram_gib_limit": 0}
@@ -112,3 +114,36 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["first"] == {"cpu_limit_pct": 25, "ram_limit_pct": 60, "max_running_tasks": 4}
     assert out["orderOk"] == ["refresh"] and out["reloaded"] is True
     assert out["afterFail"] == [] and out["reloadedAfterFail"] is False and out["alerts"] == ["bad limit"]
+
+
+def test_gpu_programs_table_marks_tq_tasks_unknown_memory_and_escapes():
+    gpu = {
+        "name": "G",
+        "load_pct": 0,
+        "mem_total_gib": 6,
+        "mem_used_gib": 4,
+        "processes": {
+            "list": [
+                {"pid": 10, "name": "game<x>.exe", "cmd": "", "tq": False, "kinds": ["graphics"], "vram_gib": 2.5},
+                {"pid": 20, "name": "python.exe", "cmd": "", "tq": True, "kinds": ["compute"], "vram_gib": 1.0},
+                {"pid": 30, "name": "dwm.exe", "cmd": "", "tq": False, "kinds": ["graphics"], "vram_gib": None},
+            ],
+            "attributed_gib": 3.5,
+            "other_gib": 0.5,
+            "per_process_unknown": 1,
+        },
+    }
+    out = run_js(
+        f"""
+const {{ g }} = await setup({{ app: true }});
+await g.flush();
+const html = g.gpuProcessesHtml({json.dumps(gpu)});
+console.log('RESULT:' + JSON.stringify({{
+  escaped: html.includes('game&lt;x&gt;.exe'), tq: html.includes('hardware.gpuProc.tq'),
+  unknown: html.includes('>?<'), other: html.includes('hardware.gpuProc.other'),
+  hint: html.includes('hardware.gpuProc.hint'), rows: (html.match(/<tr/g) || []).length,
+  none: g.gpuProcessesHtml({{ processes: {{ list: [], other_gib: 0 }} }}).includes('hardware.gpuProc.none'),
+}}));
+"""
+    )
+    assert out == {"escaped": True, "tq": True, "unknown": True, "other": True, "hint": True, "rows": 5, "none": True}

@@ -254,7 +254,7 @@ def test_api_system_alerts_get_patch(tmp_path: Path):
     code, data = _make_request(HandlerClass, "GET", "/api/alerts/system")
     assert code == 200
     payload = json.loads(data.decode())
-    assert len(payload["alerts"]) == len(SYSTEM_ALERT_KEYS) == 5
+    assert len(payload["alerts"]) == len(SYSTEM_ALERT_KEYS) == 6
     keys = {a["key"] for a in payload["alerts"]}
     assert keys == set(SYSTEM_ALERT_KEYS)
 

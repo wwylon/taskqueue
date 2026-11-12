@@ -1,3 +1,4 @@
+// @ts-check
 // Keyboard shortcuts: help/shortcuts overlay toggles, queue-row navigation (j/k/a/Enter/r/s) and the global keydown handler.
 // Uses app.js globals at call time (tab, openHelp/closeHelp, tqOpenDrawer, tqFindTask, refresh, ...).
 import { S } from '../core/state.js';
@@ -54,7 +55,7 @@ export function tqTypingTarget(el) {
 // A modal-bg is "open" when it has the `open` class or an inline display other than none (yaml/resource modals).
 function _modalOpen() {
   return Array.from(document.querySelectorAll('.modal-bg')).some(m =>
-    m.classList.contains('open') || (m.style.display && m.style.display !== 'none'));
+    m.classList.contains('open') || (/** @type {HTMLElement} */ (m).style.display && /** @type {HTMLElement} */ (m).style.display !== 'none'));
 }
 export function tqHandleKey(e) {
   if (e.key === 'Escape') {
@@ -87,13 +88,13 @@ export function tqHandleKey(e) {
     const histOn = document.getElementById('history') && document.getElementById('history').classList.contains('active');
     if (histOn) {
       const hs = document.getElementById('history-search');
-      if (hs) { hs.focus(); hs.select(); }
+      if (hs) { hs.focus(); /** @type {HTMLInputElement} */ (hs).select(); }
       return;
     }
     const qbtn = document.querySelector('nav button[data-tab="queue"]');
     if (qbtn) tab('queue', qbtn);
     const s = document.getElementById('queue-search');
-    if (s) { s.focus(); s.select(); }
+    if (s) { s.focus(); /** @type {HTMLInputElement} */ (s).select(); }
     return;
   }
   const queueOn = document.getElementById('queue') && document.getElementById('queue').classList.contains('active');
@@ -119,8 +120,8 @@ export function tqHandleKey(e) {
         i18n.t('toast.retried'), refresh);
     } else if (t.status === 'running' || t.status === 'queued') {
       if (!window.confirm(i18n.t('confirm.stopTask', { task: t.task_id }))) return;
-      const reason = (typeof window !== 'undefined' && window.tqStopReasonDefault != null)
-        ? String(window.tqStopReasonDefault)
+      const reason = (typeof window !== 'undefined' && /** @type {any} */ (window).tqStopReasonDefault != null)
+        ? String(/** @type {any} */ (window).tqStopReasonDefault)
         : 'owner_request';
       const q = reason ? `?reason=${encodeURIComponent(reason)}` : '';
       toastResult(_postJson(`/api/stop/${encodeURIComponent(t.project)}/${encodeURIComponent(t.task_id)}${q}`),

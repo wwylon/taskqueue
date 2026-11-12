@@ -6,7 +6,7 @@ import logging
 import threading as _threading
 from typing import Any
 
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 
 # Broad shared namespace so method bodies keep working with minimal churn.
 from .deps import (
@@ -330,14 +330,14 @@ class WorkerRoutes:
             prev_session = None
             prev_epoch = 0
             if existing is not None:
-                if "session_id" in existing.keys():
+                if has_col(existing, "session_id"):
                     prev_session = existing["session_id"]
-                if "worker_epoch" in existing.keys():
+                if has_col(existing, "worker_epoch"):
                     prev_epoch = int(existing["worker_epoch"] or 0)
             if session_id is None:
                 # Legacy worker: keep prior session unless IP changed (new process).
                 prev_ip = ""
-                if existing is not None and "registered_ip" in existing.keys():
+                if existing is not None and has_col(existing, "registered_ip"):
                     prev_ip = existing["registered_ip"] or ""
                 if prev_ip and client_ip and prev_ip != client_ip:
                     session_id = prev_session
@@ -454,7 +454,7 @@ class WorkerRoutes:
                 "SELECT session_id, instance_id FROM workers WHERE worker_id = ?", (worker_id,)
             ).fetchone()
             stored_session = None
-            if row is not None and "session_id" in row.keys():
+            if row is not None and has_col(row, "session_id"):
                 stored_session = row["session_id"]
             if session_id_mismatch(stored_session, data.get("session_id")):
                 self._json({"ok": False, "error": "session_id mismatch"}, 403)

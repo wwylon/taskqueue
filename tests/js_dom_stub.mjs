@@ -151,7 +151,7 @@ export class Doc {
  * Install browser globals, import js/main.js and (optionally) run tqBootApp (was classic app.js).
  * `routes` maps URL substring -> JSON (or function(url, opts) -> JSON) for fetch().
  */
-export async function setup({ routes = {}, app = false, url = 'http://localhost:8765/?page=queue' } = {}) {
+export async function setup({ routes = {}, app = false, url = 'http://localhost:8765/?page=queue', catalog = false } = {}) {
   const doc = new Doc();
   const g = globalThis;
   const u = new URL(url);
@@ -217,11 +217,20 @@ export async function setup({ routes = {}, app = false, url = 'http://localhost:
         };
         return { ok: true, status: 200, headers: { get: () => null }, json: async () => structuredClone(body), text: async () => JSON.stringify(body) };
       }
+      const lm = catalog && href.match(/\/static\/locales\/([a-z]{2,3}(?:-[A-Za-z0-9]+)?)\.json/);
+      if (lm) {
+        try {
+          const txt = fs.readFileSync(path.join(STATIC, 'locales', lm[1] + '.json'), 'utf8');
+          return { ok: true, status: 200, headers: { get: () => null }, json: async () => JSON.parse(txt), text: async () => txt };
+        } catch { /* fall through to 404 */ }
+      }
       return { ok: false, status: 404, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
     },
   });
   doc.loadHtml(fs.readFileSync(path.join(STATIC, 'index.html'), 'utf8'));
   vm.runInThisContext(fs.readFileSync(path.join(STATIC, 'i18n.js'), 'utf8'), { filename: 'i18n.js' });
+  // catalog: true -> real English catalog (tests see what users see); default: t() returns raw keys.
+  if (catalog && g.i18n && g.i18n.load) await g.i18n.load('en');
   await import(pathToFileURL(path.join(STATIC, 'js', 'main.js')).href + '?t=' + Date.now());
   // main.js auto-boots when document.readyState is complete (stub sets that).
   // Only boot here if auto-boot did not run — resetting __tqBooted and booting again

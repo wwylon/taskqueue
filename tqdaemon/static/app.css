@@ -1053,3 +1053,34 @@ body.tq-busy::before {
 /* Long task ids must wrap inside their cell instead of overlapping the Status column. */
 td.task-cell { overflow-wrap: anywhere; min-width: 0; }
 td.task-cell .task-id-mono { overflow-wrap: anywhere; word-break: break-all; }
+
+/* Project-set tree: subtree caps and node editor */
+.set-cap { margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10px; background: var(--bg3); color: var(--text2); }
+.set-cap-full { background: var(--badge-waiting-bg); color: var(--badge-waiting-fg); }
+.set-nodes { margin-top: 12px; }
+.set-node-list { list-style: none; margin: 4px 0; padding: 0; font-size: 12px; }
+.set-node-list li { padding: 2px 0 2px calc(var(--depth, 0) * 14px); }
+.set-node-path { color: var(--muted); font-size: 11px; }
+.set-node-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.set-node-hint { width: 100%; color: var(--muted); font-size: 11px; }
+.cfg-input { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 4px; padding: 2px 6px; }
+
+/* Queue project chips coloured by the project's worst live state (blue running, orange
+   interrupted, red failed, yellow waiting, green completed) — same colours as task status badges. */
+.filter-chip.chip-st { border-left: 3px solid transparent; }
+.filter-chip.chip-st-running { background: var(--badge-running-bg); color: var(--badge-running-fg); }
+.filter-chip.chip-st-interrupted { background: var(--badge-interrupted-bg); color: var(--badge-interrupted-fg); }
+.filter-chip.chip-st-failed { background: var(--badge-failed-bg); color: var(--badge-failed-fg); }
+.filter-chip.chip-st-waiting { background: var(--badge-waiting-bg); color: var(--badge-waiting-fg); }
+.filter-chip.chip-st-completed { background: var(--badge-completed-bg); color: var(--badge-completed-fg); }
+.filter-chip.chip-st.active { outline: 2px solid var(--accent, var(--text)); outline-offset: 1px; }
+
+/* GPU memory by program (Resources → hardware) */
+.gpu-proc { margin-top: 10px; }
+.gpu-proc-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.gpu-proc-table th, .gpu-proc-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); text-align: left; }
+.gpu-proc-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.gpu-proc-ext td:first-child { color: var(--warn); }
+.gpu-proc-other td { color: var(--muted); font-style: italic; }
+.gpu-proc-tq { margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10px; background: var(--badge-running-bg); color: var(--badge-running-fg); }
+.gpu-proc-hint, .gpu-proc-empty { margin-top: 4px; font-size: 11px; color: var(--muted); }

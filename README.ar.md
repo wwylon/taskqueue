@@ -17,6 +17,7 @@ CPU وRAM وذاكرة GPU كافية. راقب التقدّم عبر **واجه
 
 ليس Celery أو Kubernetes أو CI. وليس مشروع AMQP/Debian القديم من 2011
 [rojkov/taskqueue](https://github.com/rojkov/taskqueue) (simpletaskqueue).
+مقارنة مع cron وCelery وSlurm وRay وغيرها (بالإنجليزية): [docs/comparison.md](docs/comparison.md).
 
 ## لماذا
 

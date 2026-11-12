@@ -1,3 +1,4 @@
+// @ts-check
 // Task and project actions: stop/retry/force/mark-processed/enable, priority editing, project freeze/stop-all,
 // worker sync and the project root bar. Uses app.js globals at call time (refresh, renderQueue, _postJson,
 // openConfirm/openAlert/showToast, _dagRefreshAfterAction, ...).
@@ -54,8 +55,8 @@ export async function copyTaskYaml(project, taskId, btn) {
 // N2: inline priority editor
 export function startPrioEdit(span, project, taskId, currentPrio) {
   const inp = document.createElement('input');
-  inp.type = 'number'; inp.min = 0; inp.max = 100;
-  inp.value = currentPrio;
+  inp.type = 'number'; inp.min = '0'; inp.max = '100';
+  inp.value = String(currentPrio);
   inp.style.cssText = 'width:50px;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:5px;font-size:12px;text-align:center';
   span.replaceWith(inp);
   inp.focus(); inp.select();
@@ -124,7 +125,7 @@ export function tqRerunRun(runId) {
 // Stop is sent after a short grace period with an Undo toast (a stopped run cannot be resumed
 // mid-step). window.tqStopUndoMs overrides the delay; 0 sends at once.
 function _stopUndoMs() {
-  const v = typeof window !== 'undefined' ? window.tqStopUndoMs : undefined;
+  const v = typeof window !== 'undefined' ? /** @type {any} */ (window).tqStopUndoMs : undefined;
   return v == null ? 5000 : Number(v) || 0;
 }
 
@@ -141,7 +142,7 @@ export const STOP_REASON_PRESETS = [
 function _promptStopReason() {
   // Tests / automation: set window.tqStopReasonDefault (string or null to cancel).
   if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, 'tqStopReasonDefault')) {
-    return Promise.resolve(window.tqStopReasonDefault);
+    return Promise.resolve(/** @type {any} */ (window).tqStopReasonDefault);
   }
   return new Promise(resolve => {
     const chips = STOP_REASON_PRESETS.map((p, i) =>
@@ -163,9 +164,9 @@ function _promptStopReason() {
       actions: [
         { label: i18n.t('btn.cancel'), onClick: () => finish(null) },
         { label: i18n.t('btn.stop'), primary: true, onClick: () => {
-          const picked = body.querySelector('input[name="tq-stop-reason"]:checked');
+          const picked = /** @type {HTMLInputElement | null} */ (body.querySelector('input[name="tq-stop-reason"]:checked'));
           const id = picked ? picked.value : 'owner_request';
-          const custom = (body.querySelector('#tq-stop-reason-custom') || {}).value || '';
+          const custom = /** @type {any} */ ((body.querySelector('#tq-stop-reason-custom') || {})).value || '';
           const detail = String(custom).trim().slice(0, 180);
           if (id === 'other') finish(detail || 'other');
           else finish(detail ? `${id}: ${detail}` : id);
@@ -209,8 +210,8 @@ export async function holdTask(btn, project, taskId, durationSec) {
   if (!_btnPending(btn, i18n.t('btn.hold'))) return;
   let sec = Number(durationSec);
   if (!(sec > 0)) {
-    if (typeof window !== 'undefined' && window.tqHoldDurationDefault != null) {
-      sec = Number(window.tqHoldDurationDefault) || 600;
+    if (typeof window !== 'undefined' && /** @type {any} */ (window).tqHoldDurationDefault != null) {
+      sec = Number(/** @type {any} */ (window).tqHoldDurationDefault) || 600;
     } else {
       const picked = await new Promise(resolve => {
         openModal({
@@ -223,7 +224,7 @@ export async function holdTask(btn, project, taskId, durationSec) {
           actions: [
             { label: i18n.t('btn.cancel'), onClick: () => resolve(null) },
             { label: i18n.t('btn.hold'), primary: true, onClick: () => {
-              const el = document.querySelector('input[name="tq-hold-dur"]:checked');
+              const el = /** @type {HTMLInputElement | null} */ (document.querySelector('input[name="tq-hold-dur"]:checked'));
               resolve(el ? Number(el.value) : 600);
             } },
           ],

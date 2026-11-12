@@ -1,7 +1,9 @@
+// @ts-check
 // Project-set tree filter (multilevel slash paths) — distinct from task YAML group:.
 // Uses app.js globals at call time (tqAct, i18n, refresh, openConfirm, showToast, _syncUrl, ...).
 import { S } from '../core/state.js';
 import { escHtml } from '../util/format.js';
+import { _postJson } from './cfgmodal.js';
 
 const UNSET = '__unset__';
 
@@ -39,12 +41,52 @@ function _treeNodeHtml(node, depth) {
   const pad = depth * 12;
   let html = `<span style="display:inline-flex;align-items:center;gap:2px;margin-left:${pad}px">`
     + toggle
-    + `<button class="filter-chip${active ? ' active' : ''}" data-set="${escHtml(path)}" data-click="${tqAct([['setProjectSet', path]])}">${escHtml(node.name || path)} (${node.subtree_count || 0})</button>`
+    + `<button class="filter-chip${active ? ' active' : ''}" data-set="${escHtml(path)}" data-click="${tqAct([['setProjectSet', path]])}"${_capTitle(path)}>${escHtml(node.name || path)} (${node.subtree_count || 0})${_capBadge(path)}</button>`
     + `</span>`;
   if (expanded) {
     for (const c of kids) html += _treeNodeHtml(c, depth + 1);
   }
   return html;
+}
+
+/** "running/max" badge on a set chip when the set has a subtree max_tasks total. */
+function _capBadge(path) {
+  const node = ((S.projectSets && S.projectSets.flat) || {})[path];
+  const cap = node && node.limits ? Number(node.limits.max_tasks || 0) : 0;
+  if (!cap) return '';
+  const run = Number(node.running || 0);
+  const cls = run >= cap ? 'set-cap set-cap-full' : 'set-cap';
+  return ` <span class="${cls}">${run}/${cap}</span>`;
+}
+
+function _capTitle(path) {
+  const node = ((S.projectSets && S.projectSets.flat) || {})[path];
+  if (!node) return '';
+  const lines = [];
+  const parts = Object.entries(node.limits || {}).filter(([, v]) => Number(v) > 0).map(([k, v]) => `${k}=${v}`);
+  if (parts.length) lines.push(i18n.t('setfilter.subtreeTotals') + ': ' + parts.join(', '));
+  const why = _whyWaiting(node);
+  if (why) lines.push(why);
+  const gpu = _gpuBudget(node);
+  if (gpu) lines.push(gpu);
+  return lines.length ? ` title="${escHtml(lines.join('\n'))}"` : '';
+}
+
+/** "12 waiting: resources 7, deps 3, …" for a set node (codes -> friendly labels). */
+export function _whyWaiting(node) {
+  if (!node || !node.queued) return '';
+  const label = c => (c === 'queued' ? i18n.t('setfilter.readyToStart') : i18n.t('errlabel.' + c));
+  const parts = (node.waiting || []).map(w => `${label(w.code)} ${w.n}`);
+  return i18n.t('setfilter.whyWaiting', { n: node.queued, reasons: parts.join(', ') });
+}
+
+/** "GPU today 3.2 / 8 h" when the set has a daily GPU budget (or any GPU use today). */
+export function _gpuBudget(node) {
+  if (!node) return '';
+  const cap = node.limits ? Number(node.limits.max_gpu_hours_day || 0) : 0;
+  const used = Number(node.gpu_hours_today || 0);
+  if (!cap && !used) return '';
+  return cap ? i18n.t('setfilter.gpuBudget', { used: used.toFixed(1), cap }) : i18n.t('setfilter.gpuUsed', { used: used.toFixed(1) });
 }
 
 export function _populateSetBar() {
@@ -62,7 +104,7 @@ export function _populateSetBar() {
   const allActive = !S.setFilter;
   const unsetActive = S.setFilter === UNSET;
   let html = `<span class="filter-label">${i18n.t('setfilter.setLabel')}</span>`
-    + `<button class="filter-chip${allActive ? ' active' : ''}" data-set="" data-click="${tqAct([['setProjectSet', '']])}">all</button>`;
+    + `<button class="filter-chip${allActive ? ' active' : ''}" data-set="" data-click="${tqAct([['setProjectSet', '']])}">${i18n.t('filter.all')}</button>`;
   for (const r of roots) html += _treeNodeHtml(r, 0);
   if (unset.subtree_count > 0) {
     html += `<button class="filter-chip${unsetActive ? ' active' : ''}" data-set="${UNSET}" data-click="${tqAct([['setProjectSet', UNSET]])}">${i18n.t('setfilter.unsetCount', {n: unset.subtree_count})}</button>`;
@@ -70,6 +112,8 @@ export function _populateSetBar() {
   bar.innerHTML = html;
   bar.style.display = '';
   _updateSetBulkBar();
+  // Header picker lists the same tree.
+  if (S.projects && S.projects.length && typeof _populateProjectSelect === 'function') _populateProjectSelect(S.projects);
 }
 
 export function tqToggleSetNode(path) {
@@ -125,45 +169,31 @@ export function _updateSetBulkBar() {
   }
   const targets = _bulkTargetProjects();
   const n = targets.length;
-  const label = multi ? `projects (${n})` : `set ${S.setFilter} (${n})`;
+  const label = multi ? i18n.t('setfilter.bulkProjects', { n }) : i18n.t('setfilter.bulkSet', { set: S.setFilter, n });
   bar.hidden = false;
   bar.innerHTML = `<span class="filter-label">${escHtml(label)}:</span>`
     + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqSetBulk', 'freeze']])}">${i18n.t('setfilter.freeze')}</button>`
     + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqSetBulk', 'unfreeze']])}">${i18n.t('setfilter.unfreeze')}</button>`
-    + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqSetBulk', 'pause']])}">Pause</button>`
+    + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqSetBulk', 'pause']])}">${i18n.t('setfilter.pause')}</button>`
     + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqSetBulk', 'resume']])}">${i18n.t('setfilter.resume')}</button>`
     + `<button type="button" class="cfg-btn" style="color:var(--fail)" data-click="${tqAct([['tqSetBulk', 'stop-all']])}">${i18n.t('setfilter.stopAll')}</button>`;
 }
+
+const _BULK_LABEL = { 'stop-all': 'setfilter.stopAll' };
 
 export function tqSetBulk(action) {
   const multi = Array.isArray(S.selectedProjects) && S.selectedProjects.length > 0;
   const targets = _bulkTargetProjects();
   if (!targets.length) return;
   const n = targets.length;
-  const label = action === 'stop-all' ? 'Stop all running tasks in' : action;
-  const scope = multi ? `${n} selected project(s)` : `${n} project(s) in set "${S.setFilter}"`;
-  openConfirm(`${label} ${scope}?`, async () => {
+  const label = i18n.t(_BULK_LABEL[action] || 'setfilter.' + action);
+  const scope = multi ? i18n.t('setfilter.scopeSelected', { n }) : i18n.t('setfilter.scopeSet', { n, set: S.setFilter });
+  openConfirm(i18n.t('setfilter.confirmBulk', { action: label, scope }), async () => {
     try {
-      let r;
-      if (multi) {
-        r = await fetch('/api/projects/bulk', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projects: targets, action }),
-        });
-      } else {
-        r = await fetch(`/api/project-set/${action}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ set: S.setFilter }),
-        });
-      }
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || data.ok === false) {
-        showToast(data.error || `HTTP ${r.status}`, 'err');
-        return;
-      }
-      showToast(`${action}: ${(data.projects || targets).length} project(s)`, 'ok');
+      const data = multi
+        ? await _postJson('/api/projects/bulk', { projects: targets, action })
+        : await _postJson(`/api/project-set/${action}`, { set: S.setFilter });
+      showToast(i18n.t('setfilter.bulkDone', { action: label, n: (data.projects || targets).length }), 'ok');
       if (typeof refresh === 'function') refresh();
     } catch (e) {
       showToast(String(e && e.message || e), 'err');
@@ -180,12 +210,12 @@ export function _renderCfgProjectSets() {
   const flat = (S.projectSets && S.projectSets.flat) || {};
   const paths = Object.keys(flat).sort();
   let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>'
-    + '<th style="padding:4px 6px;text-align:left">project</th>'
+    + '<th style="padding:4px 6px;text-align:left">' + i18n.t('setfilter.project') + '</th>'
     + '<th style="padding:4px 6px;text-align:left">' + i18n.t('setfilter.setPath') + '</th>'
     + '</tr></thead><tbody>';
   for (const proj of projects) {
     const cur = map[proj] || '';
-    const opts = ['<option value="">(unset)</option>']
+    const opts = [`<option value="">${escHtml(i18n.t('setfilter.unset'))}</option>`]
       .concat(paths.map(p => `<option value="${escHtml(p)}"${p === cur ? ' selected' : ''}>${escHtml(p)}</option>`));
     if (cur && !paths.includes(cur)) {
       opts.push(`<option value="${escHtml(cur)}" selected>${escHtml(cur)}</option>`);
@@ -200,31 +230,69 @@ export function _renderCfgProjectSets() {
   }
   html += '</tbody></table>';
   html += '<div style="margin-top:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
-    + '<span class="filter-label">rename set:</span>'
-    + '<input id="cfg-set-rename-from" type="text" placeholder="from" style="width:120px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 6px">'
-    + '<input id="cfg-set-rename-to" type="text" placeholder="to" style="width:120px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:2px 6px">'
-    + `<button type="button" class="cfg-btn" data-click="${tqAct([['tq' + i18n.t('setfilter.rename') + 'ProjectSet']])}">${i18n.t('setfilter.rename')}</button>`
+    + `<span class="filter-label">${escHtml(i18n.t('setfilter.renameSet'))}</span>`
+    + `<input id="cfg-set-rename-from" type="text" class="cfg-input" style="width:120px" placeholder="${escHtml(i18n.t('setfilter.from'))}">`
+    + `<input id="cfg-set-rename-to" type="text" class="cfg-input" style="width:120px" placeholder="${escHtml(i18n.t('setfilter.to'))}">`
+    + `<button type="button" class="cfg-btn" data-click="${tqAct([['tqRenameProjectSet']])}">${i18n.t('setfilter.rename')}</button>`
     + '</div>';
+  html += _cfgNodesHtml(flat, paths);
   el.innerHTML = html;
 }
 
-export async function tqAssignProjectSet(proj) {
-  const sel = document.querySelector(`select[data-proj-set="${CSS.escape(proj)}"]`);
-  const custom = document.querySelector(`input[data-proj-set-custom="${CSS.escape(proj)}"]`);
-  let path = custom && custom.value.trim() ? custom.value.trim() : (sel ? sel.value : '');
-  const body = { set: path ? path : null };
+/** Tree nodes: create empty nodes (limits can live on them), remove empty ones, see usage. */
+function _cfgNodesHtml(flat, paths) {
+  let html = `<div class="set-nodes"><div class="filter-label">${escHtml(i18n.t('setfilter.nodes'))}</div><ul class="set-node-list">`;
+  for (const p of paths) {
+    const node = flat[p] || {};
+    const depth = p.split('/').length - 1;
+    const cap = node.limits ? Number(node.limits.max_tasks || 0) : 0;
+    const usage = (cap ? ` · ${Number(node.running || 0)}/${cap} ${escHtml(i18n.t('setfilter.running'))}` : '')
+      + (node.queued ? ` · ${escHtml(_whyWaiting(node))}` : '')
+      + (_gpuBudget(node) ? ` · ${escHtml(_gpuBudget(node))}` : '');
+    const rm = (node.subtree_count || 0) === 0
+      ? ` <button type="button" class="cfg-btn" data-click="${tqAct([['tqRemoveSetNode', p]])}">${escHtml(i18n.t('setfilter.removeNode'))}</button>`
+      : '';
+    html += `<li style="--depth:${depth}"><b>${escHtml(p.split('/').pop())}</b> <span class="set-node-path">${escHtml(p)}</span>`
+      + ` (${node.subtree_count || 0})${usage}${rm}</li>`;
+  }
+  html += '</ul><div class="set-node-add">'
+    + `<input id="cfg-set-node-new" type="text" class="cfg-input" placeholder="${escHtml(i18n.t('setfilter.newNodePlaceholder'))}">`
+    + ` <button type="button" class="cfg-btn" data-click="${tqAct([['tqAddSetNode']])}">${escHtml(i18n.t('setfilter.addNode'))}</button>`
+    + `<div class="set-node-hint">${escHtml(i18n.t('setfilter.totalsHint'))}</div></div></div>`;
+  return html;
+}
+
+async function _postSetNode(action, path) {
   try {
-    const r = await fetch(`/api/project/${encodeURIComponent(proj)}/set`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || data.ok === false) {
-      showToast(data.error || `HTTP ${r.status}`, 'err');
-      return;
-    }
-    showToast(`${proj} → ${path || '(unset)'}`, 'ok');
+    await _postJson('/api/project-sets/node', { action, path });
+    if (typeof refresh === 'function') await refresh();
+    _renderCfgProjectSets();
+    _populateSetBar();
+    return true;
+  } catch (e) {
+    showToast(String(e && e.message || e), 'err');
+    return false;
+  }
+}
+
+export async function tqAddSetNode() {
+  const el = /** @type {HTMLInputElement | null} */ (document.getElementById('cfg-set-node-new'));
+  const path = el && el.value.trim();
+  if (!path) return;
+  if (await _postSetNode('add', path)) showToast(i18n.t('setfilter.nodeAdded', { path }), 'ok');
+}
+
+export async function tqRemoveSetNode(path) {
+  if (await _postSetNode('remove', path)) showToast(i18n.t('setfilter.nodeRemoved', { path }), 'ok');
+}
+
+export async function tqAssignProjectSet(proj) {
+  const sel = /** @type {HTMLInputElement | null} */ (document.querySelector(`select[data-proj-set="${CSS.escape(proj)}"]`));
+  const custom = /** @type {HTMLInputElement | null} */ (document.querySelector(`input[data-proj-set-custom="${CSS.escape(proj)}"]`));
+  let path = custom && custom.value.trim() ? custom.value.trim() : (sel ? sel.value : '');
+  try {
+    await _postJson(`/api/project/${encodeURIComponent(proj)}/set`, { set: path ? path : null });
+    showToast(`${proj} → ${path || i18n.t('setfilter.unset')}`, 'ok');
     if (typeof refresh === 'function') await refresh();
     _renderCfgProjectSets();
     _populateSetBar();
@@ -234,8 +302,8 @@ export async function tqAssignProjectSet(proj) {
 }
 
 export async function tqRenameProjectSet() {
-  const fromEl = document.getElementById('cfg-set-rename-from');
-  const toEl = document.getElementById('cfg-set-rename-to');
+  const fromEl = /** @type {HTMLInputElement | null} */ (document.getElementById('cfg-set-rename-from'));
+  const toEl = /** @type {HTMLInputElement | null} */ (document.getElementById('cfg-set-rename-to'));
   const from = fromEl && fromEl.value.trim();
   const to = toEl && toEl.value.trim();
   if (!from || !to) {
@@ -243,16 +311,7 @@ export async function tqRenameProjectSet() {
     return;
   }
   try {
-    const r = await fetch('/api/project-sets/rename', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to }),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok || data.ok === false) {
-      showToast(data.error || `HTTP ${r.status}`, 'err');
-      return;
-    }
+    const data = await _postJson('/api/project-sets/rename', { from, to });
     showToast(i18n.t('setfilter.renamed', {from, to, n: (data.projects || []).length}), 'ok');
     if (typeof refresh === 'function') await refresh();
     _renderCfgProjectSets();

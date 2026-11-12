@@ -130,6 +130,12 @@ after those filters pass. Remote leftover RAM comes from running-on-this-worker
 reservations plus heartbeat `load` (R-008). Claim path also uses
 `estimate_task_resources` (same sources as local).
 
+**GPU first (`gpu_first`, default on).** Among tasks of equal effective priority, tasks that
+declare `gpu_vram_gib > 0` sort before CPU-only tasks — but only while no GPU task is running, so an
+idle GPU is taken first without fragmenting VRAM or holding CPU work back when the GPU is already busy.
+Priority still wins. The host CPU gate (`cpu_limit_pct`) and pressure cooldowns can still delay every
+admission, GPU tasks included. `tq config set gpu_first=0` turns it off.
+
 **Exclusive drain.** When the top runnable task is `exclusive` (or `exclusive_project`)
 and others are still running, no other task (of that project, for `exclusive_project`) is
 admitted until it has started. Without the drain, a steady supply of small tasks would keep
@@ -229,6 +235,15 @@ Filler work (extra seeds, wider arms) that must never delay real work.
 ### Per-project minimum slots (`min_tasks`)
 
 With a global `max_running_tasks`, a project may set `min_tasks` (Config page / `/api/project-limits`). While that project has queued work and fewer than `min_tasks` running, *other* projects' tasks are refused once `running + unmet minimums >= max_running_tasks` (`block_reason`: "slots reserved for other projects' min_tasks"). An idle project reserves nothing; `force_run` bypasses; the timeline forecast ignores minimums.
+
+### Project-set totals
+
+A limit on a project set (`tq set limits bots max_tasks=4`, Config → project sets) is a **total for the
+whole subtree**: at most 4 running tasks across every project under `bots/`, and likewise for
+`max_cpu_cores`, `max_ram_gib`, `max_gpu_vram_gib` and `max_gpu_hours_day`. Every ancestor is checked, so a
+child set can be tighter than its parent. The root ("all") is the global config. Lowering a set total
+below what runs stops the newest local runs of that set. Only `min_tasks` is inherited per project.
+Blocked tasks show `set <path> <field>=<cap> reached`.
 
 ### VRAM admission: declared vs live
 

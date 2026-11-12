@@ -50,9 +50,9 @@ def test_index_loads_module_entry_without_classic_app_js():
     html = (Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "index.html").read_text(encoding="utf-8")
     assert 'type="module" src="/static/js/main.js"' in html
     assert 'defer src="/static/app.js"' not in html
-    assert "tqBootApp" in (
-        Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js" / "main.js"
-    ).read_text(encoding="utf-8")
+    assert "tqBootApp" in (Path(__file__).resolve().parent.parent / "tqdaemon" / "static" / "js" / "main.js").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_sw_shell_no_longer_precaches_the_empty_app_js_shim():

@@ -1,3 +1,4 @@
+// @ts-check
 // History tab: run table, mobile cards, filters, search and per-task run history panels.
 // Uses app.js globals at call time: tqAct, TQ_THIS, i18n, badge, refresh, _updateSortTh, _fetchLog, _ansiToHtml,
 // _taskCopyIconBtn, _isRestartStatus, _requeueLabel, _loadTaskRunHistoryHtml.
@@ -31,14 +32,14 @@ export function onHistorySearchInput() {
 }
 
 export function _syncHistorySearchClear() {
-  const inp = document.getElementById('history-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('history-search'));
   const btn = document.getElementById('history-search-clear');
   if (!btn) return;
   btn.hidden = !(inp && inp.value);
 }
 
 export function clearHistorySearch() {
-  const inp = document.getElementById('history-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('history-search'));
   if (!inp) return;
   if (!inp.value) {
     _syncHistorySearchClear();
@@ -116,11 +117,11 @@ export function _renderHistoryMore() {
 
 export function _historyDuration(r) {
   if (r.started_at && r.finished_at) {
-    const sec = (new Date(r.finished_at) - new Date(r.started_at)) / 1000;
+    const sec = (new Date(r.finished_at).getTime() - new Date(r.started_at).getTime()) / 1000;
     return dur(sec);
   }
   if (r.started_at && r.status === 'running') {
-    const sec = (Date.now() - new Date(r.started_at)) / 1000;
+    const sec = (Date.now() - new Date(r.started_at).getTime()) / 1000;
     return dur(sec) + ' ' + i18n.t('history.durationRunning');
   }
   return '—';
@@ -306,7 +307,7 @@ onLayoutChange(() => { try { renderHistory(); } catch (_) {} });
 
 /** Search recent run log tails for the text in the history search box (GET /api/log-search). */
 export async function searchAllLogs() {
-  const inp = document.getElementById('history-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('history-search'));
   const box = document.getElementById('history-logsearch');
   const q = inp ? inp.value.trim() : '';
   if (!box) return;
@@ -323,7 +324,7 @@ export async function searchAllLogs() {
 }
 
 export function openLogSearchRun(runId) {
-  const inp = document.getElementById('history-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('history-search'));
   if (inp) inp.value = '#' + runId;
   _syncHistorySearchClear();
   _resetHistoryPage();

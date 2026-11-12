@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from tqdaemon.rows import has_col
+
 DEFAULT_STATUSES = ("completed",)
 _NEVER = frozenset({"running", "queued", "suspended"})
 
@@ -53,7 +55,7 @@ def archive_tasks(
     done: list[dict[str, str]] = []
     for row in rows:
         proj, tid = row["project"], row["task_id"]
-        src = row["yaml_source"] if "yaml_source" in row.keys() else None
+        src = row["yaml_source"] if has_col(row, "yaml_source") else None
         if not _movable(src):
             continue  # shares a YAML with other tasks: sync would resurrect it
         done.append({"project": proj, "task_id": tid})

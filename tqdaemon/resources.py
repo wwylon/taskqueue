@@ -5,7 +5,6 @@ Run `tq detect` once per machine to inspect what the daemon will see.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
@@ -19,6 +18,7 @@ from typing import Any
 import psutil
 
 from tqdaemon._time import parse_iso as _parse_iso
+from tqdaemon.rows import has_col
 from tqdaemon.win_console import hide_console_check_output_kwargs
 
 _log = logging.getLogger(__name__)
@@ -196,34 +196,8 @@ _HINT_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def parse_json_obj(val: Any) -> dict[str, Any]:
-    if isinstance(val, dict):
-        return val
-    if not val:
-        return {}
-    if isinstance(val, str):
-        try:
-            parsed = json.loads(val)
-            return parsed if isinstance(parsed, dict) else {}
-        except (TypeError, ValueError):
-            return {}
-    return {}
-
-
-def parse_json_list(val: Any) -> list[Any]:
-    if isinstance(val, list):
-        return val
-    if isinstance(val, tuple):
-        return list(val)
-    if not val:
-        return []
-    if isinstance(val, str):
-        try:
-            parsed = json.loads(val)
-            return parsed if isinstance(parsed, list) else []
-        except (TypeError, ValueError):
-            return []
-    return []
+# Canonical tolerant parsers live in jsonutil; re-exported here for existing callers.
+from tqdaemon.jsonutil import parse_json_list, parse_json_obj  # noqa: E402
 
 
 def task_requires_gpu(resources: Any) -> bool:
@@ -869,9 +843,15 @@ def sort_queued_fairshare(
     gpu_running_by_proj: dict[str, int],
     usage_by_proj: dict[str, float] | None = None,
     fairshare_weight: float = 1e-6,
+    *,
+    gpu_first: bool = False,
 ) -> list[Any]:
     """Higher priority first, then decayed GPU usage (lower = higher priority),
     then fewer currently running GPU tasks, then age.
+
+    ``gpu_first``: among equal effective priority, tasks that need a GPU go first so the GPU
+    is not left idle behind CPU-only work. Callers enable it only while no GPU task runs, so
+    it never fragments VRAM or holds back CPU work while the GPU is busy.
 
     E4: Effective priority includes a starvation-prevention age term so
     lower-priority tasks don't wait forever behind high-priority projects.
@@ -899,8 +879,10 @@ def sort_queued_fairshare(
             except (TypeError, ValueError):
                 pass
         eff_priority = base_priority + age_bonus
+        gpu_rank = 0 if (gpu_first and task_requires_gpu(r["resources"] if has_col(r, "resources") else None)) else 1
         return (
             -eff_priority,
+            gpu_rank,
             usage.get(r["project"], 0.0) * fairshare_weight,
             gpu_running_by_proj.get(r["project"], 0),
             enqueued,

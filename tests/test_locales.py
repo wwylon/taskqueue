@@ -63,3 +63,12 @@ def test_every_used_key_is_translated(lang: str) -> None:
     data = json.loads((_LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
     missing = sorted(k for k in _used_keys() if k not in data)
     assert not missing, f"{lang}.json missing keys used by the UI: {missing}"
+
+
+@pytest.mark.parametrize("lang", ["ar", "pl", "zh"])
+def test_locale_has_every_english_key(lang: str) -> None:
+    """Key-set parity with en.json: catches keys the usage regex cannot see (ternaries, computed names)."""
+    en = json.loads((_LOCALES / "en.json").read_text(encoding="utf-8"))
+    data = json.loads((_LOCALES / f"{lang}.json").read_text(encoding="utf-8"))
+    assert not sorted(set(en) - set(data)), f"{lang}.json lacks en.json keys"
+    assert not sorted(set(data) - set(en)), f"{lang}.json has keys en.json does not"

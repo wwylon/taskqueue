@@ -1,3 +1,4 @@
+// @ts-check
 // Task stats table (Tasks tab): fetch, client-side search with debounce, and render. Rows live in S.taskStatsRows.
 // Uses app.js globals at call time (tqProjectQuery, _fetchJson, tqAct, i18n).
 import { S } from '../core/state.js';
@@ -16,13 +17,13 @@ export function onTasksSearchInput() {
   }, 250);
 }
 export function _syncTasksSearchClear() {
-  const inp = document.getElementById('tasks-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('tasks-search'));
   const btn = document.getElementById('tasks-search-clear');
   if (!btn) return;
   btn.hidden = !(inp && inp.value);
 }
 export function clearTasksSearch() {
-  const inp = document.getElementById('tasks-search');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('tasks-search'));
   if (inp) {
     inp.value = '';
     inp.classList.remove('tq-searching');
@@ -33,7 +34,7 @@ export function clearTasksSearch() {
 export function _renderTaskStatsTable() {
   const tb = document.getElementById('tasks-tbody');
   if (!tb) return;
-  const q = ((document.getElementById('tasks-search') || {}).value || '').trim().toLowerCase();
+  const q = (/** @type {any} */ ((document.getElementById('tasks-search') || {})).value || '').trim().toLowerCase();
   let rows = S.taskStatsRows || [];
   if (q) {
     rows = rows.filter(r =>

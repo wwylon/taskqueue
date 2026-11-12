@@ -1,3 +1,4 @@
+// @ts-check
 // Per-run log plumbing shared by queue, history and dashboard: live SSE maps (S.logSseMap / S.cardLogSseMap),
 // per-task run-history toggles, the one-shot log fetch with ANSI colouring, copy helpers and log-issue jumps.
 // Uses app.js and other-module globals at call time (i18n, tqAct, showAnchorToast, _applyLogSearch, openLogStream, ...).
@@ -215,7 +216,7 @@ export function _sseAppend(pre, html) {
 export async function _fetchLog(runId, preId) {
   // Only write to the single panel that requested this fetch.
   const targetId = preId || `d-log-pre-${runId}`;
-  const pre = document.getElementById(targetId);
+  const pre = /** @type {HTMLElement | null} */ (document.getElementById(targetId));
   if (!pre) return;
 
   const isAtBottom = pre.scrollHeight - pre.clientHeight <= pre.scrollTop + 30;
@@ -225,20 +226,20 @@ export async function _fetchLog(runId, preId) {
   try {
     // Server returns a bounded byte-tail (default 256KiB, max 8MiB) — never the full file.
     // After the first fetch only the bytes past the last offset are requested (X-Log-Next).
-    const inc = pre._logNext != null && typeof pre._logRaw === 'string';
-    const r = await fetch(`/api/logs/${runId}` + (inc ? `?from=${pre._logNext}` : ''));
+    const inc = /** @type {any} */ (pre)._logNext != null && typeof /** @type {any} */ (pre)._logRaw === 'string';
+    const r = await fetch(`/api/logs/${runId}` + (inc ? `?from=${/** @type {any} */ (pre)._logNext}` : ''));
     if (!r.ok) throw new Error('HTTP ' + r.status);
     let text = await r.text();
     if (!live()) return;
     const next = r.headers.get('X-Log-Next');
     if (inc && r.headers.get('X-Log-From') != null) {
       if (!text) return; // nothing new: keep the DOM as is
-      pre._logNext = next != null ? parseInt(next, 10) : null;
-      pre._logRaw = (pre._logRaw + text).slice(-LOG_CAP_CHARS);
-      text = pre._logRaw;
+      /** @type {any} */ (pre)._logNext = next != null ? parseInt(next, 10) : null;
+      /** @type {any} */ (pre)._logRaw = (/** @type {any} */ (pre)._logRaw + text).slice(-LOG_CAP_CHARS);
+      text = /** @type {any} */ (pre)._logRaw;
     } else {
-      pre._logNext = next != null ? parseInt(next, 10) : null;
-      pre._logRaw = text;
+      /** @type {any} */ (pre)._logNext = next != null ? parseInt(next, 10) : null;
+      /** @type {any} */ (pre)._logRaw = text;
     }
     const key = _panelKey(targetId, runId);
     if (S.expandedLogs[key]) S.expandedLogs[key].content = text;
@@ -246,18 +247,18 @@ export async function _fetchLog(runId, preId) {
     // Show file-size banner when the log was truncated server-side.
     const fileSize = parseInt(r.headers.get('X-Log-Size') || '0', 10);
     const truncated = r.headers.get('X-Log-Truncated') === '1';
-    let banner = inc && r.headers.get('X-Log-From') != null ? (pre._logBanner || '') : '';
+    let banner = inc && r.headers.get('X-Log-From') != null ? (/** @type {any} */ (pre)._logBanner || '') : '';
     if (!inc && truncated && fileSize > 0) {
       const mb = (fileSize / (1024 * 1024)).toFixed(1);
       banner = `<span style="color:var(--muted);font-style:italic">` +
         `--- log is ${mb} MB — showing last 256 KB ---\n</span>`;
     }
 
-    pre._logBanner = banner;
+    /** @type {any} */ (pre)._logBanner = banner;
     // Unchanged tail: keep the existing DOM (no re-parse, scroll or search highlights reset).
     const sig = banner + '\u0000' + text;
-    if (pre._logSig === sig) return;
-    pre._logSig = sig;
+    if (/** @type {any} */ (pre)._logSig === sig) return;
+    /** @type {any} */ (pre)._logSig = sig;
     // W3.4: render ANSI codes as coloured HTML; log text already HTML-escaped inside _ansiToHtml.
     pre.innerHTML = banner + _ansiToHtml(text);
     // Re-apply any active search after content is updated
@@ -271,7 +272,7 @@ export async function _fetchLog(runId, preId) {
       pre.scrollTop = scrollTop;
     }
   } catch(e) {
-    if (live()) { pre._logSig = null; pre.textContent = i18n.t('log.loadError', {error: String(e)}); }
+    if (live()) { /** @type {any} */ (pre)._logSig = null; pre.textContent = i18n.t('log.loadError', {error: String(e)}); }
   }
 }
 
@@ -402,12 +403,12 @@ export async function openLogIssue(runId, panel, kind, project, taskId, rowId, i
   const qLower = query.toLowerCase();
   // Prefill before fetch so _fetchLog re-applies search on paint.
   S.logSearch[preId] = { query: qLower, current: 0 };
-  const inpEarly = document.getElementById('log-search-inp-' + preId);
+  const inpEarly = /** @type {HTMLInputElement | null} */ (document.getElementById('log-search-inp-' + preId));
   if (inpEarly) inpEarly.value = query;
 
   await _ensureLogOpen(runId, panel, opts);
 
-  const inp = document.getElementById('log-search-inp-' + preId);
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('log-search-inp-' + preId));
   if (inp) inp.value = query;
   S.logSearch[preId] = { query: qLower, current: 0 };
   _applyLogSearch(preId, qLower, 0);

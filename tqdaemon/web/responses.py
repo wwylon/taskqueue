@@ -24,7 +24,7 @@ from tqdaemon.db import (
 )
 from tqdaemon.jsonutil import json_list
 from tqdaemon.resources import task_requires_gpu
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 from tqdaemon.win_console import hide_console_check_output_kwargs
 
 
@@ -420,7 +420,7 @@ def _blocker_scores(rows: list[Any]) -> dict[str, int]:
             if key in incomplete:
                 scores[key] = scores.get(key, 0) + 1
         try:
-            deps_any = json_list(row["depends_on_any"]) if "depends_on_any" in row.keys() else []
+            deps_any = json_list(row["depends_on_any"]) if has_col(row, "depends_on_any") else []
         except (TypeError, ValueError):
             deps_any = []
         for dep in deps_any if isinstance(deps_any, list) else []:
@@ -1152,20 +1152,20 @@ def _get_deps_response(
     edges = []
     for row in rows:
         tid = row["task_id"]
-        full_id = (f"{row['project']}/{tid}") if not project and "project" in row.keys() else tid
+        full_id = (f"{row['project']}/{tid}") if not project and has_col(row, "project") else tid
         try:
-            transfer_raw = row["transfer"] if "transfer" in row.keys() else "[]"
+            transfer_raw = row["transfer"] if has_col(row, "transfer") else "[]"
             transfer = json_list(transfer_raw)
         except (TypeError, ValueError):
             transfer = []
         try:
-            tags = json_list(row["tags"]) if "tags" in row.keys() else []
+            tags = json_list(row["tags"]) if has_col(row, "tags") else []
         except (TypeError, ValueError):
             tags = []
         status = row["status"]
         status_by_id[full_id] = status
         spawned = ""
-        if "spawned_by" in row.keys() and row["spawned_by"]:
+        if has_col(row, "spawned_by") and row["spawned_by"]:
             spawned = str(row["spawned_by"])
         nodes.append(
             {
@@ -1174,23 +1174,23 @@ def _get_deps_response(
                 "description": row["description"] or "",
                 "block_reason": row["block_reason"] or "",
                 "last_error_code": row["last_error_code"] or "",
-                "priority": row["priority"] if "priority" in row.keys() else 50,
+                "priority": row["priority"] if has_col(row, "priority") else 50,
                 "transfer": transfer,
                 "yaml_num": row_get(row, "yaml_num"),
                 "tags": tags if isinstance(tags, list) else [],
-                "grp": (row["grp"] if "grp" in row.keys() else "") or "",
-                "suite": (row["suite"] if "suite" in row.keys() else "") or "",
+                "grp": (row["grp"] if has_col(row, "grp") else "") or "",
+                "suite": (row["suite"] if has_col(row, "suite") else "") or "",
                 "spawned_by": spawned or None,
             }
         )
         for col, kind in (("depends_on", "all"), ("depends_on_any", "any")):
             try:
-                raw = row[col] if col in row.keys() else "[]"
+                raw = row[col] if has_col(row, col) else "[]"
                 deps = json_list(raw)
                 for dep in deps if isinstance(deps, list) else []:
                     if "/" in str(dep):
                         dep_id = str(dep)
-                    elif not project and "project" in row.keys():
+                    elif not project and has_col(row, "project"):
                         dep_id = f"{row['project']}/{dep}"
                     else:
                         dep_id = str(dep)
@@ -1317,11 +1317,7 @@ def _get_history_response(
     """
     from tqdaemon.db import blocked_projects, count_recent_runs, get_recent_runs
 
-    exclude = (
-        (blocked_projects(conn) or None)
-        if hide_blocked and not project and projects is None
-        else None
-    )
+    exclude = (blocked_projects(conn) or None) if hide_blocked and not project and projects is None else None
     st = (status or "").strip() or None
     if st == "all":
         st = None

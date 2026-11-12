@@ -1,3 +1,4 @@
+// @ts-check
 // Config modal (host limits + set defaults + per-project overrides) and JSON helpers.
 // Uses app.js globals at call time (i18n, openAlert, refresh, _renderCfgProjectSets).
 import { S } from '../core/state.js';
@@ -145,16 +146,16 @@ export function tqCfgFocusSet(path) {
 
 export async function openCfg() {
   const numOr = (v, d) => (v === 0 || v === '0') ? 0 : (v || d);
-  document.getElementById('cfg-cpu').value = numOr(S.cfg.cpu_limit_pct, 50);
-  document.getElementById('cfg-gpu').value = numOr(S.cfg.gpu_limit_pct, 100);
-  document.getElementById('cfg-ram').value = numOr(S.cfg.ram_limit_pct, 80);
-  document.getElementById('cfg-stop').value = numOr(S.cfg.graceful_stop_sec, 30);
-  document.getElementById('cfg-frozen').value = numOr(S.cfg.frozen_threshold_sec, 600);
-  document.getElementById('cfg-max-tasks').value = numOr(S.cfg.max_running_tasks, 0);
-  document.getElementById('cfg-limit-policy').value = S.cfg.limit_decrease_policy || 'ignore';
-  document.getElementById('cfg-max-cpu').value = numOr(S.cfg.max_cpu_cores, 0);
-  document.getElementById('cfg-max-ram').value = numOr(S.cfg.max_ram_gib, 0);
-  document.getElementById('cfg-vram-cap').value = numOr(S.cfg.gpu_vram_limit_gib, 0);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-cpu')).value = numOr(S.cfg.cpu_limit_pct, 50);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-gpu')).value = numOr(S.cfg.gpu_limit_pct, 100);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-ram')).value = numOr(S.cfg.ram_limit_pct, 80);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-stop')).value = numOr(S.cfg.graceful_stop_sec, 30);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-frozen')).value = numOr(S.cfg.frozen_threshold_sec, 600);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-max-tasks')).value = numOr(S.cfg.max_running_tasks, 0);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-limit-policy')).value = S.cfg.limit_decrease_policy || 'ignore';
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-max-cpu')).value = numOr(S.cfg.max_cpu_cores, 0);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-max-ram')).value = numOr(S.cfg.max_ram_gib, 0);
+  /** @type {HTMLInputElement} */ (document.getElementById('cfg-vram-cap')).value = numOr(S.cfg.gpu_vram_limit_gib, 0);
 
   let raw = {};
   let projLimitsOk = false;
@@ -204,34 +205,34 @@ export async function saveCfg() {
   const byProj = {};
   const bySet = {};
   for (const inp of document.querySelectorAll('#cfg-project-limits input[data-field]')) {
-    const field = inp.dataset.field;
+    const field = /** @type {HTMLElement} */ (inp).dataset.field;
     if (!field) continue;
-    const kind = inp.dataset.kind;
+    const kind = /** @type {HTMLElement} */ (inp).dataset.kind;
     if (kind === 'set') {
-      const path = inp.dataset.key;
+      const path = /** @type {HTMLElement} */ (inp).dataset.key;
       if (!path) continue;
       if (!bySet[path]) bySet[path] = { set: path };
-      bySet[path][field] = +inp.value;
+      bySet[path][field] = +/** @type {HTMLInputElement} */ (inp).value;
       continue;
     }
     // kind=proj (new UI) or legacy data-proj inputs (tests / old DOM)
-    const proj = kind === 'proj' ? inp.dataset.key : inp.dataset.proj;
+    const proj = kind === 'proj' ? /** @type {HTMLElement} */ (inp).dataset.key : /** @type {HTMLElement} */ (inp).dataset.proj;
     if (!proj) continue;
     if (!byProj[proj]) byProj[proj] = {};
-    byProj[proj][field] = +inp.value;
+    byProj[proj][field] = +/** @type {HTMLInputElement} */ (inp).value;
   }
   try {
     await _postJson('/api/config', {
-      cpu_limit_pct: +document.getElementById('cfg-cpu').value,
-      gpu_limit_pct: +document.getElementById('cfg-gpu').value,
-      ram_limit_pct: +document.getElementById('cfg-ram').value,
-      graceful_stop_sec: +document.getElementById('cfg-stop').value,
-      frozen_threshold_sec: +document.getElementById('cfg-frozen').value,
-      max_running_tasks: +document.getElementById('cfg-max-tasks').value,
-      limit_decrease_policy: document.getElementById('cfg-limit-policy').value,
-      max_cpu_cores: +document.getElementById('cfg-max-cpu').value,
-      max_ram_gib: +document.getElementById('cfg-max-ram').value,
-      gpu_vram_limit_gib: +document.getElementById('cfg-vram-cap').value,
+      cpu_limit_pct: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-cpu')).value,
+      gpu_limit_pct: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-gpu')).value,
+      ram_limit_pct: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-ram')).value,
+      graceful_stop_sec: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-stop')).value,
+      frozen_threshold_sec: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-frozen')).value,
+      max_running_tasks: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-max-tasks')).value,
+      limit_decrease_policy: /** @type {HTMLInputElement} */ (document.getElementById('cfg-limit-policy')).value,
+      max_cpu_cores: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-max-cpu')).value,
+      max_ram_gib: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-max-ram')).value,
+      gpu_vram_limit_gib: +/** @type {HTMLInputElement} */ (document.getElementById('cfg-vram-cap')).value,
     });
     if (window.__tqCfgProjLimitsOk) {
       const posts = [];

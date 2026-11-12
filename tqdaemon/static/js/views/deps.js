@@ -1,3 +1,4 @@
+// @ts-check
 // Dependencies (DAG) tab. Uses app.js globals at call time: tqAct, TQ_THIS, TQ_EVENT, i18n, friendlyErrorText,
 // setProjectAndWait, tab, _flashQueueRow, loadTimeline, stopTask, retryTaskNew, forceTask, markProcessed, enableTask,
 // openYamlModal, tqOpenDrawer, tqPromptPriority, tqSetPriority, tqSetEnabled, _isRestartStatus, _requeueLabel, _postJson.
@@ -19,7 +20,7 @@ function _depsStructureSig(data) {
 }
 
 export async function loadDeps() {
-  const allProjectsEl = document.getElementById('deps-all-projects');
+  const allProjectsEl = /** @type {HTMLInputElement | null} */ (document.getElementById('deps-all-projects'));
   // If a specific project is selected globally and the checkbox hasn't been explicitly checked, filter by it.
   const allProjects = allProjectsEl ? allProjectsEl.checked : (S.selectedProject === 'all');
   const proj = (!allProjects && S.selectedProject && S.selectedProject !== 'all') ? S.selectedProject : '';
@@ -29,14 +30,14 @@ export async function loadDeps() {
     if (!data) return false;  // keep the last graph; tqLoop backs off
     // status filter checkboxes: a status whose box is unchecked is hidden (statuses without a box stay)
     const hiddenStatuses = new Set();
-    document.querySelectorAll('.deps-status-cb').forEach(cb => { if (!cb.checked) hiddenStatuses.add(cb.dataset.status); });
+    document.querySelectorAll('.deps-status-cb').forEach(cb => { if (!/** @type {HTMLInputElement} */ (cb).checked) hiddenStatuses.add(/** @type {HTMLElement} */ (cb).dataset.status); });
     if (hiddenStatuses.size) {
       data.nodes = (data.nodes || []).filter(n => !hiddenStatuses.has(n.status));
       const kept = new Set(data.nodes.map(n => n.id));
       data.edges = (data.edges || []).filter(e => kept.has(e.from) && kept.has(e.to));
     }
     // W7.7: inject file nodes from transfer specs
-    const showFiles = (document.getElementById('deps-show-files') || {}).checked;
+    const showFiles = /** @type {any} */ ((document.getElementById('deps-show-files') || {})).checked;
     if (showFiles) {
       const fileNodes = {};
       const extraEdges = [];
@@ -108,7 +109,7 @@ export function _dagFitToView(totalW, totalH) {
   _dagView.x = 0;
   _dagView.y = 0;
   _dagApplyTransform();
-  const slider = document.getElementById('deps-scale');
+  const slider = /** @type {HTMLInputElement | null} */ (document.getElementById('deps-scale'));
   if (slider) {
     if (fitScale > parseFloat(slider.max)) slider.max = String(fitScale);
     slider.value = String(fitScale);
@@ -118,9 +119,9 @@ export function _dagFitToView(totalW, totalH) {
 if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('resize', function() {
   if (_dagUserMoved) return;
   const page = document.getElementById('deps');
-  const g = document.getElementById('dag-g');
+  const g = /** @type {HTMLElement | null} */ (document.getElementById('dag-g'));
   if (!page || !page.classList.contains('active') || !g) return;
-  const bb = g.getBBox();
+  const bb = /** @type {SVGGraphicsElement} */ (/** @type {unknown} */ (g)).getBBox();
   if (!bb.width || !bb.height) return;
   _dagFitToView(bb.x + bb.width + 20, bb.y + bb.height + 20);
 });
@@ -289,7 +290,7 @@ export function renderDag(data) {
 
   if (nodes.length === 0) {
     svg.innerHTML = `<text x="50%" y="60" text-anchor="middle" fill="var(--muted)" font-size="13">${i18n.t('deps.noTasks')}</text>`;
-    svg.setAttribute('height', 120);
+    svg.setAttribute('height', '120');
     return;
   }
 
@@ -586,7 +587,7 @@ export function showDagCtxMenu(event, project, taskId, status, opts) {
     document.body.appendChild(menu);
     document.addEventListener('click', hideDagCtxMenu);
     document.addEventListener('contextmenu', (e) => {
-      if (!menu.contains(e.target) && !(e.target.closest && e.target.closest('.dag-node'))) {
+      if (!menu.contains(/** @type {Node} */ (e.target)) && !(/** @type {HTMLElement} */ (e.target).closest && /** @type {HTMLElement} */ (e.target).closest('.dag-node'))) {
         hideDagCtxMenu();
       }
     });

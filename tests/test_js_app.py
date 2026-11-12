@@ -102,7 +102,15 @@ console.log('RESULT:' + JSON.stringify(r));
     assert out["read"]["projects"] == {"projects": ["pokerbot", "whist"]}
     assert out["tabs"] == 15 and out["missingNav"] == [] and out["missingPage"] == []
     assert out["hasDocsJump"] == "function"
-    assert out["pop"] == {"page": "alerts", "project": "zz", "group": None, "set": None, "q": "", "applying": False, "wrote": 0}
+    assert out["pop"] == {
+        "page": "alerts",
+        "project": "zz",
+        "group": None,
+        "set": None,
+        "q": "",
+        "applying": False,
+        "wrote": 0,
+    }
     assert len(out["sync"]["pushed"]) == 1
     p = out["sync"]["pushed"][0]
     assert "page=docs" in p and "doc=d1" in p and "section=s1" in p
@@ -196,11 +204,12 @@ console.log('RESULT:' + JSON.stringify({ len: expanded.k.content.length, tail: e
 
 
 def test_data_action_targets_exist_as_globals():
-    """Every function named by a data-<event> attribute in index.html resolves to a window function at runtime."""
+    """Every function named by a data-<event> attribute in index.html is a registered action at runtime."""
     out = run_js(
         """
 const { g, doc } = await setup({ app: true });
 await g.flush();
+const { hasAction } = await import(new URL('./tqdaemon/static/js/core/actions.js', import.meta.url).href);
 const EV = ['click','change','input','keydown','keyup','submit','contextmenu','mouseenter','mouseleave'];
 const names = new Set();
 for (const el of doc.all()) for (const e of EV) {
@@ -208,7 +217,7 @@ for (const el of doc.all()) for (const e of EV) {
   const txt = raw.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
   for (const call of JSON.parse(txt)) names.add(call[0]);
 }
-console.log('RESULT:' + JSON.stringify({ n: names.size, missing: [...names].filter(n => typeof g[n] !== 'function') }));
+console.log('RESULT:' + JSON.stringify({ n: names.size, missing: [...names].filter(n => !hasAction(n)) }));
 """
     )
     assert out["n"] > 0

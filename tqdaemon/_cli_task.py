@@ -23,7 +23,7 @@ from tqdaemon._cli_helpers import (
 from tqdaemon._db_tasks import get_task, get_task_status
 from tqdaemon._time import parse_iso as _parse_iso
 from tqdaemon.jsonutil import json_list
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 
 
 def _list_fetch_rows(
@@ -90,7 +90,7 @@ def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = Fals
     out = []
     for r in rows:
         res = json.loads(r["resources"] or "{}")
-        artifact_paths = json_list(r["artifacts"]) if "artifacts" in r.keys() else []
+        artifact_paths = json_list(r["artifacts"]) if has_col(r, "artifacts") else []
         artifacts_info: list = []
         if stat_artifacts and artifact_paths:
             proj_obj = _projects.get(r["project"])
@@ -121,7 +121,7 @@ def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = Fals
                 "task_id": r["task_id"],
                 "priority": r["priority"],
                 "status": r["status"],
-                "enabled": bool(r["enabled"]) if "enabled" in r.keys() and r["enabled"] is not None else True,
+                "enabled": bool(r["enabled"]) if has_col(r, "enabled") and r["enabled"] is not None else True,
                 "resources": res,
                 "requires_gpu": task_requires_gpu(res),
                 "last_error_code": err_code,
@@ -129,14 +129,14 @@ def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = Fals
                 "description": row_get(r, "description"),
                 "tags": json_list(r["tags"]),
                 "suite": r["suite"] or "",
-                "group": r["grp"] or "" if "grp" in r.keys() else "",
+                "group": r["grp"] or "" if has_col(r, "grp") else "",
                 "last_log_line": row_get(r, "last_log_line"),
                 "progress_pct": row_get(r, "progress_pct"),
-                "metadata": json.loads(r["metadata"] or "{}") if "metadata" in r.keys() else {},
+                "metadata": json.loads(r["metadata"] or "{}") if has_col(r, "metadata") else {},
                 "artifacts": artifacts_info,
-                "depends_on": json_list(r["depends_on"]) if "depends_on" in r.keys() else [],
-                "depends_on_any": json_list(r["depends_on_any"]) if "depends_on_any" in r.keys() else [],
-                "spawned_by": r["spawned_by"] if "spawned_by" in r.keys() and r["spawned_by"] else None,
+                "depends_on": json_list(r["depends_on"]) if has_col(r, "depends_on") else [],
+                "depends_on_any": json_list(r["depends_on_any"]) if has_col(r, "depends_on_any") else [],
+                "spawned_by": r["spawned_by"] if has_col(r, "spawned_by") and r["spawned_by"] else None,
                 "exit_code": row_get(r, "exit_code"),
                 "attempts": row_get(r, "attempts"),
                 "started_at": row_get(r, "run_started_at"),
@@ -144,15 +144,15 @@ def _list_json(rows, occupancy: dict, home: Path, *, stat_artifacts: bool = Fals
                 "log_path": row_get(r, "log_path"),
                 "lock_waiting_on": lock_waiting_on or None,
                 "cap_auto_retry_count": int(r["cap_auto_retry_count"] or 0)
-                if "cap_auto_retry_count" in r.keys()
+                if has_col(r, "cap_auto_retry_count")
                 else 0,
                 "max_auto_retries": int(
                     r["max_auto_retries"]
-                    if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None
+                    if has_col(r, "max_auto_retries") and r["max_auto_retries"] is not None
                     else 20
                 ),
                 "auto_retry_on_cap": bool(int(r["auto_retry_on_cap"] or 0))
-                if "auto_retry_on_cap" in r.keys()
+                if has_col(r, "auto_retry_on_cap")
                 else False,
             }
         )
@@ -166,7 +166,7 @@ def _list_row_display(r, occupancy: dict) -> tuple[str, str, str, str | None, st
     err = row_get(r, "last_error_code")
     reason = row_get(r, "block_reason")
     last_log = row_get(r, "last_log_line")
-    enabled = bool(r["enabled"]) if "enabled" in r.keys() and r["enabled"] is not None else True
+    enabled = bool(r["enabled"]) if has_col(r, "enabled") and r["enabled"] is not None else True
     pct = row_get(r, "progress_pct")
     status = r["status"]
     if status == "queued" and err and str(err).startswith("tq.block."):
@@ -175,10 +175,10 @@ def _list_row_display(r, occupancy: dict) -> tuple[str, str, str, str | None, st
     off_str = " [yaml-off]" if (not enabled and r["status"] != "disabled") else ""
     cap_str = ""
     try:
-        cap_n = int(r["cap_auto_retry_count"] or 0) if "cap_auto_retry_count" in r.keys() else 0
+        cap_n = int(r["cap_auto_retry_count"] or 0) if has_col(r, "cap_auto_retry_count") else 0
         if cap_n > 0:
             cap_m = int(
-                r["max_auto_retries"] if "max_auto_retries" in r.keys() and r["max_auto_retries"] is not None else 20
+                r["max_auto_retries"] if has_col(r, "max_auto_retries") and r["max_auto_retries"] is not None else 20
             )
             cap_str = f"  cap×{cap_n}/{cap_m}" if cap_m > 0 else f"  cap×{cap_n}"
     except (TypeError, ValueError, KeyError):
@@ -431,7 +431,7 @@ def _patch_snapshot(home: Path, project: str, task_id: str) -> dict:
     db = open_db(_db(home), migrate=False)
     try:
         row = get_task(db, project, task_id)
-        return {f: row[f] for f in _PATCH_DB_FIELDS if row is not None and f in row.keys()}
+        return {f: row[f] for f in _PATCH_DB_FIELDS if row is not None and has_col(row, f)}
     finally:
         db.close()
 
@@ -720,7 +720,7 @@ def cmd_retry(
             db.close()
             return 1
         allowed = []
-        if row is not None and "overridable_args" in row.keys():
+        if row is not None and has_col(row, "overridable_args"):
             try:
                 allowed = json_list(row["overridable_args"])
             except (TypeError, ValueError, KeyError):
@@ -1192,7 +1192,7 @@ def cmd_deps(home: Path, key: str, *, mermaid: bool = False) -> int:
     task_map: dict[str, dict] = {}
     for r in rows:
         deps = json_list(r["depends_on"])
-        deps_any = json_list(r["depends_on_any"]) if "depends_on_any" in r.keys() else []
+        deps_any = json_list(r["depends_on_any"]) if has_col(r, "depends_on_any") else []
         task_map[r["task_id"]] = {"deps": deps, "deps_any": deps_any, "status": r["status"]}
 
     if mermaid:

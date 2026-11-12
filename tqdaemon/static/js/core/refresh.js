@@ -62,6 +62,9 @@ export function _patchQueueLiveFromRunning(running) {
   if (!running || !running.length || !S.queue || !S.queue.length) return;
   const byKey = {};
   for (const t of running) byKey[t.project + '/' + t.task_id] = t;
+  // Index mobile cards once per patch (was a full querySelectorAll per running task).
+  const cards = {};
+  document.querySelectorAll('[data-q-card]').forEach(el => { cards[el.getAttribute('data-q-card')] = el; });
   for (const t of S.queue) {
     const live = byKey[t.project + '/' + t.task_id];
     if (!live) continue;
@@ -75,9 +78,7 @@ export function _patchQueueLiveFromRunning(running) {
     // Desktop table row and/or mobile card (F-165).
     const row = typeof qrowId === 'function' ? document.getElementById(qrowId(t.project, t.task_id)) : null;
     const cardKey = String(t.project) + '/' + String(t.task_id);
-    const card = document.querySelector('[data-q-card]')
-      ? Array.from(document.querySelectorAll('[data-q-card]')).find(el => el.getAttribute('data-q-card') === cardKey)
-      : null;
+    const card = cards[cardKey] || null;
     const roots = [row, card].filter(Boolean);
     if (!roots.length) continue;
     for (const root of roots) {
@@ -350,7 +351,7 @@ export async function refresh() {
     if (_perfOn) parts.push('timing=1');
 
     const dashUrl = '/api/dashboard?' + parts.join('&');
-    const { data: resp, etag: newEtag, notModified, wallMs, serverTiming } = await _fetchJsonEtag(dashUrl, 15000, S.dashboardEtagUrl === dashUrl && !S.forceQueueRender ? S.dashboardEtag : '');
+    const { data: resp, etag: newEtag, notModified, wallMs, serverTiming, status: httpStatus } = await _fetchJsonEtag(dashUrl, 15000, S.dashboardEtagUrl === dashUrl && !S.forceQueueRender ? S.dashboardEtag : '');
 
     function _tqPerfNote(base) {
       if (!_perfOn) return base;
@@ -372,6 +373,20 @@ export async function refresh() {
       return;
     }
 
+    if (httpStatus === 401 || httpStatus === 403) {
+      // The daemon is up but wants a token: say so instead of "offline / connecting".
+      _refreshFailStreak = 0;
+      const pill = document.getElementById('daemon-pill');
+      if (pill) {
+        pill.className = 'status-pill pill-fail';
+        pill.textContent = i18n.t('status.tokenRequired');
+        pill.title = i18n.t('status.tokenRequiredTitle');
+      }
+      S.sseState = 'error';
+      _updateSseIndicator();
+      S.refreshResolvers.splice(0).forEach(fn => fn());
+      return;
+    }
     if (!resp || typeof resp !== 'object' || !resp.status) {
       throw new Error('dashboard unreachable');
     }
@@ -408,6 +423,7 @@ export async function refresh() {
       S.myProjects = [];
     }
     if (projectsChanged && S.projects) _populateProjectChips(S.projects);
+    else if (typeof _updateProjectChipStates === 'function') _updateProjectChipStates();
 
     if (tg && tg.tags) { S.allTags = tg.tags || []; S.allTagProjects = tg.tag_projects || {}; }
     if (pr && typeof pr === 'object') S.projectRoots = pr;
@@ -532,6 +548,8 @@ export async function refresh() {
     resolvers.forEach(fn => fn());
   } catch(e) {
     console.error('[tq] refresh() threw:', e, e && e.stack);
+    // Waiters (setProjectAndWait) must not hang until the daemon comes back.
+    S.refreshResolvers.splice(0).forEach(fn => fn());
     // A render threw after the change-detection keys were stored: reset them so the next refresh re-renders instead of freezing.
     S.prevQueueStr = S.prevHistoryStr = S.prevWorkersStr = S.prevRunningStr = S.prevGaugeStructStr = '';
     S.dashboardEtag = '';  // a 304 next time would skip the re-render and freeze the UI
@@ -673,6 +691,8 @@ export function startLiveUpdates() {
       S.projects = s.projects;
       _populateProjectSelect(S.projects);
       _populateProjectChips(S.projects);
+    } else if (typeof _updateProjectChipStates === 'function') {
+      _updateProjectChipStates();
     }
     S.lastRefreshTime = Date.now();
     _refreshFailStreak = 0;

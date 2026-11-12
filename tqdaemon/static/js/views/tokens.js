@@ -1,3 +1,4 @@
+// @ts-check
 // API tokens tab. Uses app.js globals at call time: tqAct, i18n, showToast, _postJson, _sendJson, _showPageEmpty.
 import { escHtml, fmt } from '../util/format.js';
 import { fetchJson, latest } from '../core/api.js';
@@ -24,16 +25,16 @@ export async function loadApiTokens() {
 export function tqCreateToken(ev) {
   if (ev) ev.preventDefault();
   _postJson('/api/tokens', {
-    name: document.getElementById('token-name').value.trim(),
-    scope: document.getElementById('token-scope').value,
-    projects: (document.getElementById('token-projects').value || '').trim(),
+    name: /** @type {HTMLInputElement} */ (document.getElementById('token-name')).value.trim(),
+    scope: /** @type {HTMLInputElement} */ (document.getElementById('token-scope')).value,
+    projects: (/** @type {HTMLInputElement} */ (document.getElementById('token-projects')).value || '').trim(),
   }).then(data => {
     const once = document.getElementById('token-once');
     if (once) {
       once.hidden = false;
       once.textContent = i18n.t('api.once') + ' ' + (data.token || '');
     }
-    const name = document.getElementById('token-name');
+    const name = /** @type {HTMLInputElement | null} */ (document.getElementById('token-name'));
     if (name) name.value = '';
     loadApiTokens();
   }).catch(err => showToast(String(err.message || err), 'err'));

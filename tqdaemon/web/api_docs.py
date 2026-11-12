@@ -311,6 +311,12 @@ def _register_api_docs() -> None:
         "Rename/reparent a set path prefix for all matching projects",
         body='{"from":"games/card","to":"games/poker"}',
     )
+    _e(
+        "POST",
+        "/api/project-sets/node",
+        "Create or remove an explicit set node (limits may live on an empty node)",
+        body='{"action":"add","path":"bots/bridge2"}',
+    )
     _e("POST", "/api/force/<project>/<task_id>", "Force-run a task immediately")
     _e(
         "GET",

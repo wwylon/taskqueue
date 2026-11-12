@@ -86,7 +86,8 @@ def check_cron_schedule(conn: sqlite3.Connection, state: dict) -> None:
     try:
         rows = conn.execute(
             "SELECT project, task_id, status, schedule FROM tasks "
-            "WHERE schedule IS NOT NULL AND schedule != '' AND schedule != 'null'"
+            "WHERE schedule IS NOT NULL AND schedule != '' AND schedule != 'null' "
+            "AND status IN ('completed', 'failed', 'interrupted', 'suspended', 'stopped')"
         ).fetchall()
     except sqlite3.Error:
         return
@@ -106,6 +107,9 @@ def check_cron_schedule(conn: sqlite3.Connection, state: dict) -> None:
 
         check = (last + timedelta(seconds=60)).replace(second=0, microsecond=0)
         now_trunc = now.replace(second=0, microsecond=0)
+        # After a long sleep, scan at most the last day of minutes (a missed schedule fires
+        # once anyway); scanning every minute of a multi-day gap per task stalled the tick.
+        check = max(check, now_trunc - timedelta(days=1))
         fired = False
         while check <= now_trunc:
             if cron_matches(cron_expr, check):

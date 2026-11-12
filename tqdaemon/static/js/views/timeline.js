@@ -1,3 +1,4 @@
+// @ts-check
 // Timeline tab: per-project Gantt of running/queued/cron bars as inline SVG. Uses app.js globals at call time: tqAct,
 // TQ_EVENT, i18n, tqLoop, tqProjectQuery, _fetchJson, _showPageEmpty. The last good payload is module-local so a failed
 // poll keeps the previous chart (marked stale).
@@ -21,7 +22,7 @@ export function _tlDay(d) {
 export function _tlAt(iso, ref) {
   // HH:MM, prefixed by the weekday/day when it differs from the reference day.
   const d = new Date(iso);
-  if (isNaN(d)) return '';
+  if (isNaN(d.getTime())) return '';
   const r = ref ? new Date(ref) : new Date();
   const same = d.toDateString() === r.toDateString();
   return same ? _tlClock(d) : _tlDay(d) + ' ' + _tlClock(d);
@@ -42,7 +43,7 @@ export function loadTimeline(auto) {
   return tqLoop('timeline', _loadTimelineNow, { minGapMs: 15000, force: !auto });
 }
 export async function _loadTimelineNow() {
-  const hours = (document.getElementById('tl-hours') || {}).value || '1';
+  const hours = /** @type {any} */ ((document.getElementById('tl-hours') || {})).value || '1';
   const q = tqProjectQuery();
   const url = '/api/timeline' + (q ? q + '&' : '?') + 'hours=' + encodeURIComponent(hours);
   const data = await _fetchJson(url, _TL_TIMEOUT_MS, false);

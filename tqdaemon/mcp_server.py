@@ -23,6 +23,7 @@ from tqdaemon.db import get_config, open_db
 from tqdaemon.errors import block_kind as _block_kind
 from tqdaemon.jsonutil import json_list
 from tqdaemon.queries import build_task_health, list_attention, list_operator_tasks
+from tqdaemon.rows import has_col
 
 TOOLS = [
     {
@@ -561,6 +562,13 @@ def _report(home: Path, args: dict[str, Any]) -> Any:
 
 def _queue_status(home: Path, _args: dict[str, Any]) -> Any:
     conn = _conn(home)
+    try:
+        return _queue_status_with(conn, home)
+    finally:
+        conn.close()  # also on errors: MCP calls are long-lived, leaked handles add up
+
+
+def _queue_status_with(conn: sqlite3.Connection, home: Path) -> Any:
     cfg = get_config(conn)
     counts = {
         r["status"]: r["n"] for r in conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()
@@ -576,7 +584,6 @@ def _queue_status(home: Path, _args: dict[str, Any]) -> Any:
         events = list_daemon_events(conn, limit=5)
     except sqlite3.Error:
         pass
-    conn.close()
     return {
         "home": str(home),
         "port": cfg.get("web_port", 8765),
@@ -952,6 +959,7 @@ def _unhold_task(home: Path, args: dict[str, Any]) -> Any:
     if not project or not task_id:
         raise ValueError("project and task_id are required")
     return unhold_op(home, project, task_id, force=bool(args.get("force")))
+
 
 def _progress_snapshot(home: Path, args: dict[str, Any]) -> Any:
     """W6.14: Return progress + resource metrics for tasks in a project."""
@@ -1347,13 +1355,13 @@ def _task_result(home: Path, args: dict[str, Any]) -> Any:
 
         summary = format_stop_summary(
             status=task["status"],
-            stop_reason=run["stop_reason"] if "stop_reason" in run.keys() else None,
-            stopped_by=run["stopped_by"] if "stopped_by" in run.keys() else None,
+            stop_reason=run["stop_reason"] if has_col(run, "stop_reason") else None,
+            stopped_by=run["stopped_by"] if has_col(run, "stopped_by") else None,
             last_error_code=task["last_error_code"],
         )
-        if run["stop_reason"] if "stop_reason" in run.keys() else None:
+        if run["stop_reason"] if has_col(run, "stop_reason") else None:
             out["stop_reason"] = run["stop_reason"]
-        if run["stopped_by"] if "stopped_by" in run.keys() else None:
+        if run["stopped_by"] if has_col(run, "stopped_by") else None:
             out["stopped_by"] = run["stopped_by"]
         if summary:
             out["stop_summary"] = summary

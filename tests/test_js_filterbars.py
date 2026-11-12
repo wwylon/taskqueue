@@ -84,6 +84,7 @@ def test_tag_chips_toggle_and_filter_persist():
     out = run_js(
         _js("""
 const bar = $('queue-tag-bar');
+S.selectedProject = 'p';  // tags are hidden for "all" projects
 S.allTags = [];
 g._updateTagChips(); r.hidden = bar.style.display;
 S.allTags = ['gpu', 'a<b'];

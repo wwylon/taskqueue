@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from tqdaemon.rows import has_col
+
 # CLI exit-code contract: 0 ok, 1 error, 2 usage, 3 master unreachable when the command needs it.
 EXIT_OK, EXIT_ERROR, EXIT_USAGE, EXIT_UNREACHABLE = 0, 1, 2, 3
 
@@ -172,7 +174,7 @@ def _check_ownership_or_print(row, key: str, *, force: bool) -> str | None:
     from tqdaemon.db import check_ownership
 
     operator = os.environ.get("TQ_OPERATOR")
-    started_by = row["started_by"] if row and "started_by" in row.keys() else None
+    started_by = row["started_by"] if row and has_col(row, "started_by") else None
     err = check_ownership(started_by, operator, force=force)
     if err:
         print(f"Error: {key} {err}")
@@ -278,9 +280,7 @@ def master_mutation(
     if force:
         q["force"] = "1"
     q.update({k: str(v) for k, v in (params or {}).items() if v is not None})
-    resp = via_master(
-        home, "POST", path + (("?" + urlencode(q)) if q else ""), body=body
-    )
+    resp = via_master(home, "POST", path + (("?" + urlencode(q)) if q else ""), body=body)
     if resp is not None:
         if resp.get("unreachable"):
             print(f"[ERROR] {resp.get('error', 'master unreachable')}", file=sys.stderr)

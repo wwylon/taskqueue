@@ -1,3 +1,4 @@
+// @ts-check
 // Queue toolbar: saved filters, status chips, row selection, bulk actions, retry-all and CSV/JSON export.
 // Uses app.js globals at call time (i18n, refresh, renderQueue, openConfirm/openAlert/showToast, ...).
 import { S } from '../core/state.js';
@@ -63,10 +64,10 @@ export function tqToggleSavedFilters() {
 }
 export function tqSyncStatusChips() {
   document.querySelectorAll('#queue-filter-bar .filter-chip').forEach(b => {
-    b.classList.toggle('active', b.dataset.status === S.queueStatusFilter);
+    b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.status === S.queueStatusFilter);
   });
   document.querySelectorAll('#status-counts .sc').forEach(b => {
-    b.classList.toggle('active', b.dataset.status === S.queueStatusFilter);
+    b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.status === S.queueStatusFilter);
   });
 }
 export function tqApplySavedFilter(id) {
@@ -79,7 +80,7 @@ export function tqApplySavedFilter(id) {
   S.forceQueueRender = true;
   S.queuePage = 0;
   try { localStorage.setItem('tq_status', S.queueStatusFilter); } catch (e) {}
-  const search = document.getElementById('queue-search');
+  const search = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   if (search) search.value = f.search || '';
   _syncQueueSearchClear();
   tqSyncStatusChips();
@@ -95,7 +96,7 @@ export function tqDeleteSavedFilter(id, ev) {
   tqRenderSavedFilters();
 }
 export function tqSaveCurrentFilter() {
-  const searchEl = document.getElementById('queue-search');
+  const searchEl = /** @type {HTMLInputElement | null} */ (document.getElementById('queue-search'));
   const search = searchEl ? searchEl.value.trim() : '';
   const suggested = [S.queueStatusFilter, search, S.selectedProject].filter(Boolean).join(' · ');
   const name = window.prompt(i18n.t('queue.saveFilterPrompt'), suggested);
@@ -166,7 +167,7 @@ export function tqRenderFilterSummary() {
   if (S.tagFilter) add('tag ' + S.tagFilter, [['toggleTagFilter', S.tagFilter]]);
   if (S.groupFilter) add('group ' + S.groupFilter, [['setGroupFilter', '']]);
   if (S.setFilter) add('set ' + S.setFilter, [['setProjectSet', '']]);
-  const search = ((document.getElementById('queue-search') || {}).value || S.queueSearch || '').trim();
+  const search = (/** @type {any} */ ((document.getElementById('queue-search') || {})).value || S.queueSearch || '').trim();
   if (search) add('“' + search + '”', [['clearQueueSearch']]);
   if (!chips.length) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
@@ -188,7 +189,7 @@ export function tqSyncQueueChrome() {
   tqRenderFilterSummary();
 }
 export function tqSyncSelectAll(rows) {
-  const all = document.getElementById('q-select-all');
+  const all = /** @type {HTMLInputElement | null} */ (document.getElementById('q-select-all'));
   if (!all) return;
   const keys = (rows || []).map(t => _queueSelKey(t.project, t.task_id));
   const n = keys.filter(k => S.queueSelection.has(k)).length;
@@ -208,14 +209,14 @@ export function tqToggleSelectVisible(on) {
     if (on) S.queueSelection.add(key);
     else S.queueSelection.delete(key);
   });
-  document.querySelectorAll('#queue .q-row-check').forEach(cb => { cb.checked = !!on; });
+  document.querySelectorAll('#queue .q-row-check').forEach(cb => { /** @type {HTMLInputElement} */ (cb).checked = !!on; });
   tqRenderBulkBar();
   tqSyncSelectAll(S.queueExportRows);
 }
 export function tqClearSelection() {
   S.queueSelection.clear();
-  document.querySelectorAll('#queue .q-row-check').forEach(cb => { cb.checked = false; });
-  const all = document.getElementById('q-select-all');
+  document.querySelectorAll('#queue .q-row-check').forEach(cb => { /** @type {HTMLInputElement} */ (cb).checked = false; });
+  const all = /** @type {HTMLInputElement | null} */ (document.getElementById('q-select-all'));
   if (all) { all.checked = false; all.indeterminate = false; }
   tqRenderBulkBar();
 }
@@ -247,7 +248,7 @@ function _queueFilterQuery(limit) {
   } else if (S.selectedProject && S.selectedProject !== 'all') {
     parts.push(`project=${encodeURIComponent(S.selectedProject)}`);
   }
-  const search = ((document.getElementById('queue-search') || {}).value || '').trim();
+  const search = (/** @type {any} */ ((document.getElementById('queue-search') || {})).value || '').trim();
   if (search) parts.push(`search=${encodeURIComponent(search)}`);
   if (S.tagFilter) parts.push(`tag=${encodeURIComponent(S.tagFilter)}`);
   if (S.groupFilter) parts.push(`group=${encodeURIComponent(S.groupFilter)}`);
@@ -334,13 +335,13 @@ export async function tqRetryAllFailed() {
   const total = S.queueTotal;
   const run = async () => {
     S.bulkBusy = true;
-    const btn = document.getElementById('retry-all-failed-btn');
+    const btn = /** @type {HTMLInputElement | null} */ (document.getElementById('retry-all-failed-btn'));
     if (btn) btn.disabled = true;
     try {
       const proj = S.selectedProject !== 'all' ? S.selectedProject : '';
       const parts = [`status=${encodeURIComponent(st)}`, `limit=${Math.min(total, 5000)}`, 'offset=0'];
       if (proj) parts.push(`project=${encodeURIComponent(proj)}`);
-      const search = ((document.getElementById('queue-search') || {}).value || '').trim();
+      const search = (/** @type {any} */ ((document.getElementById('queue-search') || {})).value || '').trim();
       if (search) parts.push(`search=${encodeURIComponent(search)}`);
       if (S.tagFilter) parts.push(`tag=${encodeURIComponent(S.tagFilter)}`);
       if (S.groupFilter) parts.push(`group=${encodeURIComponent(S.groupFilter)}`);

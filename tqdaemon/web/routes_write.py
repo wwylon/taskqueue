@@ -163,6 +163,45 @@ class WriteRoutes:
         )
         self._json({"ok": True})
 
+    def _post_set_node(self) -> None:
+        """POST /api/project-sets/node body ``{action: add|remove, path}`` — explicit tree nodes
+        (a node may exist and carry limits before any project is assigned to it)."""
+        from tqdaemon.project_limits import add_set_node, remove_set_node
+        from tqdaemon.project_sets import normalize_path
+
+        data = self._read_json()
+        if data is None:
+            return
+        action = data.get("action")
+        raw = data.get("path")
+        if action not in ("add", "remove") or not isinstance(raw, str) or not raw.strip():
+            self._json({"ok": False, "error": "body.action (add|remove) and body.path required"}, status=400)
+            return
+        try:
+            path = normalize_path(raw.strip())
+        except ValueError as exc:
+            self._json({"ok": False, "error": str(exc)}, status=400)
+            return
+        assert path is not None
+        conn = self._wconn()
+        if action == "add":
+            add_set_node(conn, path)
+        else:
+            members = [
+                n
+                for n, p in self._projects_ref().items()
+                if p.set_path and (p.set_path == path or p.set_path.startswith(path + "/"))
+            ]
+            if members:
+                self._json(
+                    {"ok": False, "error": f"set {path} still has projects: {', '.join(sorted(members))}"},
+                    status=409,
+                )
+                return
+            remove_set_node(conn, path)
+        self._audit(f"set-node-{action}", path, path)
+        self._json({"ok": True, "action": action, "path": path})
+
     def _post_set_limits(self) -> None:
         """POST /api/set-limits body ``{set: path, ...fields}`` — set-level limit defaults."""
         from tqdaemon.db import set_set_limit
@@ -256,9 +295,7 @@ class WriteRoutes:
             member_set = set(affected)
             for row in get_running_tasks(self._rconn()):
                 if row["project"] in member_set:
-                    request_stop_with_control(
-                        self._wconn(), home, row["project"], row["task_id"]
-                    )
+                    request_stop_with_control(self._wconn(), home, row["project"], row["task_id"])
                     stopped += 1
         self._audit(
             f"projects-bulk-{action}",
@@ -345,9 +382,7 @@ class WriteRoutes:
             member_set = set(members)
             for row in get_running_tasks(self._rconn()):
                 if row["project"] in member_set:
-                    request_stop_with_control(
-                        self._wconn(), home, row["project"], row["task_id"]
-                    )
+                    request_stop_with_control(self._wconn(), home, row["project"], row["task_id"])
                     stopped += 1
             affected = list(members)
         else:
@@ -393,14 +428,11 @@ class WriteRoutes:
             self._json({"ok": False, "error": str(exc)}, status=400)
             return
         try:
-            fresh = load_projects(home)
-            ref = self._projects_ref()
-            ref.clear()
-            ref.update(fresh)
+            from tqdaemon.daemon import _replace_registry
+
+            _replace_registry(self._projects_ref(), load_projects(home))
         except Exception as exc:  # noqa: BLE001 - keep write; report reload failure
-            self._json(
-                {"ok": True, "project": project, "set": path_n, "previous": prev, "reload_error": str(exc)}
-            )
+            self._json({"ok": True, "project": project, "set": path_n, "previous": prev, "reload_error": str(exc)})
             return
         self._audit("project-set-assign", project, path_n or "", f"previous={prev or ''}")
         self._json({"ok": True, "project": project, "set": path_n, "previous": prev})
@@ -1223,9 +1255,9 @@ class WriteRoutes:
         home = Path(self._db_path).parent
         if registry_path(home).is_file():
             try:
-                fresh = load_projects(home)
-                known.clear()
-                known.update(fresh)
+                from tqdaemon.daemon import _replace_registry
+
+                _replace_registry(known, load_projects(home))  # never empty while other threads read it
             except Exception as exc:  # noqa: BLE001 - keep previous registry on bad yaml
                 if wanted:
                     unknown = [n for n in wanted if n not in known]
@@ -1247,7 +1279,7 @@ class WriteRoutes:
         total_upserted = 0
         total_deleted = 0
         per: dict[str, dict[str, int]] = {}
-        for project in known.values():
+        for project in list(known.values()):
             if wanted and project.name not in wanted:
                 continue
             if not project.queue_dir.is_dir():
@@ -1509,6 +1541,15 @@ class WriteRoutes:
     ) -> None:
         actor = (self.headers.get("X-TQ-Operator") or "").strip() or "web"
         write_audit(self._wconn(), actor, action, project, target, detail)
+
+    def _post_yield_master(self) -> None:
+        """Hand the master lease to a standby: expire it (fenced to our holder id) on the
+        write connection and back off from reclaiming for one lease period."""
+        from tqdaemon.db import get_master_instance_id
+        from tqdaemon.lease import yield_master_lease
+
+        yielded = yield_master_lease(self._wconn(), get_master_instance_id())
+        self._json({"ok": True, "message": "master lease yielded", "expired_row": yielded})
 
     def _post_health_ack(self) -> None:
         """Acknowledge current failures: health drops from red to amber until a new one."""

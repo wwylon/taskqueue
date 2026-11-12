@@ -1,4 +1,5 @@
 """taskqueue -> tqdaemon rename compat: new names win, legacy names keep working."""
+
 from __future__ import annotations
 
 from pathlib import Path

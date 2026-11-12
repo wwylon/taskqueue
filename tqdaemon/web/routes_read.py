@@ -8,7 +8,7 @@ from typing import Any
 
 from tqdaemon._db_tasks import bulk_prior_run_seconds, get_task
 from tqdaemon._time import parse_iso as _parse_iso
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 from tqdaemon.web.responses import format_server_timing
 
 # Broad shared namespace so method bodies keep working with minimal churn.
@@ -52,6 +52,7 @@ from .deps import (
     lock_contention_summary,
     lock_occupancy,
     os,
+    project_states,
     ram_used_gib,
     re,
     sqlite3,
@@ -244,9 +245,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             out.setdefault(p, hash_color(p))
         return out
 
-    def _set_scope_from_qs(
-        self, qs: dict | None = None
-    ) -> tuple[str | None, list[str] | None, str | None]:
+    def _set_scope_from_qs(self, qs: dict | None = None) -> tuple[str | None, list[str] | None, str | None]:
         """Resolve ``?set=`` / ``?project=``; error string when invalid."""
         from tqdaemon.project_sets import resolve_set_scope
 
@@ -396,16 +395,12 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             timings["health"] = round((time.perf_counter() - _t_health) * 1000.0)
         return {
             "running": running,
-            "queued_count": count_queued_tasks(
-                self._rconn(), project=count_project, projects=count_projects
-            ),
+            "queued_count": count_queued_tasks(self._rconn(), project=count_project, projects=count_projects),
             "system": live_sys,
             "config": _redact_config(cfg),
             "projects": self._get_all_projects(),
             "project_set_map": {
-                name: p.set_path
-                for name, p in self._projects_ref().items()
-                if getattr(p, "set_path", None)
+                name: p.set_path for name, p in self._projects_ref().items() if getattr(p, "set_path", None)
             },
             "project_colors": self._project_colors(cfg),
             "version": _ver,
@@ -414,6 +409,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
             "daemon_cpu_pct": daemon_cpu_pct,
             "daemon_rss_mb": daemon_rss_mb,
             "status_counts": counts,
+            "project_states": project_states(self._rconn()),
             "alert_firing": count_system_alert_firing(self._rconn()),
             "health": health,
         }
@@ -997,18 +993,52 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
 
     def _get_project_sets(self) -> dict[str, Any]:
         from tqdaemon.db import is_project_frozen, is_project_paused
+        from tqdaemon.project_limits import empty_limits, explicit_set_nodes, get_all_set_limits
         from tqdaemon.project_sets import UNSET_SENTINEL, build_tree, flat_nodes, unset_projects
 
         projs = self._projects_ref()
         conn = self._rconn()
-        flat = flat_nodes(projs)
-        for node in flat.values():
+        extra = explicit_set_nodes(conn)
+        flat = flat_nodes(projs, extra)
+        set_limits = get_all_set_limits(conn)
+        running = {
+            str(r["project"]): int(r["n"])
+            for r in conn.execute(
+                "SELECT project, COUNT(*) AS n FROM tasks WHERE status='running' GROUP BY project"
+            ).fetchall()
+        }
+        # Per-project queued counts by block code ("why waiting") and GPU hours today.
+        waiting_by_proj: dict[str, dict[str, int]] = {}
+        for r in conn.execute(
+            "SELECT project, COALESCE(NULLIF(last_error_code, ''), 'queued') AS code, COUNT(*) AS n "
+            "FROM tasks WHERE status='queued' GROUP BY project, code"
+        ).fetchall():
+            waiting_by_proj.setdefault(str(r["project"]), {})[str(r["code"])] = int(r["n"])
+        from tqdaemon._db_runs import gpu_hours_today_by_project
+
+        gpu_h = gpu_hours_today_by_project(conn)
+        for path, node in flat.items():
             members = node["subtree_projects"]
+            codes: dict[str, int] = {}
+            for m in members:
+                for code, n in (waiting_by_proj.get(m) or {}).items():
+                    codes[code] = codes.get(code, 0) + n
+            node["queued"] = sum(codes.values())
+            node["waiting"] = [
+                {"code": c, "n": n} for c, n in sorted(codes.items(), key=lambda kv: (-kv[1], kv[0]))[:4]
+            ]
+            node["gpu_hours_today"] = round(sum(gpu_h.get(m, 0.0) for m in members), 3)
             node["frozen"] = [n for n in members if is_project_frozen(conn, n)]
             node["paused"] = [n for n in members if is_project_paused(conn, n)]
+            # Subtree totals for the tree editor: "running now / max_tasks cap".
+            lim = empty_limits()
+            lim.update({k: float(v or 0) for k, v in (set_limits.get(path) or {}).items()})
+            node["limits"] = lim
+            node["running"] = sum(running.get(n, 0) for n in members)
+            node["explicit"] = path in extra
         unset = unset_projects(projs)
         return {
-            "tree": build_tree(projs),
+            "tree": build_tree(projs, extra),
             "flat": flat,
             "unset": {
                 "path": UNSET_SENTINEL,
@@ -1113,8 +1143,8 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
 
     def _serve_cross_log_search(self) -> None:
         """GET /api/log-search?q=TEXT[&project=P][&runs=N][&limit=M] — case-insensitive search
-        of the tails of the most recent runs' logs."""
-        from tqdaemon.logio import read_log_tail
+        of the tails of the most recent runs' logs (gzip-retained logs included)."""
+        from tqdaemon.logio import read_log_tail, readable_log
 
         qs = self._query()
         query = (qs.get("q", [None])[0] or "").strip().lower()
@@ -1137,13 +1167,15 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
         sql += " ORDER BY run_id DESC LIMIT ?"
         args.append(n_runs)
         matches: list[dict] = []
+        budget = 16 * 1024 * 1024  # total bytes read per request, whatever runs= asks for
         for r in self._rconn().execute(sql, args).fetchall():
-            if len(matches) >= limit:
+            if len(matches) >= limit or budget <= 0:
                 break
             try:
-                text = read_log_tail(Path(r["log_path"]), max_bytes=262144).text
+                text = read_log_tail(readable_log(r["log_path"]), max_bytes=min(262144, budget)).text
             except (OSError, AttributeError):
                 continue
+            budget -= len(text)
             for line in text.splitlines():
                 if query in line.lower():
                     matches.append(
@@ -1332,7 +1364,7 @@ ul{{padding-left:1.35rem;margin:0.5rem 0}} li{{margin:0.2rem 0}}
                 "stop_reason",
                 "stopped_by",
             ):
-                if key in last_run.keys() and last_run[key] is not None:
+                if has_col(last_run, key) and last_run[key] is not None:
                     task.setdefault(key, last_run[key])
             from tqdaemon.stop_summary import format_stop_summary
 

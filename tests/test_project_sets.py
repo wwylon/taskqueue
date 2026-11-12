@@ -152,9 +152,7 @@ def test_api_project_sets_and_bulk(tmp_path: Path) -> None:
     assert "games" in payload["flat"]
     assert payload["flat"]["games"]["subtree_count"] == 2
 
-    status, data = http_request(
-        HandlerClass, "POST", "/api/project-set/freeze", {"set": "games"}
-    )
+    status, data = http_request(HandlerClass, "POST", "/api/project-set/freeze", {"set": "games"})
     assert status == 200
     assert data["ok"] is True
     assert set(data["projects"]) == {"pokerbot", "whist"}
@@ -166,9 +164,7 @@ def test_api_project_sets_and_bulk(tmp_path: Path) -> None:
     assert status == 200
     assert q["total"] == 2
 
-    status, bad = http_request(
-        HandlerClass, "GET", "/api/queue?set=games&project=missing"
-    )
+    status, bad = http_request(HandlerClass, "GET", "/api/queue?set=games&project=missing")
     assert status == 200
     assert bad.get("ok") is False
 

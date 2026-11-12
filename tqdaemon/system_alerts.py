@@ -1,6 +1,6 @@
 """Built-in undeletable system alerts (prefs + emit + Windows toast).
 
-Keys: any_failure, all_done, task_frozen, tq_stopped.
+Keys: any_failure, all_done, task_frozen, tq_stopped, run_anomaly, gpu_idle.
 """
 
 from __future__ import annotations
@@ -26,9 +26,13 @@ SYSTEM_ALERT_TITLES = {
     "task_frozen": "Task frozen",
     "tq_stopped": "Stopped by tqdaemon",
     "run_anomaly": "Unusual run",
+    "gpu_idle": "GPU idle while GPU tasks wait",
 }
 
-SYSTEM_ALERT_KEYS = ("any_failure", "all_done", "task_frozen", "tq_stopped", "run_anomaly")
+SYSTEM_ALERT_KEYS = ("any_failure", "all_done", "task_frozen", "tq_stopped", "run_anomaly", "gpu_idle")
+GPU_IDLE_GRACE_SEC = 600  # GPU tasks queued and none running for this long -> alert
+GPU_IDLE_COOLDOWN_SEC = 3600
+_gpu_idle_since: float | None = None  # monotonic time the condition was first seen
 ALL_DONE_COOLDOWN_SEC = 3600
 ALL_DONE_RECENT_SEC = 3600
 
@@ -169,6 +173,7 @@ SYSTEM_ALERT_LEVELS = {
     "tq_stopped": "amber",
     "task_frozen": "amber",
     "run_anomaly": "amber",
+    "gpu_idle": "amber",
     "all_done": "green",
 }
 
@@ -258,6 +263,8 @@ def system_alert_is_hot(
         return False
     if key == "all_done":
         return _is_queue_idle(conn)
+    if key == "gpu_idle":
+        return bool(_gpu_idle_state(conn)[0])
     if key == "task_frozen":
         if frozen_run_ids is not None:
             return bool(frozen_run_ids)
@@ -560,6 +567,76 @@ def emit_task_frozen(
         )
     except Exception:
         log.warning("system alert evaluation failed", exc_info=True)
+        return False
+
+
+def _gpu_idle_state(conn: sqlite3.Connection) -> tuple[list[dict[str, Any]], bool]:
+    """``(queued GPU tasks, any GPU task running)``; the alert condition is "queued and none running"."""
+    from tqdaemon.resources import task_requires_gpu
+
+    queued: list[dict[str, Any]] = []
+    running_gpu = False
+    try:
+        for row in conn.execute("SELECT resources FROM tasks WHERE status = 'running'"):
+            if task_requires_gpu(row["resources"]):
+                running_gpu = True
+                break
+        if running_gpu:
+            return [], True
+        for row in conn.execute(
+            "SELECT project, task_id, resources, block_reason FROM tasks WHERE status = 'queued' "
+            "ORDER BY priority DESC, enqueued_at ASC LIMIT 500"
+        ):
+            if task_requires_gpu(row["resources"]):
+                queued.append({"task": f"{row['project']}/{row['task_id']}", "block_reason": row["block_reason"] or ""})
+    except sqlite3.Error:
+        return [], False
+    return queued, running_gpu
+
+
+def evaluate_gpu_idle(
+    conn: sqlite3.Connection,
+    home: Path | None,
+    *,
+    now: datetime | None = None,
+    mono: float | None = None,
+) -> bool:
+    """Tick evaluator for gpu_idle: GPU tasks wait but no GPU task has run for GPU_IDLE_GRACE_SEC
+    (often another program holds the VRAM, or a project/set cap blocks them)."""
+    global _gpu_idle_since
+    try:
+        queued, running_gpu = _gpu_idle_state(conn)
+        t = time.monotonic() if mono is None else mono
+        if running_gpu or not queued:
+            _gpu_idle_since = None
+            return False
+        if _gpu_idle_since is None:
+            _gpu_idle_since = t
+            return False
+        if t - _gpu_idle_since < GPU_IDLE_GRACE_SEC:
+            return False
+        top = queued[0]
+        why = f" — {top['block_reason']}" if top["block_reason"] else ""
+        body = (
+            f"{len(queued)} GPU task(s) queued but no GPU task has run for "
+            f"{int((t - _gpu_idle_since) // 60)} min."
+            + chr(10)
+            + f"next: {top['task']}{why}"
+            + chr(10)
+            + "Resources → GPU memory by program shows what holds the VRAM."
+        )
+        return maybe_emit_system_alert(
+            conn,
+            home,
+            "gpu_idle",
+            body,
+            now=now,
+            cooldown_sec=GPU_IDLE_COOLDOWN_SEC,
+            title=f"GPU idle — {len(queued)} GPU task(s) waiting",
+            detail={"queued_gpu_tasks": queued[:10]},
+        )
+    except Exception:
+        log.warning("gpu_idle evaluation failed", exc_info=True)
         return False
 
 

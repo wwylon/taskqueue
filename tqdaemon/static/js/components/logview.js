@@ -1,3 +1,4 @@
+// @ts-check
 // Log panel helpers that do not depend on app state.
 /* eslint no-control-regex: "off" -- ANSI escape sequences ([...m) are the whole point of these regexes */
 import { escHtml } from '../util/format.js';

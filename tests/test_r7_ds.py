@@ -143,7 +143,8 @@ def test_f084_capture_before_begin_immediate(tmp_path: Path, monkeypatch) -> Non
     real = worker_api._capture_code_package
 
     def spy(*a, **kw):
-        probe = sqlite3.connect(str(tmp_path / "queue.db"), timeout=0)
+        # timeout=1: ride out transient writers/checkpoints; the claim holds the lock far longer if it took it first
+        probe = sqlite3.connect(str(tmp_path / "queue.db"), timeout=1.0)
         try:
             probe.execute("BEGIN IMMEDIATE")  # fails if the claim already holds the write lock
             probe.rollback()

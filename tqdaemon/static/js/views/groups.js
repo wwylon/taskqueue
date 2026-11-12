@@ -1,6 +1,8 @@
+// @ts-check
 // Groups tab and the queue's group filter chips. Uses app.js globals at call time: tqAct, TQ_THIS, i18n, _btnPending,
 // _btnDone, openConfirm, openAlert, refresh, setProject, tab, _syncUrl, _resetQueueSearchForFilter.
 import { S } from '../core/state.js';
+import { isAllProjectsScope } from '../components/filterbars.js';
 import { escHtml } from '../util/format.js';
 import { projStyle } from '../util/projcolor.js';
 import { latest } from '../core/api.js';
@@ -119,7 +121,7 @@ export async function _populateGroupChips() {
   const qs = proj ? `?project=${encodeURIComponent(proj)}` : '';
   try {
     const data = await fetch('/api/groups' + qs).then(r => r.ok ? r.json() : {});
-    _groupChipRows = data.groups || [];
+    _groupChipRows = /** @type {any} */ (data).groups || [];
   } catch (e) {
     _groupChipRows = [];
   }
@@ -129,6 +131,12 @@ export async function _populateGroupChips() {
 export function _updateGroupChips() {
   const bar = document.getElementById('queue-group-bar');
   if (!bar) return;
+  if (isAllProjectsScope()) {
+    S.groupFilter = null;  // hidden for "all": a hidden filter must not keep narrowing the queue
+    bar.style.display = 'none';
+    bar.innerHTML = '';
+    return;
+  }
   const named = _groupChipRows.filter(g => g.name);
   const hasUngrouped = _groupChipRows.some(g => !g.name && g.total > 0);
   if (!named.length && !hasUngrouped) {

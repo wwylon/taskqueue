@@ -15,6 +15,7 @@ import threading
 from typing import Any
 
 from tqdaemon.jsonutil import json_list
+from tqdaemon.rows import has_col
 
 _log = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ def apply_finalize_wake_hooks(
                 dep_ids: list[str] = []
                 for col in ("depends_on", "depends_on_any"):
                     try:
-                        raw = rrow[col] if col in rrow.keys() else "[]"
+                        raw = rrow[col] if has_col(rrow, col) else "[]"
                         deps = json_list(raw)
                     except (TypeError, ValueError, KeyError):
                         continue

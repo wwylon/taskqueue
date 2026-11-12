@@ -1,3 +1,4 @@
+// @ts-check
 // Bottom log dock (#tq-log-panel): static one-shot load or live SSE tail of a run's log, capped at 200 lines.
 // The open EventSource is module-local; the log-line renderer comes from logview.js.
 import { logLineHtml as tqLogLineHtml } from './logview.js';
@@ -78,7 +79,7 @@ function _writeLogText(text) {
 export function tqLogJumpFirstError() {
   const body = document.getElementById('tq-log-body');
   if (!body) return;
-  const line = Array.from(body.children).find(el => el.classList && el.classList.contains('log-error') && !el.hidden);
+  const line = Array.from(body.children).find(el => el.classList && el.classList.contains('log-error') && !/** @type {HTMLElement} */ (el).hidden);
   if (!line) { showToast(i18n.t('log.noErrorsShown'), 'info'); return; }
   if (typeof line.scrollIntoView === 'function') line.scrollIntoView({ block: 'center' });
   line.classList.add('tq-log-flash');

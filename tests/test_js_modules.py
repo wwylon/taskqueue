@@ -250,7 +250,8 @@ def test_main_exposes_every_shim_on_window():
     globalThis.window = globalThis;
     globalThis.localStorage = {{ getItem: () => null }};
     await import({json.dumps(main)});
-    console.log(JSON.stringify({json.dumps(list(SHIMS))}.map(n => [n, typeof window[n]])));""")
+    const {{ hasAction }} = await import({json.dumps((JS / "core" / "actions.js").as_uri())});
+    console.log(JSON.stringify({json.dumps(list(SHIMS))}.map(n => [n, hasAction(n) ? 'action' : typeof window[n]])));""")
     missing = [n for n, t in out if t == "undefined"]
     assert not missing, missing
 
@@ -619,6 +620,7 @@ def test_tag_chips_are_capped_but_keep_the_active_tag():
         "globalThis.document = { getElementById: () => bar };"
         f"const {{ S }} = await import({json.dumps((JS / 'core' / 'state.js').as_uri())});"
         f"const fb = await import({json.dumps((JS / 'components' / 'filterbars.js').as_uri())});"
+        "S.selectedProject = 'p';"  # tags are hidden for "all" projects
         "S.allTags = Array.from({ length: 200 }, (_, i) => 't' + i);"
         "S.tagFilter = 't150';"
         "fb._updateTagChips();"

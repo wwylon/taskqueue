@@ -6,6 +6,34 @@ this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-12
+
+### Changed
+
+- **Project set limits are subtree totals.** `bots: max_tasks=4` now means at most 4 running tasks across every project under `bots/` (also CPU, RAM, VRAM and GPU-hours/day). Previously each member inherited the value as its own cap. Only `min_tasks` is still inherited per project. The root ("all") is the global config. Over-cap sets have their newest local runs stopped, as with per-project caps.
+- `tq set rename` moves the set's limits (and those of its descendants) along with the projects.
+
+### Added
+
+- **GPU memory by program** (Resources → hardware): every process holding VRAM per GPU — tqdaemon tasks marked, other programs highlighted, unattributed memory shown — with a hint to close them. On Windows, where the driver reports no per-process memory, the values come from the "GPU Process Memory" performance counters (the Task Manager source).
+- **GPU first** (`gpu_first`, default on): equal-priority GPU tasks start before CPU tasks while the GPU is idle.
+- Queue page: project chips are coloured by the project's worst live state (red failed, orange interrupted, blue running, yellow waiting, green completed); group and tag chips are hidden while "all" projects are shown.
+- Header project picker lists the set tree (all > bots > bridge2 …); set chips show running/cap; Config → project sets can add and remove tree nodes.
+- Explicit set nodes: `tq set node add|rm <path>` and `POST /api/project-sets/node`, so a node (e.g. `bots`) can exist and carry limits before any project is assigned. `GET /api/project-sets` returns per-node `limits`, `running` and `explicit`.
+
+### Removed
+
+- The transitional `taskqueue` import shim (private checkout only). Use `tqdaemon`.
+
+### Fixed
+
+- Stopping a task on Windows no longer sends Ctrl+C to every process on the daemon's console (it could interrupt a foreground `tq` or test run); a graceful Ctrl+Break now goes only to a child that leads its own process group.
+- Daemon shutdown no longer marks a task it killed as completed (a task trapping SIGTERM and exiting 0 used to release its dependents).
+- An older tqdaemon refuses to open a database with a newer schema instead of deleting the settings it does not know.
+- `/api/yield-master` now actually hands the lease to a standby; HTTP-triggered relocate/sync no longer share the scheduler's DB connection; the project registry is never briefly empty during reloads.
+- Log streaming no longer re-sends lines when the log grows during a read, and recovers after truncation.
+- Admission tolerates `null` resource fields; remote wall-clock caps use monotonic time; project limit changes apply immediately.
+
 ## [0.8.0] - 2026-11-11
 
 ### Changed

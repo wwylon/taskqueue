@@ -144,6 +144,7 @@ const {{ g, doc, S }} = await setup({{ app: true, routes: {{ '/api/groups': {{ g
 await g.flush();
 const bar = doc.getElementById('queue-group-bar');
 const r = {{}};
+S.selectedProject = 'p1';  // groups are hidden for "all" projects
 await g._populateGroupChips();
 r.collapsed = bar.querySelectorAll('.filter-chip').length;
 fire(doc, 'click', bar.querySelector('.filter-label'));          // expand

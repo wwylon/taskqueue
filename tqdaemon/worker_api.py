@@ -12,7 +12,7 @@ from typing import Any
 
 from tqdaemon._db_tasks import get_task
 from tqdaemon.jsonutil import json_list
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 
 # F-100: GC orphan overlays every N claim attempts (cheap I/O; not every call).
 _GC_ORPHAN_INTERVAL = 20
@@ -56,10 +56,10 @@ def _capture_code_package(selected_task, proj: str, projects_ref: Callable[[], d
     )
 
     bh = None
-    if "bundle_hash" in selected_task.keys():
+    if has_col(selected_task, "bundle_hash"):
         bh = selected_task["bundle_hash"]
     cp_raw = ""
-    if "code_provider" in selected_task.keys():
+    if has_col(selected_task, "code_provider"):
         cp_raw = selected_task["code_provider"] or ""
     provider = resolve_code_provider(
         raw_provider=cp_raw or None,
@@ -120,8 +120,7 @@ def _precheck_services(rdb: sqlite3.Connection, db_key: str, cfg: dict) -> dict[
     svc_cache_at, pre_queued = _QUEUED_SVC_CACHE.get(db_key, (0.0, []))
     if not pre_queued or time.monotonic() - svc_cache_at >= _QUEUED_SVC_CACHE_TTL:
         pre_queued = rdb.execute(
-            "SELECT DISTINCT requires_services FROM tasks "
-            "WHERE status IN ('queued', 'stopped') AND enabled = 1"
+            "SELECT DISTINCT requires_services FROM tasks WHERE status IN ('queued', 'stopped') AND enabled = 1"
         ).fetchall()
         _QUEUED_SVC_CACHE[db_key] = (time.monotonic(), pre_queued)
     # Probe system once for VRAM headroom so service checks can skip slow Ollama probes.
@@ -238,7 +237,7 @@ def _insert_claimed_run(
 
     finalize_token = _secrets.token_hex(16)  # F-055: per-claim secret
     worker_session = None
-    if "session_id" in worker_fresh.keys():
+    if has_col(worker_fresh, "session_id"):
         worker_session = worker_fresh["session_id"]
 
     cur = wdb.execute(
@@ -274,7 +273,7 @@ def _insert_claimed_run(
 
     # F-063 / F-005: bake one-shot override in the SAME transaction as the claim.
     raw_override = None
-    if "args_override" in still_queued.keys():
+    if has_col(still_queued, "args_override"):
         raw_override = still_queued["args_override"]
     if raw_override:
         try:
@@ -557,8 +556,7 @@ def _claim_next_remote_task(
             node_fresh = apply_hold_to_node(node_fresh, hold=_hold_fresh)
 
         still_claimable = wdb.execute(
-            "SELECT * FROM tasks WHERE project=? AND task_id=? "
-            "AND status IN ('queued', 'stopped') AND enabled=1",
+            "SELECT * FROM tasks WHERE project=? AND task_id=? AND status IN ('queued', 'stopped') AND enabled=1",
             (selected_proj, selected_tid),
         ).fetchone()
         if not still_claimable:

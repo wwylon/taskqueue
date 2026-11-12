@@ -1,3 +1,4 @@
+// @ts-check
 // Audit tab: operator audit log table, config rollback and CSV export.
 // Uses app.js globals at call time: tqAct, i18n, showToast, _showPageEmpty, _csvCell.
 import { S } from '../core/state.js';

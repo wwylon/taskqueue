@@ -1,3 +1,4 @@
+// @ts-check
 // Queue column chooser: hide optional columns of the Queue table. The choice is per browser
 // (localStorage) and applied as one generated <style>, so re-renders need no extra work.
 // Uses app.js globals at call time: i18n, tqAct, TQ_THIS.
@@ -64,7 +65,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     const pop = document.getElementById('queue-cols-pop');
     const btn = document.getElementById('queue-cols-btn');
     if (!pop || pop.hidden) return;
-    if (pop.contains(e.target) || (btn && btn.contains(e.target))) return;
+    if (pop.contains(/** @type {Node} */ (e.target)) || (btn && btn.contains(/** @type {Node} */ (e.target)))) return;
     pop.hidden = true;
   });
 }

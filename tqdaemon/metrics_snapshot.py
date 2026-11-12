@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from tqdaemon._time import parse_iso as _parse_iso
+from tqdaemon.rows import has_col
 
 
 def _round_or_none(v: Any, nd: int = 2) -> float | None:
@@ -179,7 +180,7 @@ def build_run_metrics(
                 peak[pk] = _round_or_none(live[sk], 1 if "pct" in pk else 2)
 
     metrics_json = None
-    if run and "metrics_json" in run.keys() and run["metrics_json"]:
+    if run and has_col(run, "metrics_json") and run["metrics_json"]:
         try:
             metrics_json = json.loads(run["metrics_json"])
         except (TypeError, ValueError):

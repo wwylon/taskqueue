@@ -1,6 +1,6 @@
 [project]
 name = "tqdaemon"
-version = "0.8.0"
+version = "0.9.0"
 description = "Local resource-aware task queue daemon (CLI, web UI, MCP, remote workers)"
 license = "MIT"
 readme = "README.md"
@@ -66,6 +66,7 @@ no_implicit_optional = true
 check_untyped_defs = true
 # Gradual: worker core first (Wave 6 / F-209). Expand modules as annotations land.
 files = [
+    "tqdaemon/set_caps.py",
     "tqdaemon/worker_http.py",
     "tqdaemon/worker_outbox.py",
     "tqdaemon/worker_journal.py",
@@ -143,6 +144,8 @@ ignore = [
 "tqdaemon/web/deps.py" = ["F401"]
 # Tests and scripts may swallow cleanup errors in teardown.
 "tests/**" = ["S110", "BLE001"]
+# Lambdas are called inside the same loop iteration by timed().
+"scripts/bench_scale.py" = ["B023"]
 "scripts/**" = ["S110", "BLE001"]
 
 [tool.pytest.ini_options]
@@ -153,4 +156,14 @@ markers = [
     "stress: optional slow/heavy fixtures (not run in default CI)",
     "slow: >5 s each (process-table scans, compilers, large fixtures); skip with -m 'not slow' for a quick run",
     "nightly: scale and high-rate edge cases (not run in fast/full CI)",
+    "js: web UI tests that run JavaScript under node (auto-applied to tests/test_js_*.py); -m 'not js' for a quick Python loop",
 ]
+
+[tool.coverage.run]
+branch = true
+source = ["tqdaemon"]
+omit = ["tqdaemon/_docs/*"]
+
+[tool.coverage.report]
+skip_empty = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

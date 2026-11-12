@@ -287,9 +287,7 @@ def cmd_relocate(home: Path, project: str, new_root: str) -> int:
     from tqdaemon._cli_helpers import EXIT_UNREACHABLE, master_mutation
 
     new_path = Path(new_root)
-    resp, mode = master_mutation(
-        home, f"/api/project/relocate/{project}", body={"new_root": str(new_path)}
-    )
+    resp, mode = master_mutation(home, f"/api/project/relocate/{project}", body={"new_root": str(new_path)})
     if mode == "unreachable":
         return EXIT_UNREACHABLE
     if mode == "master":
@@ -517,7 +515,7 @@ def cmd_set(home: Path, rest: list[str]) -> int:
         print(
             "Usage: tq set tree|show <path>|assign <project> <path>|clear <project>|"
             "rename <old> <new>|move <old> <new>|limits <path> [field=val…]|"
-            "limits-show <path>|freeze|unfreeze|pause|resume|stop <path>"
+            "limits-show <path>|node add|rm <path>|freeze|unfreeze|pause|resume|stop <path>"
         )
         return 1
     verb = rest[0]
@@ -544,6 +542,11 @@ def cmd_set(home: Path, rest: list[str]) -> int:
             print(f"Usage: tq set {verb} <old> <new>")
             return 1
         return _cmd_set_rename(home, args[0], args[1])
+    if verb == "node":
+        if len(args) < 2 or args[0] not in ("add", "rm"):
+            print("Usage: tq set node add|rm <path>   (explicit node; limits on a set are subtree totals)")
+            return 1
+        return _cmd_set_node(home, args[0], args[1])
     if verb == "limits-show":
         if not args:
             print("Usage: tq set limits-show <path>")
@@ -564,12 +567,54 @@ def cmd_set(home: Path, rest: list[str]) -> int:
     return 1
 
 
+def _explicit_nodes(home: Path) -> set[str]:
+    from tqdaemon.config import db_path
+    from tqdaemon.db import open_db
+    from tqdaemon.project_limits import explicit_set_nodes
+
+    if not db_path(home).exists():
+        return set()
+    conn = open_db(db_path(home), migrate=False)
+    try:
+        return explicit_set_nodes(conn)
+    finally:
+        conn.close()
+
+
+def _cmd_set_node(home: Path, op: str, path: str) -> int:
+    from tqdaemon.config import db_path, load_projects
+    from tqdaemon.db import open_db
+    from tqdaemon.project_limits import add_set_node, remove_set_node
+    from tqdaemon.project_sets import normalize_path, projects_in_subtree
+
+    try:
+        node = normalize_path(path)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 1
+    if node is None:
+        print("[ERROR] set path required", file=sys.stderr)
+        return 1
+    if op == "rm":
+        members = projects_in_subtree(load_projects(home), node)
+        if members:
+            print(f"[ERROR] set {node} still has projects: {', '.join(members)}", file=sys.stderr)
+            return 1
+    conn = open_db(db_path(home))
+    try:
+        (add_set_node if op == "add" else remove_set_node)(conn, node)
+    finally:
+        conn.close()
+    print(("Created" if op == "add" else "Removed") + f" set node {node}")
+    return 0
+
+
 def _cmd_set_tree(home: Path) -> int:
     from tqdaemon.config import load_projects
     from tqdaemon.project_sets import build_tree, unset_projects
 
     projects = load_projects(home)
-    tree = build_tree(projects)
+    tree = build_tree(projects, _explicit_nodes(home))
 
     def walk(nodes: list, indent: int = 0) -> None:
         for node in nodes:

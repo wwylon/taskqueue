@@ -1,3 +1,4 @@
+// @ts-check
 // Built-in help drawer and the Docs tab (guide/reference manifest, section nav, in-page links). Uses app.js globals at
 // call time: tqAct, i18n, tqCloseShortcuts, tab, _syncUrl. State lives in S.docsCurrentId / S.docsSectionId plus the
 // module-local help bundle and docs manifest caches.
@@ -184,7 +185,7 @@ export function _docsScrollToSection(sectionId) {
   if (!sectionId) return;
   const content = document.getElementById('docs-content');
   if (!content) return;
-  const el = content.querySelector('#' + CSS.escape(sectionId));
+  const el = /** @type {HTMLElement | null} */ (content.querySelector('#' + CSS.escape(sectionId)));
   if (!el) return;
   el.scrollIntoView({ block: 'start', behavior: 'auto' });
 }
@@ -232,7 +233,7 @@ export function tqDocsJump(sectionId) {
   if (!S.applyingUrl) _syncUrl({ replace: false });
   _docsScrollToSection(sectionId);
   document.querySelectorAll('#docs-nav-sections .docs-nav-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.sectionId === sectionId);
+    el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.sectionId === sectionId);
   });
 }
 
@@ -269,7 +270,7 @@ export async function loadDoc(docId, opts) {
   if (!S.applyingUrl) _syncUrl({ replace: !!opts.replace });
   content.innerHTML = `<p>${escHtml(i18n.t('status.loading'))}</p>`;
   document.querySelectorAll('.docs-nav-item[data-doc-id]').forEach(el => {
-    el.classList.toggle('active', el.dataset.docId === docId);
+    el.classList.toggle('active', /** @type {HTMLElement} */ (el).dataset.docId === docId);
   });
   try {
     const r = await fetch(`/docs/${encodeURIComponent(docId)}?format=json`);

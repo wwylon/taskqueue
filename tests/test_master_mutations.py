@@ -34,9 +34,7 @@ def test_cli_uses_master_refuses_when_unreachable_and_falls_back_offline(tmp_pat
     (tmp_path / "projects.yaml").write_text(f"projects:\n  p:\n    root: {tmp_path.as_posix()}\n", encoding="utf-8")
     open_db(tmp_path / "queue.db").close()
     calls = []
-    monkeypatch.setattr(
-        "tqdaemon.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True}
-    )
+    monkeypatch.setattr("tqdaemon.master_client.via_master", lambda h, m, path, **k: calls.append(path) or {"ok": True})
     assert _cli_project.cmd_pause(tmp_path, "p") == 0 and calls == ["/api/project/pause/p"]
 
     monkeypatch.setattr("tqdaemon.master_client.via_master", lambda *a, **k: None)

@@ -1,3 +1,4 @@
+// @ts-check
 // Dashboard tab: resource gauges, running-task cards, per-task history/log panels and the workers table.
 // Uses app.js globals at call time (i18n, badge, tqAct, _computeGaugeModel, _patchDashboardLive, _fetchLog, etc.).
 import { S } from '../core/state.js';
@@ -162,18 +163,29 @@ export function _dashExpectedSec(project, taskId) {
   return null;
 }
 
+const _DASH_STATS_TTL_MS = 10 * 60 * 1000;  // averages change as runs finish: refetch now and then
+const _DASH_STATS_MAX = 2000;
+const _dashStatsAt = {};  // project -> last fetch time (ms)
+
 export async function _ensureDashStats(running) {
   const need = [];
   const seen = new Set();
+  const now = Date.now();
+  if (Object.keys(S.dashStatsByKey).length > _DASH_STATS_MAX) {
+    S.dashStatsByKey = {};  // long sessions: drop the whole cache rather than grow forever
+    for (const k of Object.keys(_dashStatsAt)) delete _dashStatsAt[k];
+  }
   (running || []).forEach(t => {
     const k = `${t.project}/${t.task_id}`;
-    if (S.dashStatsByKey[k] !== undefined) return;
+    const fresh = now - (_dashStatsAt[t.project] || 0) < _DASH_STATS_TTL_MS;
+    if (S.dashStatsByKey[k] !== undefined && fresh) return;
     if (seen.has(t.project)) return;
     seen.add(t.project);
     need.push(t.project);
   });
   await Promise.all(need.map(async proj => {
     try {
+      _dashStatsAt[proj] = Date.now();
       const data = await _fetchJson('/api/task-stats?project=' + encodeURIComponent(proj), 8000, true);
       ((data && data.tasks) || []).forEach(row => {
         S.dashStatsByKey[`${row.project}/${row.task_id}`] = row;

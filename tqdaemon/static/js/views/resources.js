@@ -1,3 +1,4 @@
+// @ts-check
 // Resources tab (cluster usage, limits editor, hardware). Uses app.js globals at call time: tqAct, i18n, _postJson,
 // openAlert, refresh.
 import { S } from '../core/state.js';
@@ -136,9 +137,9 @@ export function renderResourceBars(cap, hw) {
 }
 
 export async function saveResLimits() {
-  const cpu = +(document.getElementById('res-cpu-pct') || {value:50}).value;
-  const ram = +(document.getElementById('res-ram-pct') || {value:80}).value;
-  const maxTasks = +(document.getElementById('res-max-tasks') || {value:0}).value;
+  const cpu = +/** @type {any} */ ((document.getElementById('res-cpu-pct') || {value:50})).value;
+  const ram = +/** @type {any} */ ((document.getElementById('res-ram-pct') || {value:80})).value;
+  const maxTasks = +/** @type {any} */ ((document.getElementById('res-max-tasks') || {value:0})).value;
   try {
     await _postJson('/api/config', {
       cpu_limit_pct: cpu, ram_limit_pct: ram, max_running_tasks: maxTasks,
@@ -152,6 +153,29 @@ export async function saveResLimits() {
     if (typeof rfn === 'function') await rfn();
   } catch (_) {}
   loadResources();
+}
+
+/** Which programs hold this GPU's memory (tqdaemon tasks and everything else). */
+export function gpuProcessesHtml(g) {
+  const p = g && g.processes;
+  if (!p || !Array.isArray(p.list)) return '';
+  const fmt = v => (v == null ? '?' : `${Number(v).toFixed(2)} GiB`);
+  let rows = p.list.map(r => {
+    const who = r.tq ? `<span class="gpu-proc-tq">${escHtml(i18n.t('hardware.gpuProc.tq'))}</span>` : '';
+    const kinds = (r.kinds || []).map(k => escHtml(i18n.t('hardware.gpuProc.kind.' + k))).join(', ');
+    return `<tr${r.tq ? '' : ' class="gpu-proc-ext"'}><td title="${escHtml(r.cmd || '')}">${escHtml(r.name || ('pid ' + r.pid))} ${who}</td>`
+      + `<td class="num">${escHtml(String(r.pid))}</td><td>${kinds}</td><td class="num">${fmt(r.vram_gib)}</td></tr>`;
+  }).join('');
+  if (Number(p.other_gib) > 0) {
+    rows += `<tr class="gpu-proc-other"><td colspan="3">${escHtml(i18n.t('hardware.gpuProc.other'))}</td><td class="num">${fmt(p.other_gib)}</td></tr>`;
+  }
+  if (!rows) return `<div class="gpu-proc-empty">${escHtml(i18n.t('hardware.gpuProc.none'))}</div>`;
+  const ext = p.list.filter(r => !r.tq && Number(r.vram_gib) > 0).reduce((a, r) => a + Number(r.vram_gib), 0);
+  const hint = ext >= 0.5 ? `<div class="gpu-proc-hint">${escHtml(i18n.t('hardware.gpuProc.hint', { gib: ext.toFixed(1) }))}</div>` : '';
+  const unknown = p.per_process_unknown ? `<div class="gpu-proc-hint">${escHtml(i18n.t('hardware.gpuProc.unknown'))}</div>` : '';
+  return `<div class="gpu-proc"><div class="hw-chip-label">${escHtml(i18n.t('hardware.gpuProc.title'))}</div>`
+    + `<table class="gpu-proc-table"><thead><tr><th>${escHtml(i18n.t('hardware.gpuProc.program'))}</th><th>PID</th>`
+    + `<th>${escHtml(i18n.t('hardware.gpuProc.type'))}</th><th>VRAM</th></tr></thead><tbody>${rows}</tbody></table>${hint}${unknown}</div>`;
 }
 
 export function renderHardware(hw) {
@@ -295,6 +319,7 @@ export function renderHardware(hw) {
       if (g.throttle_reasons && g.throttle_reasons.length) {
         html += `<div style="margin-top:6px;font-size:11px;color:var(--warn)">${i18n.t('hardware.throttle', {reasons: escHtml(g.throttle_reasons.join(', '))})}</div>`;
       }
+      html += gpuProcessesHtml(g);
       html += '</div>';
     }
   } else if (hw.gpu_error) {

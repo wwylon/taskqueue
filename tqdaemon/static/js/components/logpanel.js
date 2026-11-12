@@ -1,3 +1,4 @@
+// @ts-check
 // Log panel search: highlight/navigate matches inside an already-loaded <pre>.
 // Per-panel state lives in S.logSearch (preId -> { query, current }).
 import { S } from '../core/state.js';
@@ -6,20 +7,20 @@ import { appendLog } from '../util/format.js';
 import { trackLogSse } from './logview.js';
 
 export function applyLogSearch(preId, query, currentIdx) {
-  const pre = document.getElementById(preId);
+  const pre = /** @type {HTMLElement | null} */ (document.getElementById(preId));
   if (!pre) return;
   const countEl = document.getElementById('log-search-count-' + preId);
   // F-176: idle (empty query) — do not tear down/rebuild the whole <pre>.
   if (!query) {
-    if (pre._logSearchActive) {
+    if (/** @type {any} */ (pre)._logSearchActive) {
       pre.querySelectorAll('.log-search-hl').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
       pre.normalize();
-      pre._logSearchActive = false;
+      /** @type {any} */ (pre)._logSearchActive = false;
     }
     if (countEl) countEl.textContent = '';
     return;
   }
-  pre._logSearchActive = true;
+  /** @type {any} */ (pre)._logSearchActive = true;
   pre.querySelectorAll('.log-search-hl').forEach(s => s.replaceWith(document.createTextNode(s.textContent)));
   pre.normalize();
 
@@ -48,8 +49,8 @@ export function applyLogSearch(preId, query, currentIdx) {
     span.style.background = '#f59e0b';
     span.style.color = '#000';
     span.style.borderRadius = '2px';
-    node.splitText(idx + query.length);
-    const match = node.splitText(idx);
+    /** @type {Text} */ (node).splitText(idx + query.length);
+    const match = /** @type {Text} */ (node).splitText(idx);
     span.textContent = match.textContent;
     match.replaceWith(span);
   });
@@ -57,8 +58,8 @@ export function applyLogSearch(preId, query, currentIdx) {
   // allHl is DOM (forward) order, so allHl[i] corresponds to matches[i]
   const active = pre.querySelectorAll('.log-search-hl')[currentIdx];
   if (active) {
-    active.style.background = '#ef4444';
-    active.style.color = '#fff';
+    /** @type {HTMLElement} */ (active).style.background = '#ef4444';
+    /** @type {HTMLElement} */ (active).style.color = '#fff';
     active.scrollIntoView({ block: 'nearest' });
   }
   if (countEl) countEl.textContent = `${currentIdx + 1} / ${matches.length}`;
@@ -77,12 +78,12 @@ export function logSearchNav(preId, delta) {
   if (!pre) return;
   const spans = pre.querySelectorAll('.log-search-hl');
   if (!spans.length) return;
-  spans[state.current].style.background = '#f59e0b';
-  spans[state.current].style.color = '#000';
+  /** @type {HTMLElement} */ (spans[state.current]).style.background = '#f59e0b';
+  /** @type {HTMLElement} */ (spans[state.current]).style.color = '#000';
   state.current = (state.current + delta + spans.length) % spans.length;
   const active = spans[state.current];
-  active.style.background = '#ef4444';
-  active.style.color = '#fff';
+  /** @type {HTMLElement} */ (active).style.background = '#ef4444';
+  /** @type {HTMLElement} */ (active).style.color = '#fff';
   active.scrollIntoView({ block: 'nearest' });
   const countEl = document.getElementById('log-search-count-' + preId);
   if (countEl) countEl.textContent = `${state.current + 1} / ${spans.length}`;
@@ -107,7 +108,7 @@ export function openLogStream({ runId, maps, map, preId, followId, expanded, sta
     window._sseAppend(pre2, window._ansiToHtml(ev.data + '\n'));
     const state = expanded[stateKey];
     if (state) appendLog(state, ev.data);
-    const follow = document.getElementById(followId);
+    const follow = /** @type {HTMLInputElement | null} */ (document.getElementById(followId));
     if (!follow || follow.checked) pre2.scrollTop = pre2.scrollHeight;
   };
   let ended = false;

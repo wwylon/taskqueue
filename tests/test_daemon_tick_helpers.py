@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from tqdaemon import daemon
+from tqdaemon import daemon, pressure
 
 
 class FakeRun:
@@ -90,15 +90,15 @@ class PressureRun:
 def test_hard_ram_pressure_stops_victim_and_freezes_admission(monkeypatch):
     run = PressureRun(ram=30.0)
     runs = {("p", "t"): run}
-    monkeypatch.setattr(daemon, "ram_used_gib", lambda: 98.0)
-    monkeypatch.setattr(daemon, "_split_dying", lambda ar, attr: (dict(ar), 0.0))
+    monkeypatch.setattr(pressure, "ram_used_gib", lambda: 98.0)
+    monkeypatch.setattr(pressure, "_split_dying", lambda ar, attr: (dict(ar), 0.0))
     monkeypatch.setattr(
-        daemon,
+        pressure,
         "pick_victim",
         lambda conn, items, needed_gib, resource: (items[0][0], [(items[0][0], 1.0)]),
     )
     errs = []
-    monkeypatch.setattr(daemon, "set_task_error", lambda *a, **k: errs.append(a[1:4]))
+    monkeypatch.setattr(pressure, "set_task_error", lambda *a, **k: errs.append(a[1:4]))
     cfg = {"ram_hard_limit_pct": 95, "ram_limit_pct": 80, "recovery_cooldown_sec": 30}
     out = daemon._enforce_hard_pressure(object(), cfg, {"ram_total_gib": 100.0}, runs, 1000.0)
     assert out == 1030.0
@@ -106,7 +106,7 @@ def test_hard_ram_pressure_stops_victim_and_freezes_admission(monkeypatch):
 
 
 def test_no_pressure_returns_none(monkeypatch):
-    monkeypatch.setattr(daemon, "ram_used_gib", lambda: 10.0)
+    monkeypatch.setattr(pressure, "ram_used_gib", lambda: 10.0)
     out = daemon._enforce_hard_pressure(object(), {}, {"ram_total_gib": 100.0}, {("p", "t"): PressureRun(ram=1.0)}, 5.0)
     assert out is None
 

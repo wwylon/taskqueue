@@ -16,6 +16,7 @@
 
 不是 Celery、Kubernetes 或 CI。也不是 2011 年的 AMQP/Debian
 [rojkov/taskqueue](https://github.com/rojkov/taskqueue)（simpletaskqueue）。
+与 cron、Celery、Slurm、Ray 等工具的对比（英文）：[docs/comparison.md](docs/comparison.md)。
 
 ## 为什么用
 

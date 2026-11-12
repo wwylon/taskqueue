@@ -24,7 +24,7 @@ from tqdaemon._db_tasks import get_task_status
 from tqdaemon._fmt import fmt_bytes as _fmt_bytes
 from tqdaemon._fmt import fmt_duration as _fmt_dur  # H1: shared helpers
 from tqdaemon._time import parse_iso as _parse_iso
-from tqdaemon.rows import row_get
+from tqdaemon.rows import has_col, row_get
 
 DAEMON_LOG_ROTATE_BYTES = 20 * 1024 * 1024
 
@@ -261,9 +261,9 @@ def cmd_status(home: Path, project: str | None, *, as_json: bool = False) -> int
         base = f"{r['project']}/{r['task_id']}"
         code = row_get(r, "last_error_code")
         reason = ""
-        if "block_reason" in r.keys() and r["block_reason"]:
+        if has_col(r, "block_reason") and r["block_reason"]:
             reason = f" — {r['block_reason']}"
-        pct = shown_progress(row_get(r, "status"), row_get(r, "progress_pct")) if "status" in r.keys() else None
+        pct = shown_progress(row_get(r, "status"), row_get(r, "progress_pct")) if has_col(r, "status") else None
         if pct is not None:
             base += f" {pct:.0f}%"
         if code:

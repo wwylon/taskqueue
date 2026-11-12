@@ -1,3 +1,4 @@
+// @ts-check
 // Filter bars: header project/worker selects, queue/history project chips, tag chips and the broken-deps banner.
 // Uses app.js globals at call time (tqAct, i18n, showToast, setProject, setQueueActive, refresh, renderQueue, ...).
 import { S } from '../core/state.js';
@@ -14,12 +15,29 @@ export function _populateProjectSelect(projects) {
   }
   sel.innerHTML = '<option value="">all</option>' +
     '<option value="active" data-i18n="filter.active">active</option>' +
-    projects.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+    _setOptionsHtml() +
+    `<optgroup label="${escHtml(i18n.t('filter.projectsGroup'))}">` +
+    projects.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('') +
+    '</optgroup>';
   _syncProjSelect();
 }
 
+/** Header picker: project-set tree as indented `set:<path>` options (all > bots > bridge2 …). */
+function _setOptionsHtml() {
+  const flat = (S.projectSets && S.projectSets.flat) || {};
+  const paths = Object.keys(flat).sort();
+  if (!paths.length) return '';
+  const opts = paths.map(p => {
+    const depth = p.split('/').length - 1;
+    const name = p.split('/').pop();
+    const n = (flat[p] && flat[p].subtree_count) || 0;
+    return `<option value="set:${escHtml(p)}">${'  '.repeat(depth)}▸ ${escHtml(name)} (${n})</option>`;
+  });
+  return `<optgroup label="${escHtml(i18n.t('filter.setsGroup'))}">${opts.join('')}</optgroup>`;
+}
+
 export function _populateWorkerSelect(workers) {
-  const sel = document.getElementById('worker-select');
+  const sel = /** @type {HTMLInputElement | null} */ (document.getElementById('worker-select'));
   if (!sel) return;
   const prev = sel.value;
   const ids = (Array.isArray(workers) ? workers : []).map(w => w.worker_id);
@@ -30,13 +48,19 @@ export function _populateWorkerSelect(workers) {
 
 export function onProjectChange() {
   // The header select also offers the "active" view, which is not a project.
-  const v = document.getElementById('project-select').value;
+  const v = /** @type {HTMLInputElement} */ (document.getElementById('project-select')).value;
   if (v === 'active') return setQueueActive();
+  if (v.startsWith('set:')) {
+    // A set node selects its whole subtree; the queue/project chips follow the set filter.
+    setProject('all', { keepGroup: true });
+    return setProjectSet(v.slice(4));
+  }
   setProject(v || 'all');
+  if (!v && S.setFilter) setProjectSet('');  // "all" means all projects, not "all in the set"
 }
 
 export function onWorkerChange() {
-  S.globalWorkerFilter = document.getElementById('worker-select').value;
+  S.globalWorkerFilter = /** @type {HTMLInputElement} */ (document.getElementById('worker-select')).value;
   // F-258: server-side ?worker= — reset pages and refetch.
   S.queuePage = 0;
   S.historyOffset = 0;
@@ -80,7 +104,7 @@ export function _populateProjectChips(projects) {
       visibleProjects.map(p => {
         const froz = !!(S.cfg && S.cfg[`project_frozen_${p}`]);
         const on = selected.has(p);
-        return `<button class="filter-chip${on?' active':''}${froz?' chip-frozen':''}" data-project="${escHtml(p)}" data-click="${tqAct([['toggleProjectChip', String(p)]])}">${on?'☑ ':'☐ '}${froz?'❄ ':''}${escHtml(p)}</button>`;
+        return `<button class="filter-chip${on?' active':''}${froz?' chip-frozen':''}${_projStateClass(p)}" data-project="${escHtml(p)}" data-click="${tqAct([['toggleProjectChip', String(p)]])}">${on?'☑ ':'☐ '}${froz?'❄ ':''}${escHtml(p)}</button>`;
       }).join('');
   }
   const hbar = document.getElementById('history-proj-bar');
@@ -102,11 +126,41 @@ export function _populateProjectChips(projects) {
   if (typeof _updateSetBulkBar === 'function') _updateSetBulkBar();
 }
 
+const _PROJECT_STATES = ['failed', 'interrupted', 'running', 'waiting', 'completed'];
+
+/** Queue project chip colour = the project's worst live state (API ``project_states``). */
+function _projStateClass(p) {
+  const st = ((S.status && S.status.project_states) || {})[p];
+  return _PROJECT_STATES.includes(st) ? ` chip-st chip-st-${st}` : '';
+}
+
+/** Re-colour existing chips on each status refresh without rebuilding the bar. */
+export function _updateProjectChipStates() {
+  const states = (S.status && S.status.project_states) || {};
+  document.querySelectorAll('#queue-proj-bar [data-project]').forEach(el => {
+    const p = el.getAttribute('data-project');
+    for (const st of _PROJECT_STATES) el.classList.remove('chip-st-' + st);
+    const st = states[p];
+    if (_PROJECT_STATES.includes(st)) el.classList.add('chip-st', 'chip-st-' + st);
+    else el.classList.remove('chip-st');
+  });
+}
+
+/** Groups/tags only make sense once a scope is picked (project, set or selection), not for "all". */
+export function isAllProjectsScope() {
+  return S.selectedProject === 'all' && !(Array.isArray(S.selectedProjects) && S.selectedProjects.length) && !S.setFilter;
+}
+
 export const TAG_CHIP_CAP = 60;
 
 export function _updateTagChips() {
   const bar = document.getElementById('queue-tag-bar');
   if (!bar) return;
+  if (isAllProjectsScope()) {
+    S.tagFilter = null;  // a hidden filter must not keep narrowing the queue
+    bar.style.display = 'none';
+    return;
+  }
   if (!S.allTags.length) { bar.style.display = 'none'; return; }
   const expanded = bar.dataset.expanded === '1';
   // A few thousand tasks can carry hundreds of tags: cap the chips (the active tag always stays visible).

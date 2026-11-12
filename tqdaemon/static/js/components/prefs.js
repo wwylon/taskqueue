@@ -1,3 +1,4 @@
+// @ts-check
 // Preferences popup: theme (dark/light/auto), font size, language selector sync, operator + mine scope.
 // localStorage keys: tq_theme, tq_font, tq_lang, tq_quiet_hours, tq_operator, tq_mine.
 // app.js calls tqSyncPrefs() once at boot.
@@ -41,12 +42,12 @@ export function tqSyncPrefs() {
   tqApplyTheme(pref);
   tqApplyFont(font);
   try {
-    const qh = document.getElementById('prefs-quiet');
+    const qh = /** @type {HTMLInputElement | null} */ (document.getElementById('prefs-quiet'));
     if (qh) qh.value = localStorage.getItem('tq_quiet_hours') || '';
   } catch (e) {}
   tqSyncOperatorPrefs();
   tqSyncTokenPrefs();
-  const sel = document.getElementById('tq-lang-switcher');
+  const sel = /** @type {HTMLInputElement | null} */ (document.getElementById('tq-lang-switcher'));
   if (sel) sel.value = lang;
   const mql = window.matchMedia('(prefers-color-scheme: dark)');
   if (mql.addEventListener) {
@@ -81,15 +82,15 @@ export function tqSyncOperatorPrefs() {
   S.operator = op;
   // Default mine-on when an operator is set; explicit '0' is View all.
   S.mineOnly = !!op && mineStored !== '0';
-  const inp = document.getElementById('prefs-operator');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('prefs-operator'));
   if (inp) inp.value = op;
-  const mineBtn = document.getElementById('prefs-mine');
+  const mineBtn = /** @type {HTMLInputElement | null} */ (document.getElementById('prefs-mine'));
   if (mineBtn) {
     mineBtn.classList.toggle('active', S.mineOnly);
     mineBtn.disabled = !op;
     mineBtn.setAttribute('aria-pressed', S.mineOnly ? 'true' : 'false');
   }
-  const allBtn = document.getElementById('prefs-view-all');
+  const allBtn = /** @type {HTMLInputElement | null} */ (document.getElementById('prefs-view-all'));
   if (allBtn) {
     allBtn.classList.toggle('active', !!op && !S.mineOnly);
     allBtn.disabled = !op;
@@ -128,7 +129,7 @@ export function tqSetMineScope(mine) {
 
 /** F-207: API token field in Preferences (also settable via ?tq_token=). */
 export function tqSyncTokenPrefs() {
-  const inp = document.getElementById('prefs-token');
+  const inp = /** @type {HTMLInputElement | null} */ (document.getElementById('prefs-token'));
   if (!inp) return;
   try { inp.value = localStorage.getItem('tq_token') || ''; } catch (e) { inp.value = ''; }
 }

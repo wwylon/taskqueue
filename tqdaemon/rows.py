@@ -3,38 +3,45 @@
 from __future__ import annotations
 
 import functools
-import json
 import math
 from collections.abc import Mapping
 from typing import Any
 
+_MISSING = (KeyError, IndexError, TypeError)  # dict / sqlite3.Row / non-mapping
+
+
+def has_col(row: Any, key: str) -> bool:
+    """Whether ``row`` (sqlite3.Row or dict) has column ``key`` — O(1), unlike ``key in row.keys()``,
+    which builds the full column list on every call (hot in admission loops)."""
+    try:
+        row[key]
+    except _MISSING:
+        return False
+    return True
+
 
 def row_get(row: Any, key: str, default: Any = None) -> Any:
     """Value of ``row[key]``, or ``default`` if the column is absent from the row."""
-    if key not in row.keys():
+    try:
+        return row[key]
+    except _MISSING:
         return default
-    return row[key]
 
 
 def row_value(row: Any, key: str, default: Any = None) -> Any:
     """Like :func:`row_get` but also tolerant of dict rows, and NULL columns yield ``default``."""
     try:
-        keys = row.keys() if hasattr(row, "keys") else None
-        if keys is not None and key not in keys:
-            return default
         val = row[key]
-        return default if val is None else val
-    except (KeyError, IndexError, TypeError):
+    except _MISSING:
         return default
+    return default if val is None else val
 
 
 @functools.lru_cache(maxsize=1024)
 def _parse_resources_str(raw: str) -> dict[str, Any]:
-    try:
-        val = json.loads(raw or "{}")
-    except (TypeError, ValueError):
-        return {}
-    return val if isinstance(val, dict) else {}
+    from tqdaemon.jsonutil import parse_json_obj
+
+    return parse_json_obj(raw or "{}")
 
 
 def row_resources(row: Any) -> dict[str, Any]:

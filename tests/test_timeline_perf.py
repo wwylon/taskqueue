@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -72,5 +73,6 @@ def test_large_queue_is_fast(tmp_path: Path):
     set_project_limit(db, "proj", "max_tasks", 4)
     t0 = time.monotonic()
     data = tf.cached_forecast(db, hours=24, project="proj", limit=300)
-    assert time.monotonic() - t0 < 5.0
+    budget = 5.0 * (3 if os.environ.get("PYTEST_XDIST_WORKER") else 1)  # parallel workers share the CPU
+    assert time.monotonic() - t0 < budget
     assert data["total_bars"] > 0

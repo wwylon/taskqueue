@@ -21,6 +21,30 @@ class MasterLeaseLockTimeout(Exception):
     """F-082: BEGIN IMMEDIATE timed out — not the same as lease held by another."""
 
 
+# /api/yield-master: this process must not reclaim the lease it just gave up until a
+# standby has had a full lease period to take it (monotonic deadline, 0 = not yielding).
+_yield_until = 0.0
+
+
+def yield_master_lease(conn: sqlite3.Connection, holder: str | None) -> bool:
+    """Give up the master lease: expire our row (keep holder/epoch so epochs never go
+    backwards) and back off from reclaiming for one ``MASTER_LEASE_TTL_SEC``."""
+    from tqdaemon.config import MASTER_LEASE_TTL_SEC
+
+    global _yield_until
+    if holder:
+        cur = conn.execute("UPDATE master_lease SET expires_at=0 WHERE singleton=1 AND holder=?", (holder,))
+    else:
+        cur = conn.execute("UPDATE master_lease SET expires_at=0 WHERE singleton=1")
+    conn.commit()
+    _yield_until = time.monotonic() + MASTER_LEASE_TTL_SEC
+    return cur.rowcount > 0
+
+
+def _yielding() -> bool:
+    return _yield_until > time.monotonic()
+
+
 def _cas_master_lease(
     conn: sqlite3.Connection,
     holder: str,
@@ -55,6 +79,9 @@ def _cas_master_lease(
         raise
     try:
         row = conn.execute("SELECT holder, expires_at, epoch FROM master_lease WHERE singleton=1").fetchone()
+        if _yielding() and (row is None or int(row["expires_at"]) <= now):
+            conn.rollback()  # we just yielded: leave the free lease to a standby for now
+            return False
         if row is None:
             conn.execute(
                 "INSERT INTO master_lease (singleton, holder, expires_at, epoch) VALUES (1, ?, ?, 1)",

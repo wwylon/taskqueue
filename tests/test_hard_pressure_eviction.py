@@ -1,13 +1,13 @@
 """Hard RAM/VRAM eviction: caps, dying runs, VRAM path, no-victim case."""
 
 from tests.test_daemon_tick_helpers import PressureRun
-from tqdaemon import daemon
+from tqdaemon import daemon, pressure
 
 
 def _patch(monkeypatch, *, host_used=98.0):
-    monkeypatch.setattr(daemon, "ram_used_gib", lambda: host_used)
+    monkeypatch.setattr(pressure, "ram_used_gib", lambda: host_used)
     errs = []
-    monkeypatch.setattr(daemon, "set_task_error", lambda *a, **k: errs.append((a[1:3], a[3])))
+    monkeypatch.setattr(pressure, "set_task_error", lambda *a, **k: errs.append((a[1:3], a[3])))
 
     def pick(conn, items, needed_gib, resource):
         # biggest consumer of the relevant resource first
@@ -15,7 +15,7 @@ def _patch(monkeypatch, *, host_used=98.0):
         items = sorted(items, key=lambda kv: -getattr(kv[1], attr))
         return items[0][0], [(k, 1.0) for k, _ in items]
 
-    monkeypatch.setattr(daemon, "pick_victim", pick)
+    monkeypatch.setattr(pressure, "pick_victim", pick)
     return errs
 
 
@@ -51,7 +51,7 @@ def test_dying_run_counts_as_relief_and_is_not_restopped(monkeypatch):
 
 def test_no_victim_returns_none(monkeypatch):
     _patch(monkeypatch)
-    monkeypatch.setattr(daemon, "pick_victim", lambda *a, **k: (None, []))
+    monkeypatch.setattr(pressure, "pick_victim", lambda *a, **k: (None, []))
     run = PressureRun(ram=30.0)
     cfg = {"ram_hard_limit_pct": 95, "ram_limit_pct": 80}
     out = daemon._enforce_hard_pressure(object(), cfg, {"ram_total_gib": 100.0}, {("p", "t"): run}, 0.0)
@@ -82,13 +82,13 @@ def test_vram_below_hard_limit_is_left_alone(monkeypatch):
 
 def test_pressure_block_reason_text_is_stable(monkeypatch, capsys):
     """Wave 4.3 (PressureSpec): operator-facing wording of RAM / VRAM stops is unchanged."""
-    monkeypatch.setattr(daemon, "ram_used_gib", lambda: 98.0)
+    monkeypatch.setattr(pressure, "ram_used_gib", lambda: 98.0)
     seen = []
     monkeypatch.setattr(
-        daemon, "set_task_error", lambda conn, p, t, code, block_reason=None: seen.append((code, block_reason))
+        pressure, "set_task_error", lambda conn, p, t, code, block_reason=None: seen.append((code, block_reason))
     )
     monkeypatch.setattr(
-        daemon, "pick_victim", lambda conn, items, needed_gib, resource: (items[0][0], [(items[0][0], 1.5)])
+        pressure, "pick_victim", lambda conn, items, needed_gib, resource: (items[0][0], [(items[0][0], 1.5)])
     )
     cfg = {"ram_hard_limit_pct": 95, "ram_limit_pct": 80, "vram_hard_limit_pct": 90, "gpu_limit_pct": 50}
     info = {"ram_total_gib": 100.0, "gpu_vram_total_gib": 10.0, "gpus": [{"vram_used_gib": 9.5}]}

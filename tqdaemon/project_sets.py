@@ -7,6 +7,7 @@ YAML-only; freeze/pause remain per-project config keys.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -64,21 +65,17 @@ def projects_in_subtree(projects: dict[str, Project], node: str) -> list[str]:
     node_n = normalize_path(node)
     if node_n is None:
         raise ValueError("set path required")
-    out = [
-        name
-        for name, p in projects.items()
-        if p.set_path and is_under(p.set_path, node_n)
-    ]
+    out = [name for name, p in projects.items() if p.set_path and is_under(p.set_path, node_n)]
     return sorted(out)
 
 
-def known_paths(projects: dict[str, Project]) -> set[str]:
-    """All tree node paths implied by project membership (including prefixes)."""
+def known_paths(projects: dict[str, Project], extra: Iterable[str] = ()) -> set[str]:
+    """All tree node paths implied by project membership plus explicit (possibly empty)
+    nodes in ``extra``, including every prefix."""
     nodes: set[str] = set()
-    for p in projects.values():
-        if not p.set_path:
-            continue
-        parts = p.set_path.split("/")
+    sources = [p.set_path for p in projects.values() if p.set_path] + [e for e in extra if e]
+    for sp in sources:
+        parts = sp.split("/")
         for i in range(1, len(parts) + 1):
             nodes.add("/".join(parts[:i]))
     return nodes
@@ -94,7 +91,7 @@ def node_exists(projects: dict[str, Project], node: str) -> bool:
     return n in known_paths(projects)
 
 
-def build_tree(projects: dict[str, Project]) -> dict[str, Any]:
+def build_tree(projects: dict[str, Project], extra: Iterable[str] = ()) -> dict[str, Any]:
     """Nested tree: ``{ path, name, children, direct_projects, subtree_projects, subtree_count }``.
 
     Roots are returned under a synthetic wrapper ``{"children": [...]}`` (no path).
@@ -106,7 +103,7 @@ def build_tree(projects: dict[str, Project]) -> dict[str, Any]:
             continue
         direct.setdefault(p.set_path, []).append(name)
 
-    nodes = known_paths(projects)
+    nodes = known_paths(projects, extra)
 
     def children_of(prefix: str | None) -> list[str]:
         depth = 0 if prefix is None else prefix.count("/") + 1
@@ -122,11 +119,7 @@ def build_tree(projects: dict[str, Project]) -> dict[str, Any]:
         return sorted(out)
 
     def subtree_projects(path: str) -> list[str]:
-        return sorted(
-            name
-            for name, p in projects.items()
-            if p.set_path and is_under(p.set_path, path)
-        )
+        return sorted(name for name, p in projects.items() if p.set_path and is_under(p.set_path, path))
 
     def make_node(path: str) -> dict[str, Any]:
         kids = [make_node(c) for c in children_of(path)]
@@ -145,9 +138,9 @@ def build_tree(projects: dict[str, Project]) -> dict[str, Any]:
     return {"children": roots}
 
 
-def flat_nodes(projects: dict[str, Project]) -> dict[str, dict[str, Any]]:
+def flat_nodes(projects: dict[str, Project], extra: Iterable[str] = ()) -> dict[str, dict[str, Any]]:
     """Flat map path → {direct_projects, subtree_projects, subtree_count}."""
-    tree = build_tree(projects)
+    tree = build_tree(projects, extra)
     out: dict[str, dict[str, Any]] = {}
 
     def walk(node: dict[str, Any]) -> None:
@@ -318,4 +311,21 @@ def rename_set_prefix(home: Path, old_prefix: str, new_prefix: str) -> list[str]
             suffix = p.set_path[len(old_n) :]
             set_project_set(home, name, new_n + suffix)
             affected.append(name)
+    _move_set_config_in_db(home, old_n, new_n)
     return affected
+
+
+def _move_set_config_in_db(home: Path, old_n: str, new_n: str) -> None:
+    """Limits and explicit tree nodes live in the DB config keyed by set path: move them too."""
+    from tqdaemon.config import db_path
+    from tqdaemon.db import open_db
+    from tqdaemon.project_limits import move_set_config
+
+    path = db_path(home)
+    if not path.exists():
+        return
+    conn = open_db(path)
+    try:
+        move_set_config(conn, old_n, new_n)
+    finally:
+        conn.close()

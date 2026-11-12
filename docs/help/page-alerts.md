@@ -8,7 +8,7 @@ guide_anchors:
   web-ui: page-alerts
 ---
 
-**Alerts** lists five built-in system events. You cannot create or delete them. Each row has:
+**Alerts** lists six built-in system events. You cannot create or delete them. Each row has:
 
 - **Active** — when on, TqDaemon evaluates / emits the event.
 - **Windows popup** — when on, a Windows Action Center toast appears. Requires the optional [`winotify`](https://pypi.org/project/winotify/) package on the **same Python** that runs the daemon:
@@ -33,6 +33,7 @@ guide_anchors:
 | **Task frozen** | A running task has no stdout and no process CPU for ≥2× `frozen_threshold_sec` (same condition as the FROZEN badge). |
 | **Stopped by TqDaemon** | An automated stop (`stopped_by=tq`), not a human/`tq stop`. The popup includes **why** (for example RAM hard limit, wall-clock cap, frozen, dependency invalidated). Human UI/CLI stop reasons appear on the run / drawer / `tq why`, not as this alert. |
 | **Unusual run** | A run finishes `completed` but its wall time, peak RAM or peak VRAM is above 1.5x the p95 of the last 20 completed runs of the same task (needs at least 5 earlier runs). The same runs get a ⚠ **Unusual** badge in History (hover for values). Toast colour: amber. |
+| **GPU idle while GPU tasks wait** | GPU tasks are queued but no GPU task has run for 10 minutes (often another program holds the VRAM, or a project/set cap blocks them). Names the next GPU task and its block reason; see Resources → *GPU memory by program*. At most once an hour. Toast colour: amber. |
 
 The sidebar badge counts enabled alerts that are **hot now** (queue idle, or a currently frozen run). One-shot events (failure, TQ stop) do not keep the badge lit after the toast.
 

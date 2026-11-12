@@ -389,6 +389,34 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+# Project badge colour = its "worst" live state (queue page chips).
+_PROJECT_STATE_ORDER = ("failed", "interrupted", "running", "waiting", "completed")
+_STATUS_TO_PROJECT_STATE = {
+    "failed": "failed",
+    "interrupted": "interrupted",
+    "stopped": "interrupted",
+    "suspended": "interrupted",
+    "running": "running",
+    "queued": "waiting",
+    "completed": "completed",
+}
+
+
+def project_states(conn: sqlite3.Connection) -> dict[str, str]:
+    """``{project: state}`` with state in failed > interrupted > running > waiting > completed
+    (disabled-only projects are omitted)."""
+    rank = {s: i for i, s in enumerate(_PROJECT_STATE_ORDER)}
+    best: dict[str, str] = {}
+    for r in conn.execute("SELECT project, status FROM tasks GROUP BY project, status"):
+        st = _STATUS_TO_PROJECT_STATE.get(str(r["status"]))
+        if st is None:
+            continue
+        cur = best.get(str(r["project"]))
+        if cur is None or rank[st] < rank[cur]:
+            best[str(r["project"])] = st
+    return best
+
+
 def status_counts(
     conn: sqlite3.Connection,
     *,

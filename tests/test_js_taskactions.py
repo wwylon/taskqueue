@@ -181,7 +181,7 @@ r.reverted = [holder2.children[0].className, holder2.children[0].textContent, S.
     assert out["enable"] == ["/api/enable/p/t?enabled=0", "/api/enable/p/t?enabled=1"]
     assert out["dag"] == 4 or out["dag"] >= 2
     assert out["prompted"] == [["5"], "/api/priority/p/t/42"] and out["cancel"] is True
-    assert out["input"] == ["INPUT", 5, 1]
+    assert out["input"] == ["INPUT", "5", 1]  # input.value is always a string
     assert out["saved"] == [77, "/api/tasks/p/t/priority", 1]
     assert out["reverted"] == ["prio-span", 9, 77]
 
